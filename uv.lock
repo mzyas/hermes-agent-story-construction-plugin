@@ -184,7 +184,7 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
-test = [{ name = "pytest", specifier = ">=8.3,<9" }]
+test = [{ name = "pytest", specifier = ">=8.3,<10" }]
 
 [[package]]
 name = "idna"
