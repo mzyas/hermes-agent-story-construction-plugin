@@ -92,8 +92,9 @@ plugins:
 ```
 
 `locked_hermes_home` must be the canonical path returned by Hermes
-`get_hermes_home()` for the selected profile. It is the process-bound runtime
-identifier; do not guess it from the display name. Every Story API and tool
+`get_hermes_home()` within the selected Profile's bound scope. It identifies
+the Story runtime's Profile home, not an exclusive Gateway process; do not
+guess it from the display name. Every Story API and tool
 scope must also exactly match `locked_profile`; a mismatch is rejected with
 `profile_lock_mismatch`. The backend process must be able to read and write
 the configured shared Vault.
@@ -110,18 +111,18 @@ denies the next call instead of falling back to stale state. Normal sessions do
 not receive Story tools when the runtime is incomplete, and every tool and save
 still requires the backend-authorized session-to-project binding.
 
-### Temporary single-profile Gateway boundary
+### Writing Profile scope and Gateway deployment
 
-Run each writing Profile behind its own independent Gateway:
+Use Hermes' existing multi-profile Gateway deployment; a selected writing
+Profile does not require a separate single-profile Gateway. Installation and
+enablement in the writing Profile are separate from Gateway process ownership.
+`locked_profile` and `locked_hermes_home` constrain the Story runtime and its
+session bindings, not every Profile served by the Gateway. The YAML profile
+label alone is not proof of authorization.
 
-```powershell
-hermes -p writer serve
-```
-
-Do not load this plugin in a multiplexed Gateway or in a Gateway serving multiple
-profiles. The trusted boundary for this temporary protection is the independent
-process plus its matching `locked_hermes_home`; the YAML profile label alone is
-not an authorization boundary.
+Full multiplex compatibility still requires real integration verification of
+Profile-scoped plugin loading, tool dispatch, and A → B → A session isolation.
+This deployment statement is not a claim that those checks have passed.
 
 Enable the Desktop half separately in Capabilities → Plugins. The Desktop API
 is mounted under `/api/plugins/story-construction/` and is reached only through
@@ -133,8 +134,8 @@ runtime and exposes only non-sensitive status fields; the only configuration
 it ever writes are the Story settings keys above, through the scoped setup
 transaction.
 
-The Desktop half still requires the locked Profile's independent Gateway. Its
-normal project-first workflow is:
+The Desktop half uses the selected writing Profile's Hermes sessions without
+requiring a dedicated Gateway process. Its normal project-first workflow is:
 
 ```text
 Create project → initialize Obsidian skeleton → create and bind Hermes session
@@ -211,7 +212,7 @@ silently retargets or overwrites the newer file.
 - No arbitrary filesystem access from the model or Renderer.
 - No automatic chapter save after an Agent response.
 - No cross-machine Vault synchronization in the first version.
-- No multiplex or multi-profile Gateway support; use the independent `hermes -p writer serve` process boundary above. One Gateway process serves one prepared Profile.
+- Writing Profile bindings do not require a single-profile Gateway. Full multiplex integration remains to be verified; do not treat this declaration as a compatibility test result.
 - A project switch should start or bind a new Story session; a chapter switch is
   dynamic turn context and does not mutate the stable prompt.
 - The plugin uses Hermes built-in `skill_view`, plugin Skills, tool dispatch,
