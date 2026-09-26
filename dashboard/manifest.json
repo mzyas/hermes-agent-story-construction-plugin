@@ -1,0 +1,8 @@
+{
+  "name": "story-construction",
+  "label": "Story Construction",
+  "description": "Browse and construct Obsidian-backed story projects.",
+  "icon": "BookOpen",
+  "version": "0.1.0",
+  "api": "plugin_api.py"
+}

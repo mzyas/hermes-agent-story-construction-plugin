@@ -1,0 +1,15 @@
+name: story-construction
+version: 0.1.0
+description: "Obsidian-backed story construction workspace for Hermes Desktop."
+author: Local
+kind: backend
+provides_tools:
+  - story.get_project
+  - story.get_world_info
+  - story.search_world_info
+  - story.get_character
+  - story.list_volumes
+  - story.list_chapters
+  - story.get_chapter
+  - story.search_notes
+  - story.search_reference_notes

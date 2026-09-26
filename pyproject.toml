@@ -1,0 +1,14 @@
+[project]
+name = "hermes-story-construction-plugin"
+version = "0.1.0"
+description = "Hermes story construction plugin with Obsidian-backed project context."
+requires-python = ">=3.11,<3.14"
+dependencies = ["fastapi>=0.133.1,<0.135", "pyyaml>=6.0,<7"]
+
+[dependency-groups]
+test = ["pytest>=8.3,<9"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra"
