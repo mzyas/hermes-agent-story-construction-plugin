@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
+from .permissions import StoryPermissionGate
+from .repository import StoryRepository
 from .runtime import StoryRuntimeState, permission_snapshot, prepare_story_runtime
+from .schemas import TOOL_SCHEMAS
 from .session_store import StorySessionRegistry
-from .tools import register_story_tools
+from .tools import StoryToolService
 
 
 _SKILLS = (
@@ -22,6 +25,28 @@ def register_story_skills(ctx) -> None:
     for name, description in _SKILLS:
         path = skill_root / name / "SKILL.md"
         ctx.register_skill(name, path, description, {"name": name, "description": description})
+
+
+def register_story_tools(
+    ctx: Any,
+    repository: StoryRepository,
+    permissions: StoryPermissionGate,
+    *,
+    permissions_provider: Callable[[], StoryPermissionGate] | None = None,
+) -> StoryToolService:
+    """Register story schemas with their session-scoped handlers."""
+
+    service = StoryToolService(
+        repository, permissions, permissions_provider=permissions_provider
+    )
+    for name, schema in TOOL_SCHEMAS.items():
+        ctx.register_tool(
+            name=name,
+            toolset="story",
+            schema=schema,
+            handler=service.handler(name),
+        )
+    return service
 
 
 def register_story_prompt(ctx, registry: StorySessionRegistry | None = None) -> None:

@@ -12,31 +12,6 @@ from .repository import NotFoundError, RepositoryError, StoryRepository
 from .session_store import SessionBindingStoreError
 
 
-def _schema(properties: dict[str, dict[str, str]], required: list[str]) -> dict[str, Any]:
-    return {
-        "type": "object",
-        "properties": properties,
-        "required": required,
-        "additionalProperties": False,
-    }
-
-
-_PROJECT = {"project_id": {"type": "string", "description": "Current story project ID."}}
-_QUERY = {"query": {"type": "string", "description": "Text to search for."}}
-
-TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
-    "story.get_project": {"name": "story.get_project", "schema": _schema(_PROJECT, ["project_id"])},
-    "story.get_world_info": {"name": "story.get_world_info", "schema": _schema(_PROJECT, ["project_id"])},
-    "story.search_world_info": {"name": "story.search_world_info", "schema": _schema({**_PROJECT, **_QUERY}, ["project_id", "query"])},
-    "story.get_character": {"name": "story.get_character", "schema": _schema({**_PROJECT, "character_id": {"type": "string", "description": "Character ID."}}, ["project_id", "character_id"])},
-    "story.list_volumes": {"name": "story.list_volumes", "schema": _schema(_PROJECT, ["project_id"])},
-    "story.list_chapters": {"name": "story.list_chapters", "schema": _schema({**_PROJECT, "volume_id": {"type": "string", "description": "Optional volume ID."}}, ["project_id"])},
-    "story.get_chapter": {"name": "story.get_chapter", "schema": _schema({**_PROJECT, "chapter_id": {"type": "string", "description": "Chapter ID."}}, ["project_id", "chapter_id"])},
-    "story.search_notes": {"name": "story.search_notes", "schema": _schema({**_PROJECT, **_QUERY}, ["project_id", "query"])},
-    "story.search_reference_notes": {"name": "story.search_reference_notes", "schema": _schema({**_PROJECT, **_QUERY}, ["project_id", "query"])},
-}
-
-
 class StoryToolService:
     def __init__(
         self,
@@ -104,34 +79,6 @@ class StoryToolService:
         if name == "story.search_reference_notes":
             return self.repository.search_reference_notes(project_id, str(payload.get("query") or ""))
         raise ValueError(f"unknown story tool: {name}")
-
-
-def register_story_tools(
-    ctx: Any,
-    repository: StoryRepository,
-    permissions: StoryPermissionGate,
-    *,
-    permissions_provider: Callable[[], StoryPermissionGate] | None = None,
-) -> StoryToolService:
-    service = StoryToolService(
-        repository, permissions, permissions_provider=permissions_provider
-    )
-    for name, definition in TOOL_SCHEMAS.items():
-        parameters = definition["schema"]
-        ctx.register_tool(
-            name=name,
-            toolset="story",
-            schema={
-                "name": name,
-                "description": "Scoped story project read.",
-                "parameters": parameters,
-            },
-            handler=service.handler(name),
-            description=parameters.get("description", "Scoped story project read."),
-        )
-    return service
-
-
 def _required(payload: Mapping[str, Any], key: str) -> str:
     value = str(payload.get(key) or "").strip()
     if not value:

@@ -11,7 +11,9 @@ from story_construction_plugin.permissions import SessionScope, StoryPermissionG
 from story_construction_plugin.repository import ProjectTree
 from story_construction_plugin.runtime import permission_snapshot, prepare_story_runtime
 from story_construction_plugin.session_store import StorySessionRegistry
-from story_construction_plugin.tools import TOOL_SCHEMAS, StoryToolService, register_story_tools
+from story_construction_plugin import register_story_tools
+from story_construction_plugin.schemas import TOOL_SCHEMAS
+from story_construction_plugin.tools import StoryToolService
 
 
 class FakeRepository:
@@ -168,7 +170,7 @@ def test_registration_exposes_only_the_story_read_toolset() -> None:
     assert {call["toolset"] for call in calls} == {"story"}
 
 
-def test_registration_uses_hermes_function_schema_and_preserves_parameters() -> None:
+def test_registration_uses_hermes_function_schemas_and_preserves_parameters() -> None:
     calls = []
 
     class Context:
@@ -179,11 +181,21 @@ def test_registration_uses_hermes_function_schema_and_preserves_parameters() -> 
 
     registered = {call["name"]: call for call in calls}
     assert set(registered) == set(TOOL_SCHEMAS)
+    descriptions = set()
     for name, definition in TOOL_SCHEMAS.items():
+        call = registered[name]
         schema = registered[name]["schema"]
+        assert call.keys() == {"name", "toolset", "schema", "handler"}
+        assert schema == definition
+        assert set(schema) == {"name", "description", "parameters"}
         assert schema["name"] == name
-        assert schema["description"] == "Scoped story project read."
-        assert schema["parameters"] == definition["schema"]
+        assert schema["description"]
+        assert schema["parameters"]["type"] == "object"
+        assert schema["parameters"]["properties"]
+        assert "required" in schema["parameters"]
+        descriptions.add(schema["description"])
+
+    assert len(descriptions) == len(TOOL_SCHEMAS)
 
 
 def test_gateway_sees_bind_and_unbind_without_reregister(tmp_path, ready_state, fake_repository):

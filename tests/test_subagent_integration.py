@@ -10,7 +10,7 @@ from story_construction_plugin.subagent_policy import (
     validate_story_worker_result,
     render_story_worker_context,
 )
-from story_construction_plugin.tools import TOOL_SCHEMAS
+from story_construction_plugin.schemas import TOOL_SCHEMAS
 
 
 def test_parent_continues_after_validated_read_only_worker_result() -> None:
