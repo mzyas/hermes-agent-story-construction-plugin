@@ -7,7 +7,7 @@ from dataclasses import asdict, is_dataclass
 from functools import partial
 from typing import Any, Callable, Mapping
 
-from .permissions import StoryPermissionGate, scope_from_tool_kwargs
+from .permissions import SessionScope, StoryPermissionGate, scope_from_tool_kwargs
 from .repository import NotFoundError, RepositoryError, StoryRepository
 from .session_store import SessionBindingStoreError
 
@@ -30,13 +30,13 @@ class StoryToolService:
         if not project_id:
             return _error("missing_project_id", "project_id is required")
         scope_kwargs = dict(kwargs)
-        scope = scope_from_tool_kwargs(**scope_kwargs)
         try:
             gate = (
                 self._permissions_provider()
                 if self._permissions_provider is not None
                 else self.permissions
             )
+            scope = _scope_from_gate(gate, **scope_kwargs)
             gate.require_read(scope, project_id)
             data = self._dispatch(name, project_id, payload)
             return _success(project_id, data)
@@ -79,6 +79,17 @@ class StoryToolService:
         if name == "story.search_reference_notes":
             return self.repository.search_reference_notes(project_id, str(payload.get("query") or ""))
         raise ValueError(f"unknown story tool: {name}")
+
+
+def _scope_from_gate(gate: StoryPermissionGate, **kwargs: Any) -> SessionScope:
+    """Recover the durable binding identity when the runtime supplied none."""
+    scope = scope_from_tool_kwargs(**kwargs)
+    if scope.source or scope.profile or scope.connection_id:
+        return scope
+    bound = gate.bound_scope(scope.session_id)
+    return bound if bound is not None else scope
+
+
 def _required(payload: Mapping[str, Any], key: str) -> str:
     value = str(payload.get(key) or "").strip()
     if not value:

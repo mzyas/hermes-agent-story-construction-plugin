@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from unittest.mock import Mock
 
 import pytest
 
@@ -213,9 +214,7 @@ def test_gateway_sees_bind_and_unbind_without_reregister(tmp_path, ready_state, 
         source="desktop",
         project_id="p1",
     )
-    kwargs = dict(
-        session_id="runtime-1", source="desktop", profile="writer", connection_id="local"
-    )
+    kwargs = dict(session_id="runtime-1")
     assert json.loads(service.handle("story.get_project", {"project_id": "p1"}, **kwargs))["ok"]
     writer.unbind(stored_session_id="stored-1", profile="writer", connection_id="local")
     assert not json.loads(service.handle("story.get_project", {"project_id": "p1"}, **kwargs))["ok"]
@@ -320,3 +319,129 @@ def test_wrong_connection_profile_or_project_is_denied(ready_state, fake_reposit
             service.handle("story.get_project", {"project_id": project_id}, **kwargs)
         )
         assert response["ok"] is False
+
+
+BOUND_SESSION_ID = "20260928_171801_7d2a1e"
+
+
+def _bound_read_service() -> tuple[StoryToolService, Mock]:
+    repository = Mock()
+    repository.get_project.return_value = {"id": "test1"}
+    repository.list_chapters.return_value = [
+        Chapter("ch1", "test1", "v1", "Chapter 1", "Opening")
+    ]
+    permissions = StoryPermissionGate()
+    permissions.bind_session(
+        SessionScope(BOUND_SESSION_ID, "desktop", "writer", "local", "test1"),
+        "test1",
+    )
+    return StoryToolService(repository, permissions), repository
+
+
+def test_runtime_session_id_restores_bound_identity_for_story_reads() -> None:
+    service, repository = _bound_read_service()
+    get_project = service.handler("story.get_project")
+    list_chapters = service.handler("story.list_chapters")
+
+    project = json.loads(
+        get_project({"project_id": "test1"}, session_id=BOUND_SESSION_ID)
+    )
+    chapters = json.loads(
+        list_chapters({"project_id": "test1"}, session_id=BOUND_SESSION_ID)
+    )
+
+    assert project["ok"] is True and project["project_id"] == "test1"
+    assert chapters["ok"] is True and chapters["data"][0]["id"] == "ch1"
+    repository.get_project.assert_called_once_with("test1")
+    repository.list_chapters.assert_called_once_with("test1", None)
+
+
+def test_session_only_rejects_missing_id() -> None:
+    service, repository = _bound_read_service()
+
+    no_session = json.loads(
+        service.handle("story.get_project", {"project_id": "test1"})
+    )
+
+    assert no_session["ok"] is False
+    assert no_session["error"]["code"] == "permission_denied"
+    assert no_session["error"]["message"] == "session_id is required"
+    repository.get_project.assert_not_called()
+
+
+def test_session_only_rejects_unbound_id() -> None:
+    service, repository = _bound_read_service()
+
+    unknown_session = json.loads(
+        service.handle(
+            "story.get_project", {"project_id": "test1"}, session_id="unknown"
+        )
+    )
+
+    assert unknown_session["ok"] is False
+    assert unknown_session["error"]["code"] == "permission_denied"
+    repository.get_project.assert_not_called()
+
+
+def test_model_args_cannot_supply_scope_identity() -> None:
+    service, repository = _bound_read_service()
+
+    forged_args = json.loads(
+        service.handle(
+            "story.get_project",
+            {
+                "project_id": "test1",
+                "source": "desktop",
+                "profile": "writer",
+                "connection_id": "local",
+            },
+            session_id="unknown",
+        )
+    )
+
+    assert forged_args["ok"] is False
+    assert forged_args["error"]["code"] == "permission_denied"
+    repository.get_project.assert_not_called()
+
+
+def test_session_only_rejects_cross_project() -> None:
+    service, repository = _bound_read_service()
+
+    cross_project = json.loads(
+        service.handle(
+            "story.get_project", {"project_id": "other"}, session_id=BOUND_SESSION_ID
+        )
+    )
+
+    assert cross_project["ok"] is False
+    assert cross_project["error"]["code"] == "permission_denied"
+    repository.get_project.assert_not_called()
+
+
+def test_session_only_reports_corrupt_binding(ready_state) -> None:
+    state = ready_state
+    repository = Mock()
+    service = StoryToolService(
+        repository,
+        state.permissions,
+        permissions_provider=lambda: permission_snapshot(state),
+    )
+    StorySessionRegistry(state.sessions.path, locked_profile="writer").bind(
+        stored_session_id="stored-1",
+        runtime_session_id="runtime-1",
+        profile="writer",
+        connection_id="local",
+        source="desktop",
+        project_id="p1",
+    )
+    state.sessions.path.write_text("{broken", encoding="utf-8")
+
+    corrupt_binding = json.loads(
+        service.handle(
+            "story.get_project", {"project_id": "p1"}, session_id="runtime-1"
+        )
+    )
+
+    assert corrupt_binding["ok"] is False
+    assert corrupt_binding["error"]["code"] == "binding_state_invalid"
+    repository.get_project.assert_not_called()
