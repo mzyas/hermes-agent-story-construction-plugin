@@ -6,6 +6,7 @@ import hashlib
 import os
 import shutil
 import tempfile
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -52,6 +53,8 @@ class ObsidianProjectRepository:
         if not root.is_dir():
             raise RepositoryError(f"Vault root does not exist: {root}")
         self.vault_root = root
+        self._cache_lock = threading.Lock()
+        self._records_cache: tuple[tuple[Any, ...], dict[str, tuple[Any, ...]]] | None = None
 
     def create_project(self, name: str, *, slug: str | None = None) -> ProjectTree:
         project_slug = normalize_project_slug(name, slug)
@@ -225,9 +228,47 @@ class ObsidianProjectRepository:
         finally:
             if temporary_name and Path(temporary_name).exists():
                 Path(temporary_name).unlink()
+        self._invalidate_records()
         return self.get_chapter(project_id, chapter_id)
 
     def _records(self) -> dict[str, tuple[Any, ...]]:
+        """Parsed Vault records, reused until any Markdown file changes.
+
+        Each call still walks the Vault and stats every Markdown file, but files
+        are only read and parsed again when the (path, mtime, size, inode)
+        signature differs. The signature is taken before reading, so a file
+        edited mid-parse is picked up by the next call. Parse failures are never
+        cached. Records are frozen dataclasses in tuples, safe to share.
+        """
+
+        files = self._markdown_files()
+        signature = tuple(_file_signature(path, self.vault_root) for path in files)
+        with self._cache_lock:
+            cached = self._records_cache
+        if cached is not None and cached[0] == signature:
+            return cached[1]
+        result = self._scan_records(files)
+        with self._cache_lock:
+            self._records_cache = (signature, result)
+        return result
+
+    def _invalidate_records(self) -> None:
+        with self._cache_lock:
+            self._records_cache = None
+
+    def _markdown_files(self) -> list[Path]:
+        files: list[Path] = []
+        for path in sorted(self.vault_root.rglob("*.md")):
+            relative = path.relative_to(self.vault_root)
+            if (
+                len(relative.parts) > 1
+                and relative.parts[0].startswith(".story-create-")
+            ) or not path.is_file():
+                continue
+            files.append(path)
+        return files
+
+    def _scan_records(self, files: list[Path]) -> dict[str, tuple[Any, ...]]:
         records: dict[str, list[Any]] = {
             "project": [],
             "world_info": [],
@@ -238,13 +279,7 @@ class ObsidianProjectRepository:
             "volume": [],
             "chapter": [],
         }
-        for path in sorted(self.vault_root.rglob("*.md")):
-            relative = path.relative_to(self.vault_root)
-            if (
-                len(relative.parts) > 1
-                and relative.parts[0].startswith(".story-create-")
-            ) or not path.is_file():
-                continue
+        for path in files:
             document = _read_document(path)
             kind = str(document.metadata.get("type", "")).strip()
             if kind not in records:
@@ -263,6 +298,15 @@ class ObsidianProjectRepository:
             if row.id == object_id:
                 return row
         raise NotFoundError(f"{kind} {object_id!r} was not found")
+
+
+def _file_signature(path: Path, vault_root: Path) -> tuple[str, int, int, int]:
+    try:
+        stat = path.stat()
+    except OSError:
+        # Vanished between listing and stat: a distinct signature forces a rescan.
+        return (path.relative_to(vault_root).as_posix(), -1, -1, -1)
+    return (path.relative_to(vault_root).as_posix(), stat.st_mtime_ns, stat.st_size, stat.st_ino)
 
 
 def _write_story_document(path: Path, metadata: dict[str, Any], content: str = "") -> None:

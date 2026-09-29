@@ -285,3 +285,91 @@ def test_source_ref_cannot_escape_configured_vault(vault: Path) -> None:
 
     with pytest.raises(RepositoryError, match="Vault root"):
         repository.resolve_source_path("../../outside.md")
+
+
+def _count_reads(monkeypatch) -> list[Path]:
+    reads: list[Path] = []
+    original = obsidian_repository._read_document
+
+    def counting(path):
+        reads.append(path)
+        return original(path)
+
+    monkeypatch.setattr(obsidian_repository, "_read_document", counting)
+    return reads
+
+
+def test_unchanged_vault_is_parsed_once_across_reads(vault: Path, monkeypatch) -> None:
+    repository = ObsidianProjectRepository(vault)
+    reads = _count_reads(monkeypatch)
+
+    first = repository.get_project("p1")
+    parsed = len(reads)
+    repository.get_project("p1")
+    repository.list_chapters("p1")
+    repository.search_notes("p1", "rain")
+
+    assert parsed > 0
+    assert len(reads) == parsed
+    assert repository.get_project("p1") == first
+
+
+def test_external_edit_add_and_delete_invalidate_the_cache(vault: Path) -> None:
+    repository = ObsidianProjectRepository(vault)
+    assert repository.get_chapter("p1", "ch1").content == "Opening."
+
+    chapter = vault / "volumes" / "ch1.md"
+    _write(
+        vault,
+        "volumes/ch1.md",
+        "type: chapter\nid: ch1\nproject_id: p1\nvolume_id: v1\ntitle: Chapter 1",
+        "Rewritten elsewhere.",
+    )
+    assert repository.get_chapter("p1", "ch1").content == "Rewritten elsewhere."
+
+    _write(vault, "notes/new.md", "type: note\nid: n9\nproject_id: p1\ntitle: New", "fresh")
+    assert {note.id for note in repository.get_project("p1").notes} == {"n1", "n9"}
+
+    (vault / "notes" / "new.md").unlink()
+    assert {note.id for note in repository.get_project("p1").notes} == {"n1"}
+    assert chapter.exists()
+
+
+def test_same_size_edit_is_detected_when_metadata_changes(vault: Path) -> None:
+    repository = ObsidianProjectRepository(vault)
+    assert repository.get_chapter("p1", "ch1").content == "Opening."
+
+    chapter = vault / "volumes" / "ch1.md"
+    text = chapter.read_text(encoding="utf-8").replace("Opening.", "Opened!!")
+    stat = chapter.stat()
+    chapter.write_text(text, encoding="utf-8")
+    import os
+    os.utime(chapter, ns=(stat.st_atime_ns, stat.st_mtime_ns + 5_000_000))
+
+    assert repository.get_chapter("p1", "ch1").content == "Opened!!"
+
+
+def test_save_chapter_result_is_visible_to_next_read(vault: Path) -> None:
+    repository = ObsidianProjectRepository(vault)
+    chapter = repository.get_chapter("p1", "ch1")
+
+    saved = repository.save_chapter("p1", "ch1", "Saved text", expected_version=chapter.version)
+
+    assert saved.content == "Saved text"
+    assert repository.get_chapter("p1", "ch1").content == "Saved text"
+    assert repository.get_chapter("p1", "ch1").version != chapter.version
+
+
+def test_parse_failure_is_not_cached(vault: Path) -> None:
+    repository = ObsidianProjectRepository(vault)
+    repository.get_project("p1")
+    broken = vault / "notes" / "broken.md"
+    broken.write_text("---\ntype: note\nid: n7\n", encoding="utf-8")
+
+    with pytest.raises(RepositoryError):
+        repository.get_project("p1")
+    with pytest.raises(RepositoryError):
+        repository.get_project("p1")
+
+    broken.unlink()
+    assert repository.get_project("p1").project.id == "p1"
