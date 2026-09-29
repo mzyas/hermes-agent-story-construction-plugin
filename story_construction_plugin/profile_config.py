@@ -94,18 +94,25 @@ def select_story_target(
     shared_text = _setting_text(_settings_from_raw(default_raw), "vault_root")
     target_text = _setting_text(_settings_from_raw(target_raw), "vault_root")
 
+    vault_changed = False
     if vault_root:
+        # An explicit path replaces whatever Vault was stored before.
         vault = _canonical_vault(vault_root)
+        vault_changed = any(
+            text and _vault_path(text) != vault for text in (target_text, shared_text)
+        )
     else:
         base = target_text or shared_text
         if not base:
             raise StorySetupError("configuration_incomplete")
         vault = _canonical_vault(base)
-    if target_text and _vault_path(target_text) != vault:
-        raise StorySetupError("vault_mismatch")
-    if shared_text and _vault_path(shared_text) != vault:
-        raise StorySetupError("vault_mismatch")
+        # Without an explicit path the stored settings must already agree.
+        if target_text and _vault_path(target_text) != vault:
+            raise StorySetupError("vault_mismatch")
+        if shared_text and _vault_path(shared_text) != vault:
+            raise StorySetupError("vault_mismatch")
     _require_writable_vault(vault)
+    previous_selected = _setting_text(_settings_from_raw(default_raw), "selected_profile")
 
     # Target bindings first: a failure here cannot leave a stale selection behind.
     _write_story_settings(
@@ -123,6 +130,12 @@ def select_story_target(
             "vault_root": str(vault),
         },
     )
+    if vault_changed:
+        # Bindings name projects of the old Vault; none of them exist in the new one.
+        _clear_bindings(home)
+        if previous_selected and previous_selected != canon:
+            with suppress(StorySetupError):
+                _clear_bindings(_profile_home(_canonical_profile(previous_selected), default_path))
     return StoryTarget(
         profile=canon,
         home=home,
@@ -130,6 +143,26 @@ def select_story_target(
         plugin_root=api_root,
         settings=_story_settings(home),
     )
+
+
+def _clear_bindings(home: Path) -> None:
+    """Drop every persisted session→project binding stored under one Hermes home."""
+
+    from .session_store import SessionBindingStoreError, StorySessionRegistry
+
+    path = Path(home) / "plugin-data" / PLUGIN_ID / "sessions.json"
+    if not path.exists():
+        return
+    try:
+        registry = StorySessionRegistry(path)
+        for binding in registry.all():
+            registry.unbind(
+                stored_session_id=binding.stored_session_id,
+                profile=binding.profile,
+                connection_id=binding.connection_id,
+            )
+    except SessionBindingStoreError as exc:
+        raise StorySetupError("binding_state_invalid") from exc
 
 
 @contextmanager

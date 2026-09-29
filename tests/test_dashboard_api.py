@@ -921,10 +921,6 @@ def _arrange_no_stored_vault(homes, monkeypatch, tmp_path):
         _write_yaml(home / "config.yaml", raw)
 
 
-def _arrange_alt_vault(homes, monkeypatch, tmp_path):
-    (tmp_path / "other-vault").mkdir()
-
-
 def _arrange_managed_system(homes, monkeypatch):
     monkeypatch.setenv("HERMES_MANAGED", "nix")
 
@@ -936,8 +932,6 @@ SETTINGS_ERROR_CASES = [
      lambda homes, tmp_path: {"profile": "../writer"}),
     ("first_selection_without_vault", 422, "configuration_incomplete", _arrange_no_stored_vault,
      lambda homes, tmp_path: {"profile": "writer"}),
-    ("vault_conflicts_with_selection", 409, "vault_mismatch", _arrange_alt_vault,
-     lambda homes, tmp_path: {"profile": "writer", "vault_root": str(tmp_path / "other-vault")}),
     ("installed_versions_conflict", 409, "version_mismatch",
      lambda homes, monkeypatch, tmp_path: _arrange_version_mismatch(homes, monkeypatch),
      lambda homes, tmp_path: {"profile": "writer", "vault_root": str(homes.vault)}),

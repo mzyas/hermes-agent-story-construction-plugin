@@ -10,6 +10,7 @@ import yaml
 
 from hermes_env import read_user_config_raw  # lazy real-SDK passthrough
 
+from story_construction_plugin.session_store import StorySessionRegistry
 from story_construction_plugin.profile_config import (
     StorySetupError,
     resolve_story_target,
@@ -217,7 +218,6 @@ BROKEN_CASES = [
     ("managed_keys", _arrange_managed_keys, "managed_config"),
     ("managed_system", _arrange_managed_system, "managed_config"),
     ("unwritable_vault", _arrange_unwritable_vault, "vault_unwritable"),
-    ("other_target_vault", _arrange_other_target_vault, "vault_mismatch"),
 ]
 
 
@@ -352,3 +352,68 @@ def test_hermes_sdk_surface_matches_adapter() -> None:
     assert profiles.normalize_profile_name("Writer") == "writer"
     with pytest.raises(ValueError):
         profiles.validate_profile_name("../writer")
+
+
+def _vault_setting(home: Path):
+    raw = read_user_config_raw(home / "config.yaml")
+    return raw["plugins"]["entries"][PLUGIN_ID]["settings"]["vault_root"]
+
+
+def _bind_session(home: Path, session_id: str = "s1"):
+    registry = StorySessionRegistry(home / "plugin-data" / PLUGIN_ID / "sessions.json")
+    registry.bind(session_id=session_id, profile="writer", project_id="p1")
+    return registry
+
+
+def test_explicit_vault_replaces_the_stored_vault(homes, tmp_path):
+    default_home, target_home, vault, plugin_root = homes
+    new_vault = tmp_path / "new-vault"
+    new_vault.mkdir()
+    select_story_target(plugin_root, default_home, "writer", str(vault))
+
+    result = select_story_target(plugin_root, default_home, "writer", str(new_vault))
+
+    assert result.vault_root == new_vault.resolve()
+    assert _vault_setting(target_home) == str(new_vault.resolve())
+    assert _vault_setting(default_home) == str(new_vault.resolve())
+    assert resolve_story_target(plugin_root, default_home).vault_root == new_vault.resolve()
+
+
+def test_changing_the_vault_clears_stale_session_bindings(homes, tmp_path):
+    default_home, target_home, vault, plugin_root = homes
+    new_vault = tmp_path / "new-vault"
+    new_vault.mkdir()
+    select_story_target(plugin_root, default_home, "writer", str(vault))
+    registry = _bind_session(target_home)
+    assert len(registry.all()) == 1
+
+    select_story_target(plugin_root, default_home, "writer", str(vault))
+    assert len(registry.all()) == 1  # same Vault: bindings stay
+
+    select_story_target(plugin_root, default_home, "writer", str(new_vault))
+    assert registry.all() == ()
+
+
+def test_failed_vault_change_keeps_bindings_and_settings(homes, tmp_path):
+    default_home, target_home, vault, plugin_root = homes
+    select_story_target(plugin_root, default_home, "writer", str(vault))
+    registry = _bind_session(target_home)
+
+    with pytest.raises(StorySetupError) as missing:
+        select_story_target(plugin_root, default_home, "writer", str(tmp_path / "nope"))
+
+    assert missing.value.code == "vault_not_directory"
+    assert _vault_setting(target_home) == str(vault.resolve())
+    assert len(registry.all()) == 1
+
+
+def test_omitted_vault_still_rejects_inconsistent_stored_settings(homes, monkeypatch):
+    default_home, _, vault, plugin_root = homes
+    select_story_target(plugin_root, default_home, "writer", str(vault))
+    _arrange_other_target_vault(homes, monkeypatch)
+
+    with pytest.raises(StorySetupError) as conflict:
+        select_story_target(plugin_root, default_home, "writer")
+
+    assert conflict.value.code == "vault_mismatch"
+

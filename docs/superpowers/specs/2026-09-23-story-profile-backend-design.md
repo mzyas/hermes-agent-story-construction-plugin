@@ -20,7 +20,7 @@ Dashboard 只扫描启动 home 与默认根目录，因此目标 Profile 单独�
 
 默认 home 的 `config.yaml` 在 `plugins.entries.story-construction.settings` 下保存唯一的 `selected_profile` 与共用 `vault_root`。每个目标 Profile 的同名 settings 保留现有 `locked_profile`、`locked_hermes_home`、`vault_root`；目标 `vault_root` 必须与默认 home 中规范化后的共用 Vault 路径相同。这样现有 Agent 运行时仍只在自身 Profile home 上授权，而默认 Dashboard API 有明确的共用 Vault 来源。切换 Profile 仅改变默认 home 的 `selected_profile`，不会迁移项目或会话文件，也不会把旧 Profile 的绑定复制到新 Profile。
 
-插件提供后端设置接口，供未来 UI 选择 Profile，并在首次配置时提交 Vault 路径。服务端必须通过 Hermes 的 Profile 解析能力取得目标 home，确认该 Profile 的 `story-construction` 已正式安装且启用、包版本兼容，并检查 Vault 是服务端可读写的目录。不能从请求体接受 `hermes_home`，不能把客户端传来的 `profile` 或 `connection_id` 当作身份凭据。首次设置在目标 Profile 的插件 settings 写入经解析的 `locked_profile`、`locked_hermes_home` 与共用 `vault_root`，再写默认 home 的 `selected_profile`；前一步失败时默认选择保持不变。已有目标配置若指向另一 Vault，返回明确冲突，不静默覆盖。受管理配置或权限拒绝写入时保持原有选择并返回可操作错误。
+插件提供后端设置接口，供未来 UI 选择 Profile，并在首次配置时提交 Vault 路径。服务端必须通过 Hermes 的 Profile 解析能力取得目标 home，确认该 Profile 的 `story-construction` 已正式安装且启用、包版本兼容，并检查 Vault 是服务端可读写的目录。不能从请求体接受 `hermes_home`，不能把客户端传来的 `profile` 或 `connection_id` 当作身份凭据。首次设置在目标 Profile 的插件 settings 写入经解析的 `locked_profile`、`locked_hermes_home` 与共用 `vault_root`，再写默认 home 的 `selected_profile`；前一步失败时默认选择保持不变。请求显式提交新的 `vault_root` 时视为更换 Vault：校验通过后同时更新目标 Profile 与默认 home 的 `vault_root`，并清除目标 Profile（及被替换的前一个已选 Profile）的会话绑定，因为旧绑定指向的项目不存在于新 Vault；校验失败则配置与绑定保持不变。未提交 `vault_root` 而已存的目标与共用 Vault 互相不一致时，返回 `vault_mismatch` 冲突，不静默选择其一。受管理配置或权限拒绝写入时保持原有选择并返回可操作错误。
 
 配置写入只修改上述插件 settings，不重写其他 YAML 键；复用 Hermes 现有的原始配置读取、锁和原子合并写入能力，并在正确的 Profile 作用域内执行。Dashboard API 没有 Agent 进程的 `PluginContext`，因此这一步接受对 Hermes 内部 Python 配置接口的局部依赖；把依赖集中在一个配置适配层，并用真实导入的回归测试防止 SDK 升级时静默失效。不新增 `HERMES_*` 行为配置环境变量。
 
