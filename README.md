@@ -44,13 +44,21 @@ taken on Windows and one taken in WSL do not see each other on a shared drive,
 so the Vault relies on atomic `os.replace` writes and version-checked saves
 (`SaveConflict`).
 
+Install and run exactly one backend. Do not install or enable this plugin in both
+Windows and WSL, and never let two backends write the same Vault: the Vault has
+no cross-system lock, so concurrent writes from both sides are unsupported and
+may lose data. If you move to the other side, remove or disable the plugin on
+the old side first, then run `PUT /settings` on the new one. The path
+translation above exists so a single backend can accept a path typed in the
+other spelling, not to support two backends at once.
+
 Verification status:
 
 - Verified: the `/mnt/e/...` to `E:/...` and native-path cases in `tests/test_paths.py`,
   and the full suite (183 passed) on Windows.
 - Not yet verified: the Windows-to-WSL translation test is skipped on Windows and
-  has not run in WSL; the two backends writing one Vault at the same time; a
-  Vault reached through `\\wsl.localhost\...`.
+  has not run in WSL; a Vault reached through `\\wsl.localhost\...`. Two backends
+  writing one Vault is prohibited, so it is not a case to verify.
 
 ### Story setup and status API
 
