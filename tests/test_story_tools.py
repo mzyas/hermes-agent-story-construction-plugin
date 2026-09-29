@@ -445,3 +445,60 @@ def test_session_only_reports_corrupt_binding(ready_state) -> None:
     assert corrupt_binding["ok"] is False
     assert corrupt_binding["error"]["code"] == "binding_state_invalid"
     repository.get_project.assert_not_called()
+
+
+def test_list_chapters_returns_metadata_without_chapter_text() -> None:
+    chapters = _call(_service(), "story.list_chapters", {"project_id": "p1"})
+
+    assert chapters["ok"] is True
+    entry = chapters["data"][0]
+    assert entry["id"] == "ch1"
+    assert entry["title"] == "Chapter 1"
+    assert entry["content_length"] == len("Opening")
+    assert "content" not in entry
+    assert "source_ref" not in entry
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["story.search_world_info", "story.search_notes", "story.search_reference_notes"],
+)
+def test_search_tools_reject_empty_query(name: str) -> None:
+    for query in ("", "   "):
+        response = _call(_service(), name, {"project_id": "p1", "query": query})
+        assert response["ok"] is False
+        assert response["error"]["code"] == "invalid_request"
+
+
+def test_search_results_are_capped_and_report_truncation() -> None:
+    service = _service()
+    service.repository.tree = ProjectTree(
+        project=Project("p1", "Demo"),
+        world_info=None,
+        world_info_entries=(),
+        characters=(),
+        categories=(),
+        notes=tuple(Note(f"n{i}", "p1", f"T{i}", "rain") for i in range(60)),
+        volumes=(),
+        chapters=(),
+    )
+
+    default = _call(service, "story.search_notes", {"project_id": "p1", "query": "rain"})
+    small = _call(service, "story.search_notes", {"project_id": "p1", "query": "rain", "limit": 3})
+    huge = _call(service, "story.search_notes", {"project_id": "p1", "query": "rain", "limit": 999})
+    bad = _call(service, "story.search_notes", {"project_id": "p1", "query": "rain", "limit": 0})
+
+    assert default["data"]["total"] == 60
+    assert default["data"]["returned"] == len(default["data"]["results"]) == 20
+    assert default["data"]["truncated"] is True
+    assert small["data"]["returned"] == 3
+    assert huge["data"]["returned"] == 50
+    assert bad["ok"] is False and bad["error"]["code"] == "invalid_request"
+
+
+def test_search_schemas_require_non_empty_query_and_bound_limit() -> None:
+    for name in ("story.search_world_info", "story.search_notes", "story.search_reference_notes"):
+        properties = TOOL_SCHEMAS[name]["parameters"]["properties"]
+        assert properties["query"]["minLength"] == 1
+        assert properties["limit"]["maximum"] == 50
+        assert "limit" not in TOOL_SCHEMAS[name]["parameters"]["required"]

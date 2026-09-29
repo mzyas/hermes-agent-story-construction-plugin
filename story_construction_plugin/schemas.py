@@ -6,7 +6,7 @@ from typing import Any
 
 
 def _parameters(
-    properties: dict[str, dict[str, str]], required: list[str]
+    properties: dict[str, dict[str, Any]], required: list[str]
 ) -> dict[str, Any]:
     return {
         "type": "object",
@@ -14,6 +14,16 @@ def _parameters(
         "required": required,
         "additionalProperties": False,
     }
+
+
+_LIMIT = {
+    "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 50,
+        "description": "Maximum number of matches to return (default 20, at most 50).",
+    }
+}
 
 
 _PROJECT_ID = {
@@ -54,8 +64,10 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                 **_PROJECT_ID,
                 "query": {
                     "type": "string",
-                    "description": "Text to match in world-information entry titles or content.",
+                    "minLength": 1,
+                    "description": "Non-empty text to match in world-information entry titles or content.",
                 },
+                **_LIMIT,
             },
             ["project_id", "query"],
         ),
@@ -89,7 +101,8 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "name": "story.list_chapters",
         "description": (
             "List a story project's chapters, optionally limited to one volume. "
-            "Use this to find chapter IDs and titles before retrieving chapter text."
+            "Returns metadata only (ID, title, volume, length), not chapter text; use "
+            "story.get_chapter to read one chapter."
         ),
         "parameters": _parameters(
             {
@@ -130,8 +143,10 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                 **_PROJECT_ID,
                 "query": {
                     "type": "string",
-                    "description": "Text to match in project note titles or content.",
+                    "minLength": 1,
+                    "description": "Non-empty text to match in project note titles or content.",
                 },
+                **_LIMIT,
             },
             ["project_id", "query"],
         ),
@@ -147,8 +162,10 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                 **_PROJECT_ID,
                 "query": {
                     "type": "string",
-                    "description": "Text to match in reference-note titles or content.",
+                    "minLength": 1,
+                    "description": "Non-empty text to match in reference-note titles or content.",
                 },
+                **_LIMIT,
             },
             ["project_id", "query"],
         ),

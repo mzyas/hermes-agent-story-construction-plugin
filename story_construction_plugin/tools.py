@@ -12,6 +12,10 @@ from .repository import NotFoundError, RepositoryError, StoryRepository
 from .session_store import SessionBindingStoreError
 
 
+DEFAULT_SEARCH_LIMIT = 20
+MAX_SEARCH_LIMIT = 50
+
+
 class StoryToolService:
     def __init__(
         self,
@@ -65,19 +69,24 @@ class StoryToolService:
             tree = self.repository.get_project(project_id)
             return {"world_info": tree.world_info, "entries": tree.world_info_entries}
         if name == "story.search_world_info":
-            return self.repository.search_world_info(project_id, str(payload.get("query") or ""))
+            return _bounded(
+                self.repository.search_world_info(project_id, _query(payload)), payload
+            )
         if name == "story.get_character":
             return self.repository.get_character(project_id, _required(payload, "character_id"))
         if name == "story.list_volumes":
             return self.repository.list_volumes(project_id)
         if name == "story.list_chapters":
-            return self.repository.list_chapters(project_id, payload.get("volume_id") or None)
+            chapters = self.repository.list_chapters(project_id, payload.get("volume_id") or None)
+            return [_chapter_summary(chapter) for chapter in chapters]
         if name == "story.get_chapter":
             return self.repository.get_chapter(project_id, _required(payload, "chapter_id"))
         if name == "story.search_notes":
-            return self.repository.search_notes(project_id, str(payload.get("query") or ""))
+            return _bounded(self.repository.search_notes(project_id, _query(payload)), payload)
         if name == "story.search_reference_notes":
-            return self.repository.search_reference_notes(project_id, str(payload.get("query") or ""))
+            return _bounded(
+                self.repository.search_reference_notes(project_id, _query(payload)), payload
+            )
         raise ValueError(f"unknown story tool: {name}")
 
 
@@ -95,6 +104,41 @@ def _required(payload: Mapping[str, Any], key: str) -> str:
     if not value:
         raise ValueError(f"{key} is required")
     return value
+
+
+def _query(payload: Mapping[str, Any]) -> str:
+    return _required(payload, "query")
+
+
+def _bounded(rows: Any, payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Cap a search result set so one call cannot return every record."""
+    raw = payload.get("limit")
+    try:
+        limit = int(raw) if raw is not None else DEFAULT_SEARCH_LIMIT
+    except (TypeError, ValueError):
+        raise ValueError("limit must be an integer") from None
+    if limit < 1:
+        raise ValueError("limit must be at least 1")
+    limit = min(limit, MAX_SEARCH_LIMIT)
+    rows = tuple(rows)
+    return {
+        "total": len(rows),
+        "returned": min(len(rows), limit),
+        "truncated": len(rows) > limit,
+        "results": rows[:limit],
+    }
+
+
+def _chapter_summary(chapter: Any) -> dict[str, Any]:
+    """Chapter metadata only; chapter text is read through story.get_chapter."""
+    return {
+        "id": chapter.id,
+        "project_id": chapter.project_id,
+        "volume_id": chapter.volume_id,
+        "title": chapter.title,
+        "version": chapter.version,
+        "content_length": len(chapter.content),
+    }
 
 
 def _success(project_id: str, data: Any) -> str:
