@@ -20,13 +20,37 @@ hermes -p default plugins install <owner>/hermes-agent-story-construction-plugin
 hermes -p writer plugins install <owner>/hermes-agent-story-construction-plugin/story-construction-plugin --enable
 ```
 
-The shared Vault path must be a WSL-accessible server path that both halves can
-read and write. It can be changed later by submitting a new `vault_root` to
+The shared Vault path must be a path that the backend process can read and
+write, for the operating system that backend runs on. It can be changed later by submitting a new `vault_root` to
 `PUT /settings` (Desktop: "Change Vault path" in the project library); the new
 path replaces the old one and existing session-to-project bindings are cleared,
 because they refer to projects of the previous Vault. The first Dashboard API mount and the first Agent tool
 registration may need the normal dashboard reload or a new chat session to pick
 up the plugin; switching between already prepared Profiles does not.
+
+#### Windows and WSL Vault paths
+
+Windows and WSL each have their own Hermes home and `config.yaml`, so a backend
+stores the Vault path in its own native spelling. A drive path written by the
+other side is translated when it is read: on Windows `/mnt/e/Vault` is opened as
+`E:/Vault`, and in WSL `E:/Vault` or `E:\Vault` is opened as `/mnt/e/Vault`. This
+covers drive-letter paths only; UNC paths such as `\\wsl.localhost\...` are not
+translated. `locked_hermes_home` is deliberately not translated, so a home
+written by the other side is still rejected with `hermes_home_mismatch`.
+
+Locks: `sessions.json` keeps its file lock because the Dashboard API and the
+Gateway are separate processes on one home. The Vault has no file lock. A lock
+taken on Windows and one taken in WSL do not see each other on a shared drive,
+so the Vault relies on atomic `os.replace` writes and version-checked saves
+(`SaveConflict`).
+
+Verification status:
+
+- Verified: the `/mnt/e/...` to `E:/...` and native-path cases in `tests/test_paths.py`,
+  and the full suite (183 passed) on Windows.
+- Not yet verified: the Windows-to-WSL translation test is skipped on Windows and
+  has not run in WSL; the two backends writing one Vault at the same time; a
+  Vault reached through `\\wsl.localhost\...`.
 
 ### Story setup and status API
 

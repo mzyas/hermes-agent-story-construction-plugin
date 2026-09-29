@@ -8,6 +8,7 @@ from pathlib import Path
 from threading import RLock
 from typing import Any
 
+from .paths import native_vault_path
 from .permissions import SessionScope, StoryPermissionGate
 from .session_store import (
     SessionBindingStoreError,
@@ -127,7 +128,7 @@ def prepare_story_runtime(
     vault_is_directory = False
     if vault_text:
         try:
-            vault_path = canonical_path(vault_text)
+            vault_path = native_vault_path(vault_text)
             vault_is_directory = vault_path.is_dir()
         except (OSError, TypeError, ValueError):
             vault_path = None

@@ -14,6 +14,8 @@ from secrets import token_hex
 
 import yaml
 
+from .paths import native_vault_path
+
 PLUGIN_ID = "story-construction"
 
 
@@ -287,7 +289,7 @@ def _home_path(value: str) -> Path:
 
 
 def _vault_path(value: str) -> Path:
-    return Path(value).expanduser().resolve()
+    return native_vault_path(value)
 
 
 def _canonical_vault(value: str) -> Path:
