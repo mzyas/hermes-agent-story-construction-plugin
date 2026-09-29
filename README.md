@@ -21,7 +21,10 @@ hermes -p writer plugins install <owner>/hermes-agent-story-construction-plugin/
 ```
 
 The shared Vault path must be a WSL-accessible server path that both halves can
-read and write. The first Dashboard API mount and the first Agent tool
+read and write. It can be changed later by submitting a new `vault_root` to
+`PUT /settings` (Desktop: "Change Vault path" in the project library); the new
+path replaces the old one and existing session-to-project bindings are cleared,
+because they refer to projects of the previous Vault. The first Dashboard API mount and the first Agent tool
 registration may need the normal dashboard reload or a new chat session to pick
 up the plugin; switching between already prepared Profiles does not.
 
@@ -57,7 +60,7 @@ Actionable codes from setup and status:
 | `config_invalid` / `config_write_failed` | The target `config.yaml` cannot be read or written. |
 | `agent_not_installed` / `agent_name_mismatch` / `version_mismatch` | The target plugin copy is missing, misnamed, or its `plugin.yaml` version differs from the default copy. |
 | `agent_not_enabled` | The target Profile does not have `story-construction` enabled. |
-| `vault_not_directory` / `vault_unwritable` / `vault_mismatch` | The shared Vault path is not a directory, is read-only, or differs from an existing selection. |
+| `vault_not_directory` / `vault_unwritable` / `vault_mismatch` | The shared Vault path is not a directory, is read-only, or the stored target and shared Vault settings disagree and no new `vault_root` was submitted. |
 | `vault_unavailable` | The Vault could not be opened as a Story repository. |
 | `hermes_home_mismatch` / `runtime_home_unavailable` | The process home does not match `locked_hermes_home`. |
 | `profile_switched` | The selection changed during a write; retry the request. |

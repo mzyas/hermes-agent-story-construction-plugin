@@ -17,6 +17,7 @@ const en = {
     createProject: 'Create project',
     creatingProject: 'Creating project…',
     backToLibrary: 'Back to library',
+    changeVaultPath: 'Change Vault path',
     projectTree: 'Project tree',
     loadingProject: 'Loading project…',
     projectUnavailable: error => `Project unavailable: ${error}`
@@ -100,6 +101,8 @@ const en = {
     vaultRootHelp: 'Enter a path that the WSL backend can access. It will be shared with the selected Profile.',
     saveVault: 'Save Vault path',
     savingVault: 'Saving Vault path…',
+    changeVault: 'Enter a new Vault path. Saving it replaces the current Vault and clears existing session-to-project bindings.',
+    cancelChangeVault: 'Cancel',
     profile_mismatch: 'The active Profile does not match the Story-locked Profile.',
     httpStatus: value => `HTTP ${value}`,
     code: value => `code ${value}`
@@ -129,6 +132,7 @@ const zh = {
     createProject: '创建项目',
     creatingProject: '正在创建项目…',
     backToLibrary: '返回项目库',
+    changeVaultPath: '更换资料库路径',
     projectTree: '项目树',
     loadingProject: '正在加载项目…',
     projectUnavailable: error => `项目不可用：${error}`
@@ -212,6 +216,8 @@ const zh = {
     vaultRootHelp: '请输入 WSL 后端可访问的路径。此路径将与所选 Profile 共享。',
     saveVault: '保存资料库路径',
     savingVault: '正在保存资料库路径…',
+    changeVault: '请输入新的资料库路径。保存后将替换当前资料库,并清除已有的会话与项目绑定。',
+    cancelChangeVault: '取消',
     profile_mismatch: '当前 Profile 与故事后端锁定的 Profile 不一致。',
     httpStatus: value => `HTTP ${value}`,
     code: value => `代码 ${value}`
@@ -1863,9 +1869,12 @@ function StoryStatusCard({
   savingVaultRoot = false,
   onVaultRootChange,
   onSubmitVaultRoot,
+  onCancelVaultChange,
   t
 }) {
-  const messageKey = mode === 'checking'
+  const messageKey = mode === 'changeVault'
+    ? 'status.changeVault'
+    : mode === 'checking'
     ? 'status.checking'
     : mode === 'activating'
       ? 'profile.activating'
@@ -1925,7 +1934,16 @@ function StoryStatusCard({
                 disabled: savingVaultRoot || !String(vaultRoot).trim(),
                 type: 'submit',
                 children: savingVaultRoot ? t('status.savingVault') : t('status.saveVault')
-              })
+              }),
+              typeof onCancelVaultChange === 'function'
+                ? jsx('button', {
+                    className: 'self-start rounded border border-(--ui-stroke-secondary) px-3 py-1 text-xs hover:bg-(--chrome-action-hover)',
+                    disabled: savingVaultRoot,
+                    onClick: onCancelVaultChange,
+                    type: 'button',
+                    children: t('status.cancelChangeVault')
+                  })
+                : null
             ]
           })
         : null
@@ -2191,7 +2209,8 @@ function ProjectWorkspace() {
   const writePending = storySettingsWritePendingForScope(settingsWritePending, currentWriteScope) ||
     storySettingsWritePendingForScope(settingsWritePendingRef.current, currentWriteScope)
   const statusError = Boolean(statusFailure || settingsFailure)
-  const gateOpen = storyWorkspaceGate({
+  const changingVault = vaultCorrectionActive && readiness.ready && !writePending
+  const gateOpen = !changingVault && storyWorkspaceGate({
     selectionBlocked,
     verifiedCurrent,
     statusFailure: Boolean(statusFailure),
@@ -2261,6 +2280,9 @@ function ProjectWorkspace() {
         settingsSyncAttemptRef.current = storyScopesWithEntry(settingsSyncAttemptRef.current, writeScope, false)
         setVaultCorrectionActive(false)
         setVaultRootInput('')
+        // The previous Vault's projects and bindings no longer apply.
+        setProjectSelection({ profile, connectionId, projectId: null })
+        void projectsQuery.refetch()
       }
       setVerifyState(previous => previous.owner === startedOwner && previous.generation === startedGeneration
         ? { ...previous, verifiedGeneration: startedGeneration, status: nextStatus }
@@ -2401,7 +2423,9 @@ function ProjectWorkspace() {
     // no target /status or /projects request.
     const diagnostic = settingsFailure || statusFailure || storyDiagnostic(null, status)
     const statusCode = diagnostic.code || readiness.code
-    const mode = activationState === 'pending'
+    const mode = changingVault
+      ? 'changeVault'
+      : activationState === 'pending'
       ? 'activating'
       : selectionBlocked
         ? 'activationFailed'
@@ -2410,7 +2434,9 @@ function ProjectWorkspace() {
           : verifiedCurrent
             ? 'notReady'
             : 'checking'
-    const onRetry = activationState === 'failed' && selection
+    const onRetry = changingVault
+      ? null
+      : activationState === 'failed' && selection
       ? () => activateRoute(selection.route)
       : selectionBlocked
         ? null
@@ -2447,6 +2473,12 @@ function ProjectWorkspace() {
             savingVaultRoot: writePending,
             onVaultRootChange: setVaultRootInput,
             onSubmitVaultRoot: submitVaultRoot,
+            onCancelVaultChange: changingVault
+              ? () => {
+                  setVaultCorrectionActive(false)
+                  setVaultRootInput('')
+                }
+              : null,
             t
           })
         })
@@ -2550,6 +2582,14 @@ function ProjectWorkspace() {
                 className: 'min-w-0 flex-1 truncate text-sm font-medium',
                 title: project?.name || selectedProjectId || '',
                 children: project?.name || selectedProjectId
+              })
+            : null,
+          surface !== 'workspace'
+            ? jsx('button', {
+                className: 'ml-auto shrink-0 rounded border border-(--ui-stroke-secondary) px-2 py-1 text-xs hover:bg-(--chrome-action-hover)',
+                onClick: () => setVaultCorrectionActive(true),
+                type: 'button',
+                children: t('workspace.changeVaultPath')
               })
             : null,
           surface === 'workspace'
