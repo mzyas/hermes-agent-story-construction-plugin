@@ -12,6 +12,7 @@ from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 from secrets import token_hex
+from threading import Lock
 
 import yaml
 
@@ -259,24 +260,74 @@ def _validate_package(api_root: Path, home: Path, canon: str) -> None:
         raise StorySetupError("agent_name_mismatch")
     if str(api_manifest.get("version") or "") != str(target_manifest.get("version") or ""):
         raise StorySetupError("version_mismatch")
-    if canon != "default" and _package_digest(api_root) != _package_digest(target_manifest_path.parent):
-        # Same version label, different code: the API and the Agent would silently diverge.
+    if canon == "default":
+        return
+    # Both copies must be present and readable before their contents are compared:
+    # a missing or unreadable package is an install problem, not a version drift.
+    target_digest = _package_digest(target_manifest_path.parent)
+    if _package_digest(api_root) != target_digest:
+        # Same version label, different code: the API and the Agent would diverge.
         raise StorySetupError("version_mismatch")
 
 
+# package dir -> (file signature, digest). The signature is cheap (stat only), so
+# per-request validation re-reads file contents only after a copy has changed.
+_DIGEST_CACHE: dict[str, tuple[tuple[tuple[str, int, int], ...], str]] = {}
+_DIGEST_LOCK = Lock()
+
+
+def _package_files(package: Path) -> list[tuple[str, Path]]:
+    """The hashed sources: ``*.py`` (no bytecode dirs) and ``skills/**/SKILL.md``."""
+
+    files: dict[str, Path] = {}
+    for path in package.rglob("*.py"):
+        relative = path.relative_to(package)
+        if "__pycache__" not in relative.parts:
+            files[relative.as_posix()] = path
+    skills = package / "skills"
+    if skills.is_dir():
+        for path in skills.rglob("SKILL.md"):
+            files[path.relative_to(package).as_posix()] = path
+    return sorted(files.items())
+
+
 def _package_digest(plugin_root: Path) -> str:
-    """Hash the backend package sources, ignoring bytecode and line-ending style."""
+    """Hash one copy's backend package, ignoring bytecode and line-ending style.
+
+    Raises ``agent_not_installed`` when the package is missing, empty, or
+    unreadable, so an absent copy never compares equal to another absent copy.
+    """
 
     package = Path(plugin_root) / "story_construction_plugin"
-    digest = hashlib.sha256()
-    for path in sorted(package.rglob("*.py")) if package.is_dir() else ():
-        if "__pycache__" in path.parts:
-            continue
-        digest.update(path.relative_to(package).as_posix().encode("utf-8"))
-        digest.update(b"\0")
-        digest.update(path.read_bytes().replace(b"\r\n", b"\n"))
-        digest.update(b"\0")
-    return digest.hexdigest()
+    try:
+        if not package.is_dir():
+            raise StorySetupError("agent_not_installed")
+        files = _package_files(package)
+        if not files:
+            raise StorySetupError("agent_not_installed")
+        signature = tuple(
+            (relative, stat.st_mtime_ns, stat.st_size)
+            for relative, stat in ((relative, path.stat()) for relative, path in files)
+        )
+        key = str(package.resolve())
+        with _DIGEST_LOCK:
+            cached = _DIGEST_CACHE.get(key)
+        if cached is not None and cached[0] == signature:
+            return cached[1]
+        digest = hashlib.sha256()
+        for relative, path in files:
+            digest.update(relative.encode("utf-8"))
+            digest.update(b"\0")
+            digest.update(path.read_bytes().replace(b"\r\n", b"\n"))
+            digest.update(b"\0")
+    except OSError as exc:
+        raise StorySetupError("agent_not_installed") from exc
+    value = digest.hexdigest()
+    with _DIGEST_LOCK:
+        # A file rewritten between stat and read is caught on the next call: its
+        # new signature no longer matches the one stored here.
+        _DIGEST_CACHE[key] = (signature, value)
+    return value
 
 
 def _validate_enabled(raw: Mapping[str, object]) -> None:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 from pathlib import Path
 
@@ -60,6 +61,10 @@ def homes(tmp_path: Path, monkeypatch):
     for folder in (plugin_root, target_plugin_root):
         folder.mkdir(parents=True)
         shutil.copy(REAL_PLUGIN_YAML, folder / "plugin.yaml")
+        # Both installed copies carry the same backend package.
+        package = folder / "story_construction_plugin"
+        package.mkdir()
+        (package / "tools.py").write_bytes(b"VALUE = 1\n")
 
     # The named Profile's config.yaml doubles as its Hermes identity marker.
     (target_home / "config.yaml").write_text(
@@ -175,6 +180,32 @@ def _arrange_code_drift(homes, monkeypatch):
     _install_package_sources(homes, "VALUE = 1\n", "VALUE = 2\n")
 
 
+def _arrange_skill_drift(homes, monkeypatch):
+    _, target_home, _, plugin_root = homes
+    for root, text in ((plugin_root, "Draft.\n"), (target_home / "plugins" / PLUGIN_ID, "Draft!\n")):
+        skill = root / "story_construction_plugin" / "skills" / "chapter-drafting" / "SKILL.md"
+        skill.parent.mkdir(parents=True)
+        skill.write_text(text, encoding="utf-8")
+
+
+def _arrange_missing_package_sources(homes, monkeypatch):
+    _, target_home, _, _ = homes
+    shutil.rmtree(target_home / "plugins" / PLUGIN_ID / "story_construction_plugin")
+
+
+def _arrange_unreadable_package_sources(homes, monkeypatch):
+    _, target_home, _, _ = homes
+    target_package = target_home / "plugins" / PLUGIN_ID / "story_construction_plugin"
+    real_read_bytes = Path.read_bytes
+
+    def deny(self):
+        if target_package in self.parents:
+            raise PermissionError(f"unreadable: {self}")
+        return real_read_bytes(self)
+
+    monkeypatch.setattr(Path, "read_bytes", deny)
+
+
 def test_select_ignores_line_endings_and_bytecode(homes):
     default_home, target_home, vault, plugin_root = homes
     _install_package_sources(homes, "VALUE = 1\n", "VALUE = 1\r\n")
@@ -183,6 +214,78 @@ def test_select_ignores_line_endings_and_bytecode(homes):
     (cache / "tools.cpython-312.py").write_text("stale = True\n", encoding="utf-8")
     result = select_story_target(plugin_root, default_home, "writer", str(vault))
     assert result.profile == "writer"
+
+
+def test_resolve_rejects_code_drift_after_selection(homes):
+    """The per-request path sees drift introduced after a clean selection."""
+    default_home, target_home, vault, plugin_root = homes
+    select_story_target(plugin_root, default_home, "writer", str(vault))
+    assert resolve_story_target(plugin_root, default_home).profile == "writer"
+
+    tools = target_home / "plugins" / PLUGIN_ID / "story_construction_plugin" / "tools.py"
+    tools.write_bytes(b"VALUE = 22\n")
+    with pytest.raises(StorySetupError) as exc:
+        resolve_story_target(plugin_root, default_home)
+    assert exc.value.code == "version_mismatch"
+
+
+def test_missing_package_on_both_copies_is_not_a_match(homes):
+    default_home, target_home, vault, plugin_root = homes
+    for root in (plugin_root, target_home / "plugins" / PLUGIN_ID):
+        shutil.rmtree(root / "story_construction_plugin")
+    with pytest.raises(StorySetupError) as exc:
+        select_story_target(plugin_root, default_home, "writer", str(vault))
+    assert exc.value.code == "agent_not_installed"
+
+
+def test_package_digest_is_cached_until_a_file_changes(homes, monkeypatch):
+    from story_construction_plugin import profile_config
+
+    _, _, _, plugin_root = homes
+    tools = plugin_root / "story_construction_plugin" / "tools.py"
+    reads: list[Path] = []
+    real_read_bytes = Path.read_bytes
+
+    def counting(self):
+        reads.append(self)
+        return real_read_bytes(self)
+
+    monkeypatch.setattr(Path, "read_bytes", counting)
+    first = profile_config._package_digest(plugin_root)
+    assert reads == [tools]
+    assert profile_config._package_digest(plugin_root) == first
+    assert reads == [tools]  # unchanged signature: contents are not re-read
+
+    tools.write_bytes(b"VALUE = 100\n")
+    changed = profile_config._package_digest(plugin_root)
+    assert changed != first
+    assert reads == [tools, tools]
+
+
+@pytest.mark.skipif(os.name != "nt", reason="needs a real drive path spelled as /mnt/<drive>")
+def test_resolve_accepts_vault_stored_in_wsl_spelling(homes):
+    default_home, target_home, vault, plugin_root = homes
+    select_story_target(plugin_root, default_home, "writer", str(vault))
+    resolved = vault.resolve()
+    wsl_spelling = f"/mnt/{resolved.drive[0].lower()}/{resolved.relative_to(resolved.anchor).as_posix()}"
+    for home in (default_home, target_home):
+        raw = yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8"))
+        raw["plugins"]["entries"][PLUGIN_ID]["settings"]["vault_root"] = wsl_spelling
+        _write_yaml(home / "config.yaml", raw)
+
+    target = resolve_story_target(plugin_root, default_home)
+    assert target.vault_root == resolved
+
+    from story_construction_plugin.runtime import prepare_story_runtime
+
+    state = prepare_story_runtime(
+        plugin_root,
+        target.settings,
+        current_home=target.home,
+        repository_factory=lambda path: path,
+    )
+    assert state.status.vault_is_directory is True
+    assert state.status.home_matches is True
 
 
 def _arrange_malformed_target_yaml(homes, monkeypatch):
@@ -239,6 +342,9 @@ BROKEN_CASES = [
     ("missing_package", _arrange_missing_package, "agent_not_installed"),
     ("version_mismatch", _arrange_version_mismatch, "version_mismatch"),
     ("code_drift", _arrange_code_drift, "version_mismatch"),
+    ("skill_drift", _arrange_skill_drift, "version_mismatch"),
+    ("missing_package_sources", _arrange_missing_package_sources, "agent_not_installed"),
+    ("unreadable_package_sources", _arrange_unreadable_package_sources, "agent_not_installed"),
     ("malformed_target_yaml", _arrange_malformed_target_yaml, "config_invalid"),
     ("malformed_default_yaml", _arrange_malformed_default_yaml, "config_invalid"),
     ("managed_keys", _arrange_managed_keys, "managed_config"),

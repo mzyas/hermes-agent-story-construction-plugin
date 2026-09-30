@@ -25,9 +25,18 @@ hermes -p writer plugins install <owner>/hermes-agent-story-construction-plugin/
 
 The two copies must be identical. Selecting or resolving a writing Profile is
 rejected with `version_mismatch` when the two `plugin.yaml` versions differ, or
-when the `story_construction_plugin/*.py` sources differ (a SHA-256 over file
-paths and contents; `__pycache__` and CRLF versus LF line endings are ignored).
-`dashboard/` and `desktop/` are not part of that comparison.
+when the package sources differ: a SHA-256 over the paths and contents of
+`story_construction_plugin/**/*.py` and `story_construction_plugin/skills/**/SKILL.md`
+(`__pycache__` and CRLF versus LF line endings are ignored). Other files, such
+as `dashboard/` and `desktop/`, are not part of that comparison. A copy whose
+`story_construction_plugin/` folder is missing, empty, or unreadable is rejected
+with `agent_not_installed`; two missing copies never count as identical. The
+digest is cached per copy and recomputed only when a file's size or
+modification time changes.
+
+This check compares the copies **on disk**. It does not prove that the running
+Dashboard or Gateway executes that code: both load the package once, so after
+an update they keep running the old code until they are restarted (see below).
 
 #### Updating the plugin
 
@@ -46,7 +55,9 @@ a subdirectory install of this plugin; if it fails or reports nothing to update,
 reinstall with the install command instead.
 
 Updating only one copy makes the next status call return `version_mismatch`
-until the other one is brought up to the same code. Check the installed version
+until the other one is brought up to the same code. The reverse is not true: a
+passing check after updating both copies does not mean the running Dashboard
+already uses the new code, so the restart in step 3 is still required. Check the installed version
 in `plugin.yaml` if you are unsure which copy is behind.
 
 The shared Vault path must be a path that the backend process can read and
@@ -67,6 +78,20 @@ covers drive-letter paths only; UNC paths such as `\\wsl.localhost\...` are not
 translated. `locked_hermes_home` is deliberately not translated, so a home
 written by the other side is still rejected with `hermes_home_mismatch`.
 
+Limits of the translation:
+
+- Only absolute drive paths (`E:`, `E:/...`, `E:\...`) are translated. A
+  drive-relative path such as `E:Vault` is left unchanged and is not a usable
+  Vault path in WSL; always write the Vault path with a slash after the colon.
+- WSL drives are assumed to be mounted under `/mnt/<letter>`. A custom
+  `automount.root` in `/etc/wsl.conf` (for example drives under `/`) is not
+  recognised.
+- The saved path is the resolved path. On Windows, resolving a mapped network
+  drive yields its UNC form (`\\server\share\...`) and a `subst` drive yields
+  its target drive, so the stored value may not be a drive-letter path that
+  the other side can translate. Re-enter the Vault path with `PUT /settings`
+  after moving sides in that case.
+
 Locks: `sessions.json` keeps its file lock because the Dashboard API and the
 Gateway are separate processes on one home. The Vault has no file lock. A lock
 taken on Windows and one taken in WSL do not see each other on a shared drive,
@@ -84,8 +109,10 @@ other spelling, not to support two backends at once.
 Verification status:
 
 - Verified: the `/mnt/e/...` to `E:/...` and native-path cases in `tests/test_paths.py`,
-  and the full suite (185 passed, 1 skipped) on Windows, including the code-drift
-  check between the two installed copies.
+  and the full suite (197 passed, 1 skipped) on Windows, including the code-drift
+  check between the two installed copies (setup and per-request paths, missing
+  and unreadable packages, digest caching) and a `/mnt/<drive>/...` Vault path
+  stored in config being accepted by `resolve_story_target` and the runtime.
 - Not yet verified: the Windows-to-WSL translation test is skipped on Windows and
   has not run in WSL; a Vault reached through `\\wsl.localhost\...`. Two backends
   writing one Vault is prohibited, so it is not a case to verify.
@@ -120,7 +147,7 @@ Actionable codes from setup and status:
 | `configuration_incomplete` | A partial selection; provide the missing settings field. |
 | `managed_config` | Hermes manages this config; Story will not write it. |
 | `config_invalid` / `config_write_failed` | The target `config.yaml` cannot be read or written. |
-| `agent_not_installed` / `agent_name_mismatch` / `version_mismatch` | The target plugin copy is missing, misnamed, or its `plugin.yaml` version or `story_construction_plugin/` sources differ from the default copy. |
+| `agent_not_installed` / `agent_name_mismatch` / `version_mismatch` | A plugin copy (or its `story_construction_plugin/` package) is missing or unreadable, misnamed, or its `plugin.yaml` version or package sources differ from the default copy. |
 | `agent_not_enabled` | The target Profile does not have `story-construction` enabled. |
 | `vault_not_directory` / `vault_unwritable` / `vault_mismatch` | The shared Vault path is not a directory, is read-only, or the stored target and shared Vault settings disagree and no new `vault_root` was submitted. |
 | `vault_unavailable` | The Vault could not be opened as a Story repository. |

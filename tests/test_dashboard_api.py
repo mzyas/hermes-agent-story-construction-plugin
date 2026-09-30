@@ -837,6 +837,30 @@ def _arrange_version_mismatch(homes, monkeypatch):
     _write_yaml(manifest_path, data)
 
 
+def _arrange_code_drift(homes, monkeypatch):
+    """Same plugin.yaml version, but the Profile copy's sources were edited."""
+    tools = homes.target_plugin_root / "story_construction_plugin" / "tools.py"
+    tools.write_bytes(tools.read_bytes() + b"\n# drift\n")
+
+
+def _arrange_missing_package_sources(homes, monkeypatch):
+    shutil.rmtree(homes.target_plugin_root / "story_construction_plugin")
+
+
+def _arrange_unreadable_package_sources(homes, monkeypatch):
+    target_package = homes.target_plugin_root / "story_construction_plugin"
+    # Edit the copy so no cached digest can answer without reading it again.
+    _arrange_code_drift(homes, monkeypatch)
+    real_read_bytes = Path.read_bytes
+
+    def deny(self):
+        if target_package in self.parents:
+            raise PermissionError(f"unreadable: {self}")
+        return real_read_bytes(self)
+
+    monkeypatch.setattr(Path, "read_bytes", deny)
+
+
 def _arrange_missing_settings(homes, monkeypatch):
     (homes.target_home / "config.yaml").write_text(
         "plugins:\n  enabled:\n" f"    - {PLUGIN_ID}\n", encoding="utf-8"
@@ -872,6 +896,8 @@ def _arrange_missing_shared_vault(homes, monkeypatch):
 SETUP_CASES = [
     ("not_enabled", _arrange_not_enabled, "agent_not_enabled"),
     ("version_mismatch", _arrange_version_mismatch, "version_mismatch"),
+    ("code_drift", _arrange_code_drift, "version_mismatch"),
+    ("missing_package_sources", _arrange_missing_package_sources, "agent_not_installed"),
     ("missing_settings", _arrange_missing_settings, "configuration_incomplete"),
     ("missing_shared_vault", _arrange_missing_shared_vault, "configuration_incomplete"),
     ("vault_mismatch", _arrange_vault_mismatch, "vault_mismatch"),
@@ -940,6 +966,15 @@ SETTINGS_ERROR_CASES = [
      lambda homes, tmp_path: {"profile": "writer"}),
     ("installed_versions_conflict", 409, "version_mismatch",
      lambda homes, monkeypatch, tmp_path: _arrange_version_mismatch(homes, monkeypatch),
+     lambda homes, tmp_path: {"profile": "writer", "vault_root": str(homes.vault)}),
+    ("installed_code_conflict", 409, "version_mismatch",
+     lambda homes, monkeypatch, tmp_path: _arrange_code_drift(homes, monkeypatch),
+     lambda homes, tmp_path: {"profile": "writer", "vault_root": str(homes.vault)}),
+    ("package_sources_missing", 503, "agent_not_installed",
+     lambda homes, monkeypatch, tmp_path: _arrange_missing_package_sources(homes, monkeypatch),
+     lambda homes, tmp_path: {"profile": "writer", "vault_root": str(homes.vault)}),
+    ("package_sources_unreadable", 503, "agent_not_installed",
+     lambda homes, monkeypatch, tmp_path: _arrange_unreadable_package_sources(homes, monkeypatch),
      lambda homes, tmp_path: {"profile": "writer", "vault_root": str(homes.vault)}),
     ("managed_config_conflict", 409, "managed_config",
      lambda homes, monkeypatch, tmp_path: _arrange_managed_system(homes, monkeypatch),
