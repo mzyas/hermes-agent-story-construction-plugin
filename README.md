@@ -11,14 +11,43 @@ writes the Vault.
 
 The plugin installs as a Git repository subdirectory into two places: the
 default home hosts the Dashboard API half, and each writing Profile hosts its
-Agent half. The Git installer must support subdirectory installs, and the two
-installed `plugin.yaml` versions must match exactly (a mismatch is rejected
-with `version_mismatch`).
+Agent half. Both installs are full copies of the same subdirectory, because each
+half needs the `story_construction_plugin/` package: the Dashboard API loads it
+from the default home as its backend library, and the Gateway loads it from the
+Profile to register the Story tools. If the writing Profile is `default`, one
+install serves both halves. The Git installer must support subdirectory
+installs.
 
 ```text
 hermes -p default plugins install <owner>/hermes-agent-story-construction-plugin/story-construction-plugin --enable
 hermes -p writer plugins install <owner>/hermes-agent-story-construction-plugin/story-construction-plugin --enable
 ```
+
+The two copies must be identical. Selecting or resolving a writing Profile is
+rejected with `version_mismatch` when the two `plugin.yaml` versions differ, or
+when the `story_construction_plugin/*.py` sources differ (a SHA-256 over file
+paths and contents; `__pycache__` and CRLF versus LF line endings are ignored).
+`dashboard/` and `desktop/` are not part of that comparison.
+
+#### Updating the plugin
+
+Update both copies every time, then restart the Dashboard:
+
+1. Update the default home copy: `hermes -p default plugins update story-construction`
+   (or reinstall it with the command above).
+2. Update each writing Profile copy the same way, with `-p <profile>`.
+3. Restart the Dashboard. Hermes mounts the Dashboard API only at startup, so a
+   running Dashboard keeps serving the old code and a frontend retry cannot pick
+   up the new one.
+4. Start a new chat session so the Agent registers the updated tools.
+
+`hermes plugins update` exists in the Hermes CLI, but it has not been run against
+a subdirectory install of this plugin; if it fails or reports nothing to update,
+reinstall with the install command instead.
+
+Updating only one copy makes the next status call return `version_mismatch`
+until the other one is brought up to the same code. Check the installed version
+in `plugin.yaml` if you are unsure which copy is behind.
 
 The shared Vault path must be a path that the backend process can read and
 write, for the operating system that backend runs on. It can be changed later by submitting a new `vault_root` to
@@ -55,7 +84,8 @@ other spelling, not to support two backends at once.
 Verification status:
 
 - Verified: the `/mnt/e/...` to `E:/...` and native-path cases in `tests/test_paths.py`,
-  and the full suite (183 passed) on Windows.
+  and the full suite (185 passed, 1 skipped) on Windows, including the code-drift
+  check between the two installed copies.
 - Not yet verified: the Windows-to-WSL translation test is skipped on Windows and
   has not run in WSL; a Vault reached through `\\wsl.localhost\...`. Two backends
   writing one Vault is prohibited, so it is not a case to verify.
@@ -90,7 +120,7 @@ Actionable codes from setup and status:
 | `configuration_incomplete` | A partial selection; provide the missing settings field. |
 | `managed_config` | Hermes manages this config; Story will not write it. |
 | `config_invalid` / `config_write_failed` | The target `config.yaml` cannot be read or written. |
-| `agent_not_installed` / `agent_name_mismatch` / `version_mismatch` | The target plugin copy is missing, misnamed, or its `plugin.yaml` version differs from the default copy. |
+| `agent_not_installed` / `agent_name_mismatch` / `version_mismatch` | The target plugin copy is missing, misnamed, or its `plugin.yaml` version or `story_construction_plugin/` sources differ from the default copy. |
 | `agent_not_enabled` | The target Profile does not have `story-construction` enabled. |
 | `vault_not_directory` / `vault_unwritable` / `vault_mismatch` | The shared Vault path is not a directory, is read-only, or the stored target and shared Vault settings disagree and no new `vault_root` was submitted. |
 | `vault_unavailable` | The Vault could not be opened as a Story repository. |

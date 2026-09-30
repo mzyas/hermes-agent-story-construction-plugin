@@ -101,6 +101,12 @@ def _build_profile_lab(monkeypatch, tmp_path: Path, api_package_root: Path):
     for folder in (target_plugin_root, other_plugin_root):
         folder.mkdir(parents=True)
         shutil.copy(REAL_PLUGIN_YAML, folder / "plugin.yaml")
+        # Installed Profile copies carry the same backend package as the API copy.
+        shutil.copytree(
+            api_package_root / "story_construction_plugin",
+            folder / "story_construction_plugin",
+            ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+        )
     for profile_home in (target_home, other_home):
         # The named Profile's config.yaml doubles as its Hermes identity marker.
         (profile_home / "config.yaml").write_text(

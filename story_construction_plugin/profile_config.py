@@ -6,6 +6,7 @@ Hermes installation fails at the call site, not at plugin import time.
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Mapping
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
@@ -258,6 +259,24 @@ def _validate_package(api_root: Path, home: Path, canon: str) -> None:
         raise StorySetupError("agent_name_mismatch")
     if str(api_manifest.get("version") or "") != str(target_manifest.get("version") or ""):
         raise StorySetupError("version_mismatch")
+    if canon != "default" and _package_digest(api_root) != _package_digest(target_manifest_path.parent):
+        # Same version label, different code: the API and the Agent would silently diverge.
+        raise StorySetupError("version_mismatch")
+
+
+def _package_digest(plugin_root: Path) -> str:
+    """Hash the backend package sources, ignoring bytecode and line-ending style."""
+
+    package = Path(plugin_root) / "story_construction_plugin"
+    digest = hashlib.sha256()
+    for path in sorted(package.rglob("*.py")) if package.is_dir() else ():
+        if "__pycache__" in path.parts:
+            continue
+        digest.update(path.relative_to(package).as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes().replace(b"\r\n", b"\n"))
+        digest.update(b"\0")
+    return digest.hexdigest()
 
 
 def _validate_enabled(raw: Mapping[str, object]) -> None:

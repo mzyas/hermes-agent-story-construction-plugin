@@ -160,6 +160,31 @@ def _arrange_version_mismatch(homes, monkeypatch):
     _write_yaml(manifest_path, data)
 
 
+def _install_package_sources(homes, api_source: str, target_source: str) -> None:
+    _, target_home, _, plugin_root = homes
+    for root, source in (
+        (plugin_root, api_source),
+        (target_home / "plugins" / PLUGIN_ID, target_source),
+    ):
+        package = root / "story_construction_plugin"
+        package.mkdir(exist_ok=True)
+        (package / "tools.py").write_bytes(source.encode("utf-8"))
+
+
+def _arrange_code_drift(homes, monkeypatch):
+    _install_package_sources(homes, "VALUE = 1\n", "VALUE = 2\n")
+
+
+def test_select_ignores_line_endings_and_bytecode(homes):
+    default_home, target_home, vault, plugin_root = homes
+    _install_package_sources(homes, "VALUE = 1\n", "VALUE = 1\r\n")
+    cache = target_home / "plugins" / PLUGIN_ID / "story_construction_plugin" / "__pycache__"
+    cache.mkdir()
+    (cache / "tools.cpython-312.py").write_text("stale = True\n", encoding="utf-8")
+    result = select_story_target(plugin_root, default_home, "writer", str(vault))
+    assert result.profile == "writer"
+
+
 def _arrange_malformed_target_yaml(homes, monkeypatch):
     _, target_home, _, _ = homes
     (target_home / "config.yaml").write_text("plugins: [unclosed\n", encoding="utf-8")
@@ -213,6 +238,7 @@ BROKEN_CASES = [
     ("disabled", _arrange_disabled, "agent_not_enabled"),
     ("missing_package", _arrange_missing_package, "agent_not_installed"),
     ("version_mismatch", _arrange_version_mismatch, "version_mismatch"),
+    ("code_drift", _arrange_code_drift, "version_mismatch"),
     ("malformed_target_yaml", _arrange_malformed_target_yaml, "config_invalid"),
     ("malformed_default_yaml", _arrange_malformed_default_yaml, "config_invalid"),
     ("managed_keys", _arrange_managed_keys, "managed_config"),
