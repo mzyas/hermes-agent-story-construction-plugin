@@ -48,7 +48,7 @@ Update both copies every time, then restart the Dashboard:
 3. Restart the Dashboard. Hermes mounts the Dashboard API only at startup, so a
    running Dashboard keeps serving the old code and a frontend retry cannot pick
    up the new one.
-4. Start a new chat session so the Agent registers the updated tools.
+4. Start a new chat session so it is built with the updated tools.
 
 `hermes plugins update` exists in the Hermes CLI, but it has not been run against
 a subdirectory install of this plugin; if it fails or reports nothing to update,
@@ -64,9 +64,16 @@ The shared Vault path must be a path that the backend process can read and
 write, for the operating system that backend runs on. It can be changed later by submitting a new `vault_root` to
 `PUT /settings` (Desktop: "Change Vault path" in the project library); the new
 path replaces the old one and existing session-to-project bindings are cleared,
-because they refer to projects of the previous Vault. The first Dashboard API mount and the first Agent tool
-registration may need the normal dashboard reload or a new chat session to pick
-up the plugin; switching between already prepared Profiles does not.
+because they refer to projects of the previous Vault. The first Dashboard API mount
+may need the normal dashboard reload to pick up the plugin; switching between
+already prepared Profiles does not.
+
+The Agent tools are always registered when the plugin loads, but each session
+decides whether it sees them when it builds its tool list. A selection saved
+after the plugin loaded therefore applies to sessions created afterwards; a
+session that was already open keeps the tools and prompt it started with, so
+start a new chat session. No restart is needed for a settings change. A restart
+is only needed after updating the plugin code, because the plugin loads once.
 
 #### Windows and WSL Vault paths
 
@@ -204,8 +211,10 @@ Profile's home — for example `profiles/writer/plugin-data/story-construction/s
 bind or unbind from the Dashboard API is effective for the very next Gateway
 tool call without re-registering anything, and deleting or corrupting the file
 denies the next call instead of falling back to stale state. Normal sessions do
-not receive Story tools when the runtime is incomplete, and every tool and save
-still requires the backend-authorized session-to-project binding.
+not receive Story tools when the runtime is incomplete: the tools stay registered
+but a readiness check hides them, and a call that still reaches a tool while the
+runtime is not ready returns a structured error. Every tool and save still
+requires the backend-authorized session-to-project binding.
 
 ### Writing Profile scope and Gateway deployment
 

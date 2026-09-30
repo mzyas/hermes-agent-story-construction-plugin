@@ -16,6 +16,7 @@ from story_construction_plugin.prompt_templates import (
     compose_story_system_prompt,
 )
 from story_construction_plugin.repository import RepositoryError
+from story_construction_plugin.schemas import TOOL_SCHEMAS
 from story_construction_plugin.save_service import SaveRequest, StorySaveService
 from story_construction_plugin.session_store import StorySessionRegistry
 from story_construction_plugin.tools import StoryToolService
@@ -44,7 +45,10 @@ class RegistrationContext:
 def test_normal_session_without_vault_does_not_receive_story_tools() -> None:
     context = RegistrationContext()
     register(context)
-    assert context.tools == []
+    assert len(context.tools) == len(TOOL_SCHEMAS)
+    assert not any(tool["check_fn"]() for tool in context.tools)
+    refused = json.loads(context.tools[0]["handler"]({"project_id": "p1"}))
+    assert refused["error"]["code"] == "configuration_incomplete"
     assert context.skills
     assert context.sections
 

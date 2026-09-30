@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import threading
 from pathlib import Path
 
@@ -44,6 +45,16 @@ def _settings(*, home: Path, vault: Path, profile: str = "writer") -> dict[str, 
     }
 
 
+def _assert_tools_hidden(context: RegistrationContext, code: str) -> None:
+    """Tools stay registered; the readiness check hides them and calls fail closed."""
+
+    assert context.tools
+    assert not any(tool["check_fn"]() for tool in context.tools)
+    refused = json.loads(context.tools[0]["handler"]({"project_id": "p1"}))
+    assert refused["ok"] is False
+    assert refused["error"]["code"] == code
+
+
 def test_register_rejects_incomplete_configuration(tmp_path: Path, monkeypatch) -> None:
     home = tmp_path / "home"
     vault = tmp_path / "vault"
@@ -53,7 +64,7 @@ def test_register_rejects_incomplete_configuration(tmp_path: Path, monkeypatch) 
 
     register(context)
 
-    assert context.tools == []
+    _assert_tools_hidden(context, "configuration_incomplete")
     state = runtime.runtime_state_for(Path(__file__).resolve().parents[1], home)
     assert state is not None
     assert state.status.code == "configuration_incomplete"
@@ -70,7 +81,7 @@ def test_register_rejects_non_directory_vault(tmp_path: Path, monkeypatch) -> No
 
     register(context)
 
-    assert context.tools == []
+    _assert_tools_hidden(context, "vault_not_directory")
     state = runtime.runtime_state_for(Path(__file__).resolve().parents[1], home)
     assert state is not None
     assert state.status.code == "vault_not_directory"
@@ -87,7 +98,7 @@ def test_register_rejects_home_mismatch(tmp_path: Path, monkeypatch) -> None:
 
     register(context)
 
-    assert context.tools == []
+    _assert_tools_hidden(context, "hermes_home_mismatch")
     state = runtime.runtime_state_for(Path(__file__).resolve().parents[1], current_home)
     assert state is not None
     assert state.status.code == "hermes_home_mismatch"
