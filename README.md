@@ -108,13 +108,17 @@ other spelling, not to support two backends at once.
 
 Verification status:
 
-- Verified: the `/mnt/e/...` to `E:/...` and native-path cases in `tests/test_paths.py`,
-  and the full suite (197 passed, 1 skipped) on Windows, including the code-drift
+- Verified: the string translation in both directions, run on every OS through
+  `translate_vault_text(value, os_name)` in `tests/test_paths.py` (drive letter
+  case, trailing slashes, `E:` alone, `/mnt/ee` and `/mnt/wsl` not read as
+  drives, spaces and non-ASCII, `E:foo`, backslashes in a POSIX path left alone),
+  and the full suite (226 passed, 1 skipped) on Windows, including the code-drift
   check between the two installed copies (setup and per-request paths, missing
   and unreadable packages, digest caching) and a `/mnt/<drive>/...` Vault path
   stored in config being accepted by `resolve_story_target` and the runtime.
-- Not yet verified: the Windows-to-WSL translation test is skipped on Windows and
-  has not run in WSL; a Vault reached through `\\wsl.localhost\...`. Two backends
+- Not yet verified: opening a translated path on a real WSL filesystem
+  (`native_vault_path` in WSL; its test is skipped on Windows and has not run in
+  WSL); a Vault reached through `\\wsl.localhost\...`. Two backends
   writing one Vault is prohibited, so it is not a case to verify.
 
 ### Story setup and status API
