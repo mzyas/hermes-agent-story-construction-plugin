@@ -8,6 +8,10 @@ dependencies = ["fastapi>=0.133.1,<0.135", "pyyaml>=6.0,<7"]
 [dependency-groups]
 test = ["pytest>=8.3,<10", "ruamel.yaml>=0.18.16,<1"]
 
+[tool.uv]
+# Release quarantine: skip versions published in the last 14 days.
+exclude-newer = "14 days"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]

@@ -264,6 +264,17 @@ $env:UV_CACHE_DIR = "..\\.uv-cache"
 node --test desktop/*.test.mjs
 ```
 
+To run the tests through uv, pass `--frozen` so uv uses `uv.lock` as written and
+does not re-resolve or rewrite it:
+
+```powershell
+uv run --frozen --with pytest --with ruamel.yaml pytest tests -q
+```
+
+`pyproject.toml` sets `[tool.uv] exclude-newer = "14 days"`, so dependency
+versions published in the last 14 days are not selected when the lock is
+regenerated with `uv lock`.
+
 The end-to-end test uses a temporary Vault and exercises the retrieval result,
 ToolMessage-shaped continuation, prompt placement, confirmed save, frontmatter
 preservation, and version update. The cross-process acceptance tests
