@@ -134,3 +134,36 @@ def test_concurrent_creates_get_distinct_ids_and_files(repository, tmp_path) -> 
     assert len(set(ids)) == 8
     assert len(list((tmp_path / "novel" / "chapters").glob("chapter-*.md"))) == 9
     assert len(repository.get_project("novel").chapters) == 9
+
+
+def test_trashing_a_project_moves_the_folder_and_hides_it(repository, tmp_path) -> None:
+    repository.create_project("Other", slug="other")
+
+    destination = repository.trash_project("novel")
+
+    assert destination.parent == tmp_path / ".story-trash"
+    assert destination.name.startswith("novel-")
+    assert (destination / "project.md").is_file()
+    assert (destination / "chapters" / "chapter-001.md").is_file()
+    assert not (tmp_path / "novel").exists()
+    assert [row.id for row in repository.list_projects()] == ["other"]
+    with pytest.raises(NotFoundError):
+        repository.get_project("novel")
+
+
+def test_a_trashed_project_name_can_be_used_again(repository, tmp_path) -> None:
+    first = repository.trash_project("novel")
+    repository.create_project("Novel", slug="novel")
+    second = repository.trash_project("novel")
+
+    assert first != second
+    assert first.is_dir() and second.is_dir()
+    assert repository.list_projects() == ()
+
+
+def test_trashing_a_missing_project_changes_nothing(repository, tmp_path) -> None:
+    with pytest.raises(NotFoundError):
+        repository.trash_project("missing")
+
+    assert (tmp_path / "novel" / "project.md").is_file()
+    assert not (tmp_path / ".story-trash").exists()

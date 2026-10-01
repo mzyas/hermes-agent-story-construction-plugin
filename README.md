@@ -136,6 +136,7 @@ Setup goes through the Dashboard API under `/api/plugins/story-construction/`:
 PUT  /settings                                      select Profile and shared Vault
 GET  /status                                        readiness and diagnostics (never the Vault path)
 POST /projects                                      create a project in the shared Vault
+DELETE /projects/{project_id}?confirm_name=             move a project to the Vault trash
 POST /projects/{project_id}/volumes                  append a volume to a project
 POST /projects/{project_id}/volumes/{volume_id}/chapters   append an empty chapter to a volume
 POST /projects/{project_id}/sessions                bind a Hermes session to the project
@@ -271,6 +272,19 @@ selected on top. Every deletion asks for confirmation first. The default is
 ticking “Also permanently delete the session itself” calls Hermes
 `session.delete` and then removes the binding. The session currently open
 cannot be permanently deleted, because Hermes refuses it.
+
+### Deleting a project
+
+Each card in the project library has a “⋯” menu with “Delete project”. The
+dialog shows the volume and chapter counts and how many writing sessions are
+bound to the project, and the project name has to be typed before the button
+enables. The backend checks the typed name too (`confirm_name`).
+
+Nothing is erased: the whole project folder is renamed into
+`<Vault>/.story-trash/<folder>-<timestamp>/`, which the record scan ignores, so
+the name can be used again and the folder can be moved back by hand. Every
+session binding to that project is dropped; the Hermes sessions themselves stay.
+There is deliberately no permanent delete — empty `.story-trash` yourself.
 
 ### Project workspace
 

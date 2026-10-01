@@ -125,6 +125,45 @@ def create_chapter(project_id: str, volume_id: str, body: dict[str, Any]) -> dic
     return {"chapter": asdict(chapter)}
 
 
+@router.delete("/projects/{project_id}")
+def delete_project(
+    project_id: str,
+    profile: str | None = None,
+    connection_id: str | None = None,
+    confirm_name: str | None = None,
+) -> dict[str, Any]:
+    """Move a project to the Vault trash folder and drop its session bindings."""
+
+    runtime, state = _require_runtime()
+    normalized_profile = _required_value(profile, "profile")
+    _required_value(connection_id, "connection_id")
+    repository_module = _component(runtime, "repository")
+    try:
+        state.permissions.require_profile(normalized_profile)
+        project = state.repository.get_project(project_id).project
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=_permission_detail(exc)) from exc
+    except repository_module.NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    # The typed name is checked here as well, so no client can skip the confirmation.
+    if (confirm_name or "").strip() != project.name.strip():
+        raise HTTPException(status_code=422, detail="confirm_name must match the project name")
+    try:
+        with _selected_target_guard(state):
+            destination = state.repository.trash_project(project.id)
+            unbound = state.sessions.unbind_project(project.id)
+    except repository_module.NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except repository_module.RepositoryError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {
+        "trashed": True,
+        "project_id": project.id,
+        "trash_folder": destination.name,
+        "unbound_sessions": unbound,
+    }
+
+
 @router.get("/projects/{project_id}")
 def get_project_tree(
     project_id: str,

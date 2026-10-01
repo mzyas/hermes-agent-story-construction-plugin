@@ -43,6 +43,7 @@ class FakeRepository:
         )
         self.created: list[tuple[str, str | None]] = []
         self.created_records: list[tuple[str, ...]] = []
+        self.trashed: list[str] = []
         self._created_projects: dict[str, object] = {}
 
     def create_project(self, name, *, slug=None):
@@ -93,6 +94,11 @@ class FakeRepository:
             id=f"{project_id}:chapter-2", project_id=project_id, volume_id=volume_id,
             title=title.strip(), content="",
         )
+
+    def trash_project(self, project_id):
+        self.get_project(project_id)
+        self.trashed.append(project_id)
+        return Path(f"/vault/.story-trash/{project_id}-20260101-000000")
 
     def get_chapter(self, project_id, chapter_id):
         assert (project_id, chapter_id) == ("p1", "ch1")
@@ -1175,3 +1181,39 @@ def test_guard_rejects_write_when_selection_already_switched(
         "profile_switched",
     )
     assert repository.created == []
+
+
+def test_delete_project_needs_the_typed_name_and_unbinds_every_session(monkeypatch, tmp_path: Path) -> None:
+    plugin_api, state, repository = _ready_runtime(monkeypatch, tmp_path)
+    for stored, project, connection in (("a", "p1", "local"), ("b", "p1", "remote"), ("c", "p2", "local")):
+        state.sessions.bind(
+            stored_session_id=stored, profile="writer", connection_id=connection, project_id=project
+        )
+    scope = {"profile": "writer", "connection_id": "local"}
+
+    _assert_http_error(lambda: plugin_api.delete_project("p1", **scope), 422)
+    _assert_http_error(lambda: plugin_api.delete_project("p1", **scope, confirm_name="Other"), 422)
+    assert repository.trashed == []
+
+    result = plugin_api.delete_project("p1", **scope, confirm_name=" Novel ")
+
+    assert result == {
+        "trashed": True, "project_id": "p1",
+        "trash_folder": "p1-20260101-000000", "unbound_sessions": 2,
+    }
+    assert repository.trashed == ["p1"]
+    assert [row.stored_session_id for row in state.sessions.all()] == ["c"]
+
+
+def test_delete_project_checks_profile_scope_and_existence(monkeypatch, tmp_path: Path) -> None:
+    plugin_api, _, repository = _ready_runtime(monkeypatch, tmp_path)
+
+    _assert_http_error(
+        lambda: plugin_api.delete_project("p1", profile="other", connection_id="local", confirm_name="Novel"),
+        403, "profile_lock_mismatch",
+    )
+    _assert_http_error(
+        lambda: plugin_api.delete_project("missing", profile="writer", connection_id="local", confirm_name="x"), 404
+    )
+    _assert_http_error(lambda: plugin_api.delete_project("p1", profile="writer", confirm_name="Novel"), 422)
+    assert repository.trashed == []

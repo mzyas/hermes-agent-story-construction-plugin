@@ -142,6 +142,16 @@ class StorySessionRegistry:
                 binding for _, binding in sorted(self._load().items())
             )
 
+    def unbind_project(self, project_id: str) -> int:
+        """Drop every binding to a project, in all profiles and connections."""
+
+        normalized = _required(project_id, "project_id")
+        with self._lock, self._rewrite() as bindings:
+            doomed = [key for key, row in bindings.items() if row.project_id == normalized]
+            for key in doomed:
+                del bindings[key]
+            return len(doomed)
+
     def unbind(
         self,
         *,

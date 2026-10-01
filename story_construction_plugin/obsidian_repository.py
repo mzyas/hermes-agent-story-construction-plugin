@@ -10,6 +10,7 @@ import tempfile
 import threading
 import unicodedata
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -45,6 +46,9 @@ class _Document:
     metadata: dict[str, Any]
     content: str
     version: str
+
+
+TRASH_DIRECTORY = ".story-trash"
 
 
 class ObsidianProjectRepository:
@@ -155,6 +159,37 @@ class ObsidianProjectRepository:
             )
             self._invalidate_records()
         return self._one(self.get_project(project_id).chapters, chapter_id, "chapter")
+
+    def trash_project(self, project_id: str) -> Path:
+        """Move a whole project folder into ``.story-trash`` and return its new path.
+
+        Nothing is deleted: the folder is renamed in one step, so it can be moved
+        back by hand. The trash folder is invisible to the record scan.
+        """
+
+        with self._create_lock:
+            root = self._project_root(self.get_project(project_id).project.id)
+            if root == self.vault_root or self.vault_root not in root.parents:
+                raise RepositoryError("project folder is outside the Vault subfolders")
+            if root.parts[len(self.vault_root.parts)] == TRASH_DIRECTORY:
+                raise NotFoundError(f"project {project_id!r} was not found")
+            nested = [
+                path for path in self._markdown_files()
+                if root in path.parents and path.name == "project.md" and path.parent != root
+            ]
+            if nested:
+                raise RepositoryError("project folder contains another project")
+            trash = self.vault_root / TRASH_DIRECTORY
+            trash.mkdir(exist_ok=True)
+            stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            destination = trash / f"{root.name}-{stamp}"
+            suffix = 1
+            while destination.exists():
+                suffix += 1
+                destination = trash / f"{root.name}-{stamp}-{suffix}"
+            os.replace(root, destination)
+            self._invalidate_records()
+        return destination
 
     def _project_root(self, project_id: str) -> Path:
         """Directory holding a project's ``project.md``; created files go below it."""
@@ -321,7 +356,10 @@ class ObsidianProjectRepository:
             relative = path.relative_to(self.vault_root)
             if (
                 len(relative.parts) > 1
-                and relative.parts[0].startswith(".story-create-")
+                and (
+                    relative.parts[0].startswith(".story-create-")
+                    or relative.parts[0] == TRASH_DIRECTORY
+                )
             ) or not path.is_file():
                 continue
             files.append(path)

@@ -28,6 +28,7 @@ const {
   bindWorkspaceApi,
   buildStoryScopeQuery,
   createStoryProject,
+  deleteStoryProject,
   fetchProjectSessions,
   removeStorySession,
   resetWorkspaceScope
@@ -48,11 +49,13 @@ const dispose = bindWorkspaceApi(async (path, options) => {
 await createStoryProject({ id: 'novel draft', name: 'Novel Draft' })
 await fetchProjectSessions('novel draft', { sessionId: 's 1', profile: 'writer', connectionId: 'remote/1' })
 await removeStorySession('novel draft', 'stored/1', { sessionId: 's 1', profile: 'writer', connectionId: 'remote/1' })
+await deleteStoryProject('novel draft', { profile: 'writer', connectionId: 'remote/1' }, 'Novel & Draft')
 dispose()
 assert.deepEqual(calls, [
   ['/projects', { method: 'POST', body: { id: 'novel draft', name: 'Novel Draft' } }],
   ['/projects/novel%20draft/sessions?session_id=s+1&profile=writer&connection_id=remote%2F1', undefined],
-  ['/projects/novel%20draft/sessions/stored%2F1?session_id=s+1&profile=writer&connection_id=remote%2F1', { method: 'DELETE' }]
+  ['/projects/novel%20draft/sessions/stored%2F1?session_id=s+1&profile=writer&connection_id=remote%2F1', { method: 'DELETE' }],
+  ['/projects/novel%20draft?profile=writer&connection_id=remote%2F1&confirm_name=Novel%20%26%20Draft', { method: 'DELETE' }]
 ])
 `
 

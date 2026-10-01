@@ -29,7 +29,18 @@ const en = {
     search: 'Search projects',
     searchPlaceholder: 'Filter by name or ID',
     empty: 'No projects in this Vault yet.',
-    noMatch: 'No projects match your search.'
+    noMatch: 'No projects match your search.',
+    projectMenu: 'Project actions',
+    deleteProject: 'Delete project',
+    deleteTitle: name => `Delete “${name}”?`,
+    deleteMoves: 'The project folder is moved to the .story-trash folder in your Vault. Nothing is erased, and you can move it back by hand.',
+    deleteCounts: (volumes, chapters) => `${volumes} volume(s), ${chapters} chapter(s)`,
+    deleteSessions: count => `${count} writing session(s) will lose their link to this project. The Hermes sessions themselves are kept.`,
+    deleteTypeName: name => `Type the project name “${name}” to confirm`,
+    deleteConfirm: 'Move to trash',
+    deleting: 'Moving…',
+    deleteFailed: 'Could not delete the project. Check the Story service and try again.',
+    deleted: folder => `Moved to the Vault trash: ${folder}`
   },
   dialog: {
     cancel: 'Cancel',
@@ -178,7 +189,18 @@ const zh = {
     search: '搜索项目',
     searchPlaceholder: '按名称或 ID 筛选',
     empty: '当前资料库还没有项目。',
-    noMatch: '没有符合当前搜索的项目。'
+    noMatch: '没有符合当前搜索的项目。',
+    projectMenu: '项目操作',
+    deleteProject: '删除项目',
+    deleteTitle: name => `删除“${name}”？`,
+    deleteMoves: '项目文件夹会被移到资料库里的 .story-trash 文件夹，不会被真正删除，之后可以手动移回。',
+    deleteCounts: (volumes, chapters) => `${volumes} 卷，${chapters} 章`,
+    deleteSessions: count => `有 ${count} 个写作会话会失去与此项目的绑定，Hermes 里的会话本身会保留。`,
+    deleteTypeName: name => `请输入项目名称“${name}”以确认`,
+    deleteConfirm: '移到回收目录',
+    deleting: '正在移动…',
+    deleteFailed: '无法删除项目，请检查故事服务后重试。',
+    deleted: folder => `已移到资料库回收目录：${folder}`
   },
   dialog: {
     cancel: '取消',
@@ -803,6 +825,12 @@ export const createStoryVolume = (projectId, body) =>
   call('/projects/' + encodeURIComponent(projectId) + '/volumes', { method: 'POST', body })
 export const createStoryChapter = (projectId, volumeId, body) =>
   call('/projects/' + encodeURIComponent(projectId) + '/volumes/' + encodeURIComponent(volumeId) + '/chapters', { method: 'POST', body })
+export const deleteStoryProject = (projectId, scope, confirmName) =>
+  call(
+    '/projects/' + encodeURIComponent(projectId) + buildStoryScopeQuery(scope) +
+      '&confirm_name=' + encodeURIComponent(confirmName),
+    { method: 'DELETE' }
+  )
 export const fetchProjectTree = (projectId, scope) =>
   call('/projects/' + encodeURIComponent(projectId) + buildStoryScopeQuery(scope))
 export const fetchProjectSessions = (projectId, scope) =>
@@ -1991,9 +2019,124 @@ function NewProjectDialog({ profile, connectionId, ready, onCreated, onClose, ge
   })
 }
 
-function ProjectLibrary({ projects, loading, error, ready, profile, connectionId, onOpen, onRetry, onCreated, getGeneration, t }) {
+// Deleting is a typed-name confirmation: the folder only moves to the Vault
+// trash, but the name is still required so a stray click cannot start it.
+function DeleteProjectDialog({ project, profile, connectionId, onDeleted, onClose, getGeneration, t }) {
+  const [typed, setTyped] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [failed, setFailed] = useState(false)
+  const aliveRef = useMutableRef(true)
+  useEffect(() => {
+    aliveRef.current = true
+    return () => {
+      aliveRef.current = false
+    }
+  }, [])
+  const scope = { profile, connectionId }
+  const treeQuery = useQuery({
+    enabled: Boolean(project?.id && profile && connectionId),
+    queryKey: ['story-construction', 'delete-preview', profile, connectionId, project?.id],
+    queryFn: () => fetchProjectTree(project.id, scope)
+  })
+  const sessionsQuery = useQuery({
+    enabled: Boolean(project?.id && profile && connectionId),
+    queryKey: ['story-construction', 'delete-sessions', profile, connectionId, project?.id],
+    queryFn: () => fetchProjectSessions(project.id, scope)
+  })
+  const volumeCount = Array.isArray(treeQuery.data?.volumes) ? treeQuery.data.volumes.length : null
+  const chapterCount = Array.isArray(treeQuery.data?.chapters) ? treeQuery.data.chapters.length : null
+  const sessionCount = projectSessionRows(sessionsQuery.data).length
+  const matches = Boolean(project?.name) && typed.trim() === String(project.name).trim()
+
+  const submit = event => {
+    event.preventDefault()
+    if (busy || !matches) return
+    const requestGeneration = typeof getGeneration === 'function' ? getGeneration() : null
+    const requestLive = () => aliveRef.current &&
+      (requestGeneration === null || requestGeneration === (typeof getGeneration === 'function' ? getGeneration() : null))
+    setBusy(true)
+    setFailed(false)
+    void deleteStoryProject(project.id, scope, project.name)
+      .then(async result => {
+        if (!requestLive()) return
+        await onDeleted(project.id, { ...scope, generation: requestGeneration, folder: result?.trash_folder || '' })
+        if (!requestLive()) return
+        onClose()
+      })
+      .catch(() => {
+        if (requestLive()) setFailed(true)
+      })
+      .finally(() => {
+        if (requestLive()) setBusy(false)
+      })
+  }
+
+  return jsx('div', {
+    className: 'hermes-story-overlay fixed inset-0 z-50 flex items-center justify-center p-4',
+    onMouseDown: event => {
+      if (event.target === event.currentTarget && !busy) onClose()
+    },
+    children: jsxs('form', {
+      'aria-modal': 'true',
+      className: 'flex w-full max-w-sm flex-col gap-3 rounded border border-red-400 p-4 shadow',
+      style: { backgroundColor: 'var(--chrome-bg, var(--ui-bg, Canvas))' },
+      onKeyDown: event => {
+        if (event.key === 'Escape' && !busy) onClose()
+      },
+      onSubmit: submit,
+      role: 'alertdialog',
+      children: [
+        jsx('h2', { className: 'text-base font-medium', children: t('library.deleteTitle', project.name) }),
+        volumeCount !== null && chapterCount !== null
+          ? jsx('div', { className: 'text-xs text-(--ui-text-secondary)', children: t('library.deleteCounts', volumeCount, chapterCount) })
+          : null,
+        jsx('div', { className: 'text-xs text-(--ui-text-secondary)', children: t('library.deleteMoves') }),
+        sessionCount
+          ? jsx('div', { className: 'text-xs text-(--ui-text-secondary)', children: t('library.deleteSessions', sessionCount) })
+          : null,
+        jsxs('label', {
+          className: 'flex flex-col gap-1 text-xs text-(--ui-text-secondary)',
+          children: [
+            t('library.deleteTypeName', project.name),
+            jsx('input', {
+              autoFocus: true,
+              className: 'rounded border border-(--ui-stroke-secondary) bg-transparent px-2 py-1 text-xs',
+              disabled: busy,
+              value: typed,
+              onChange: event => setTyped(event.target.value)
+            })
+          ]
+        }),
+        failed ? jsx('div', { className: 'text-xs text-red-400', role: 'alert', children: t('library.deleteFailed') }) : null,
+        jsxs('div', {
+          className: 'flex justify-end gap-2',
+          children: [
+            jsx('button', {
+              className: 'rounded border border-(--ui-stroke-secondary) px-3 py-1 text-xs hover:bg-(--chrome-action-hover) disabled:opacity-50',
+              disabled: busy,
+              onClick: onClose,
+              type: 'button',
+              children: t('dialog.cancel')
+            }),
+            jsx('button', {
+              className: 'rounded border border-red-400 px-3 py-1 text-xs text-red-400 disabled:opacity-50',
+              disabled: busy || !matches,
+              type: 'submit',
+              children: busy ? t('library.deleting') : t('library.deleteConfirm')
+            })
+          ]
+        })
+      ]
+    })
+  })
+}
+
+function ProjectLibrary({ projects, loading, error, ready, profile, connectionId, onOpen, onRetry, onCreated, onDeleted, getGeneration, t }) {
   const [term, setTerm] = useState('')
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [menuFor, setMenuFor] = useState(null)
+  const [deleting, setDeleting] = useState(null)
+  const [notice, setNotice] = useState(null)
   const valid = filterStoryProjects(projects, '')
   const visible = filterStoryProjects(projects, term)
   // List failures render fixed copy plus, at most, whitelisted diagnostics from
@@ -2034,6 +2177,9 @@ function ProjectLibrary({ projects, loading, error, ready, profile, connectionId
           })
         ]
       }),
+      notice
+        ? jsx('div', { className: 'text-xs text-(--ui-text-secondary)', role: 'status', children: t('library.deleted', notice) })
+        : null,
       loading
         ? jsx('div', { className: 'text-(--ui-text-secondary)', children: t('workspace.loadingProjects') })
         : error
@@ -2079,19 +2225,60 @@ function ProjectLibrary({ projects, loading, error, ready, profile, connectionId
                 })
               : jsx('div', {
                   className: 'hermes-story-library-grid',
-                  children: visible.map(item => jsxs('button', {
-                    className: 'flex items-center gap-3 rounded border border-(--ui-stroke-secondary) p-3 text-left hover:bg-(--chrome-action-hover)',
-                    onClick: () => onOpen(item.id),
-                    type: 'button',
+                  children: visible.map(item => jsxs('div', {
+                    className: 'relative flex',
+                    onKeyDown: event => {
+                      if (event.key === 'Escape') setMenuFor(null)
+                    },
                     children: [
-                      jsx(BookIcon, {}),
-                      jsxs('span', {
-                        className: 'min-w-0 flex-1',
+                      jsxs('button', {
+                        className: 'flex min-w-0 flex-1 items-center gap-3 rounded border border-(--ui-stroke-secondary) p-3 pr-10 text-left hover:bg-(--chrome-action-hover)',
+                        onClick: () => onOpen(item.id),
+                        type: 'button',
                         children: [
-                          jsx('span', { className: 'block truncate text-sm', children: item.name }),
-                          jsx('span', { className: 'block truncate text-xs text-(--ui-text-tertiary)', children: item.id })
+                          jsx(BookIcon, {}),
+                          jsxs('span', {
+                            className: 'min-w-0 flex-1',
+                            children: [
+                              jsx('span', { className: 'block truncate text-sm', children: item.name }),
+                              jsx('span', { className: 'block truncate text-xs text-(--ui-text-tertiary)', children: item.id })
+                            ]
+                          })
                         ]
-                      })
+                      }),
+                      jsx('button', {
+                        'aria-expanded': menuFor === item.id,
+                        'aria-haspopup': 'menu',
+                        'aria-label': t('library.projectMenu'),
+                        className: 'absolute right-2 top-2 rounded px-2 text-(--ui-text-tertiary) hover:bg-(--chrome-action-hover) disabled:opacity-50',
+                        disabled: !ready,
+                        onClick: () => setMenuFor(previous => (previous === item.id ? null : item.id)),
+                        type: 'button',
+                        children: '⋯'
+                      }),
+                      menuFor === item.id
+                        ? jsx('div', {
+                            className: 'fixed inset-0 z-10',
+                            onMouseDown: () => setMenuFor(null)
+                          })
+                        : null,
+                      menuFor === item.id
+                        ? jsx('div', {
+                            className: 'absolute right-2 top-9 z-20 flex flex-col rounded border border-(--ui-stroke-secondary) py-1 shadow',
+                            role: 'menu',
+                            style: { backgroundColor: 'var(--chrome-bg, var(--ui-bg, Canvas))' },
+                            children: jsx('button', {
+                              className: 'px-3 py-1 text-left text-xs text-red-400 hover:bg-(--chrome-action-hover)',
+                              onClick: () => {
+                                setMenuFor(null)
+                                setDeleting(item)
+                              },
+                              role: 'menuitem',
+                              type: 'button',
+                              children: t('library.deleteProject')
+                            })
+                          })
+                        : null
                     ]
                   }, item.id))
                 }),
@@ -2103,6 +2290,20 @@ function ProjectLibrary({ projects, loading, error, ready, profile, connectionId
             getGeneration,
             profile,
             ready,
+            t
+          })
+        : null,
+      deleting
+        ? jsx(DeleteProjectDialog, {
+            connectionId,
+            getGeneration,
+            onClose: () => setDeleting(null),
+            onDeleted: async (projectId, request) => {
+              await onDeleted(projectId, request)
+              setNotice(request.folder || projectId)
+            },
+            profile,
+            project: deleting,
             t
           })
         : null
@@ -3167,6 +3368,15 @@ function ProjectWorkspace() {
     setSelectedChapterId(null)
   }
 
+  const handleDeleted = async (projectId, request) => {
+    if (request?.generation !== viewGenerationRef.current) return
+    // The deleted project must not be reopened from the remembered selection.
+    if (storyProjectMemory.get({ profile: request.profile, connectionId: request.connectionId }) === projectId) {
+      storyProjectMemory.set({ profile: request.profile, connectionId: request.connectionId }, null)
+    }
+    await projectsQuery.refetch()
+  }
+
   if (!gateOpen) {
     // Loading, failed and not-ready status all collapse into one compact Retry
     // card; the operable workspace stays hidden until a fresh matching /status.
@@ -3377,6 +3587,7 @@ function ProjectWorkspace() {
             getGeneration: () => viewGenerationRef.current,
             loading: projectsQuery.isLoading,
             onCreated: handleCreated,
+            onDeleted: handleDeleted,
             onOpen: openProject,
             onRetry: () => void projectsQuery.refetch(),
             profile,

@@ -7,6 +7,7 @@ import unicodedata
 
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Protocol
 
 from .domain import (
@@ -67,6 +68,8 @@ class StoryRepository(Protocol):
     def create_volume(self, project_id: str, title: str) -> Volume: ...
 
     def create_chapter(self, project_id: str, volume_id: str, title: str) -> Chapter: ...
+
+    def trash_project(self, project_id: str) -> Path: ...
 
     def list_projects(self) -> Sequence[Project]: ...
 
