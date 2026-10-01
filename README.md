@@ -267,6 +267,10 @@ connection and Profile (kept in memory and in `localStorage`); “Back to librar
 forgets it, and a remembered project that no longer exists falls back to the
 library.
 
+The left sidebar has two tabs. “Chapters” lists each volume as a group with its
+chapter count and its chapters beneath it; “Notes” holds the world info,
+characters, and notes.
+
 ## Project Markdown contract
 
 The backend recognizes Markdown files with YAML frontmatter records:

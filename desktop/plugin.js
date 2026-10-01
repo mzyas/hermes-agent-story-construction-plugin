@@ -42,7 +42,10 @@ const en = {
     chapters: 'Chapters',
     empty: 'Empty',
     untitled: 'Untitled',
-    selectProject: 'Select a project.'
+    selectProject: 'Select a project.',
+    tabChapters: 'Chapters',
+    tabNotes: 'Notes',
+    unassignedVolume: 'No volume'
   },
   chapter: {
     openPrompt: 'Open a chapter to read or edit it.',
@@ -157,7 +160,10 @@ const zh = {
     chapters: '章节',
     empty: '为空',
     untitled: '未命名',
-    selectProject: '请选择一个项目。'
+    selectProject: '请选择一个项目。',
+    tabChapters: '章节',
+    tabNotes: '笔记',
+    unassignedVolume: '未分卷'
   },
   chapter: {
     openPrompt: '打开一个章节以阅读或编辑。',
@@ -250,6 +256,23 @@ let storySettingsBindingRevision = 0
 const storySettingsWriteQueues = new Map()
 const storySettingsWriteRevisions = new Map()
 
+// Chapters grouped under their volume, in volume order. A chapter whose volume
+// is missing from the list is kept visible in a trailing group instead of
+// vanishing from the sidebar.
+export function buildChapterOutline(volumes, chapters, translate = translateEnglishStory) {
+  const groups = volumes.map(volume => ({ volume, chapters: [] }))
+  const byVolumeId = new Map(groups.map(group => [group.volume.id, group]))
+  const unassigned = []
+  for (const chapter of chapters) {
+    const group = byVolumeId.get(chapter.volume_id)
+    ;(group ? group.chapters : unassigned).push(chapter)
+  }
+  if (unassigned.length) {
+    groups.push({ volume: { id: '', title: translate('tree.unassignedVolume') }, chapters: unassigned })
+  }
+  return groups
+}
+
 export function buildProjectTree(payload, translate = translateEnglishStory) {
   const value = payload || {}
   const project = value.project || null
@@ -263,6 +286,7 @@ export function buildProjectTree(payload, translate = translateEnglishStory) {
 
   return {
     project,
+    outline: buildChapterOutline(volumes, chapters, translate),
     branches: [
       { id: 'project', label: translate('tree.project'), children: project ? [project] : [] },
       {
@@ -1156,13 +1180,76 @@ function ProjectBranch({ branch, onOpenChapter, t }) {
   }, branch.id)
 }
 
-function ProjectTree({ tree, onOpenChapter, t }) {
+const SIDEBAR_NOTE_BRANCHES = ['worldInfo', 'characters', 'notes']
+
+function ChapterOutline({ outline, onOpenChapter, selectedChapterId, t }) {
+  if (!outline.length) {
+    return jsx('div', { className: 'p-3 text-(--ui-text-tertiary)', children: t('tree.empty') })
+  }
+  return jsx('div', {
+    children: outline.map(group =>
+      jsxs('details', {
+        className: 'border-b border-(--ui-stroke-secondary)',
+        open: true,
+        children: [
+          jsxs('summary', {
+            className: 'flex cursor-pointer items-center gap-2 px-3 py-2',
+            children: [
+              jsx('span', { className: 'min-w-0 flex-1 truncate font-medium', children: displayName(group.volume, t) }),
+              jsx('span', { className: 'shrink-0 text-xs text-(--ui-text-tertiary)', children: String(group.chapters.length) })
+            ]
+          }),
+          group.chapters.length
+            ? group.chapters.map(chapter =>
+                jsx('button', {
+                  'aria-current': chapter.id === selectedChapterId ? 'true' : undefined,
+                  className:
+                    'block w-full truncate px-4 py-2 text-left hover:bg-(--chrome-action-hover) ' +
+                    (chapter.id === selectedChapterId ? 'bg-(--chrome-action-hover) font-medium' : 'text-(--ui-text-secondary)'),
+                  onClick: () => onOpenChapter(chapter.id),
+                  type: 'button',
+                  children: displayName(chapter, t)
+                }, chapter.id)
+              )
+            : jsx('div', { className: 'px-4 py-2 text-(--ui-text-tertiary)', children: t('tree.empty') })
+        ]
+      }, group.volume.id || 'unassigned')
+    )
+  })
+}
+
+export function StorySidebar({ tree, tab = 'chapters', onTab, onOpenChapter, selectedChapterId, t }) {
   if (!tree) {
     return jsx('div', { className: 'p-3 text-(--ui-text-tertiary)', children: t('tree.selectProject') })
   }
-  return jsx('div', {
-    className: 'min-h-0 flex-1 overflow-auto',
-    children: tree.branches.map(branch => jsx(ProjectBranch, { branch, onOpenChapter, t }, branch.id))
+  const tabButton = (id, label) =>
+    jsx('button', {
+      'aria-selected': tab === id,
+      className:
+        'flex-1 rounded px-3 py-1.5 text-center ' +
+        (tab === id ? 'bg-(--chrome-action-hover) font-medium' : 'text-(--ui-text-secondary) hover:bg-(--chrome-action-hover)'),
+      onClick: () => onTab?.(id),
+      role: 'tab',
+      type: 'button',
+      children: label
+    }, id)
+  const noteBranches = tree.branches.filter(branch => SIDEBAR_NOTE_BRANCHES.includes(branch.id))
+  return jsxs('div', {
+    className: 'flex min-h-0 flex-1 flex-col',
+    children: [
+      jsxs('div', {
+        className: 'flex gap-1 border-b border-(--ui-stroke-secondary) p-2',
+        role: 'tablist',
+        children: [tabButton('chapters', t('tree.tabChapters')), tabButton('notes', t('tree.tabNotes'))]
+      }),
+      jsx('div', {
+        className: 'min-h-0 flex-1 overflow-auto',
+        children:
+          tab === 'notes'
+            ? noteBranches.map(branch => jsx(ProjectBranch, { branch, onOpenChapter, t }, branch.id))
+            : jsx(ChapterOutline, { outline: tree.outline || [], onOpenChapter, selectedChapterId, t })
+      })
+    ]
   })
 }
 
@@ -2383,6 +2470,7 @@ function ProjectWorkspace() {
   }))
   const selectedProjectId = selectedProjectForScope(projectSelection, { profile, connectionId })
   const [selectedChapterId, setSelectedChapterId] = useState(null)
+  const [sidebarTab, setSidebarTab] = useState('chapters')
 
   // A different (connection, Profile) resumes whatever that scope last had open.
   useEffect(() => {
@@ -2574,7 +2662,14 @@ function ProjectWorkspace() {
               className: 'break-words p-3 text-(--ui-text-secondary)',
               children: t('workspace.projectUnavailable', treeQuery.error.message)
             })
-          : jsx(ProjectTree, { tree, onOpenChapter: setSelectedChapterId, t })
+          : jsx(StorySidebar, {
+              onOpenChapter: setSelectedChapterId,
+              onTab: setSidebarTab,
+              selectedChapterId,
+              t,
+              tab: sidebarTab,
+              tree
+            })
     ]
   })
   const editorCell = jsx('div', {
