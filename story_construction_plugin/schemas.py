@@ -35,6 +35,18 @@ _PROJECT_ID = {
 
 
 TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
+    "story.get_session_project": {
+        "name": "story.get_session_project",
+        "description": (
+            "Return the story project this chat session is bound to, with its "
+            "volumes and chapter metadata (no chapter text). Takes no "
+            "arguments. Call this first when the user wants to write, continue, "
+            "or check the story, to learn the project_id, volume_id, and "
+            "chapter_id that the other story.* tools need. An error "
+            "session_not_bound means this is an ordinary chat."
+        ),
+        "parameters": _parameters({}, []),
+    },
     "story.get_project": {
         "name": "story.get_project",
         "description": (

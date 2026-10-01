@@ -4,6 +4,7 @@ description: "Obsidian-backed story construction workspace for Hermes Desktop."
 author: Local
 kind: backend
 provides_tools:
+  - story.get_session_project
   - story.get_project
   - story.get_world_info
   - story.search_world_info

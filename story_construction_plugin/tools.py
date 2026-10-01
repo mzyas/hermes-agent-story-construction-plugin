@@ -12,6 +12,7 @@ from .repository import NotFoundError, RepositoryError, StoryRepository
 from .session_store import SessionBindingStoreError
 
 
+SESSION_PROJECT_TOOL = "story.get_session_project"
 DEFAULT_SEARCH_LIMIT = 20
 MAX_SEARCH_LIMIT = 50
 
@@ -31,7 +32,8 @@ class StoryToolService:
     def handle(self, name: str, args: Mapping[str, Any] | None = None, **kwargs: Any) -> str:
         payload = dict(args or {})
         project_id = str(payload.get("project_id") or "").strip()
-        if not project_id:
+        resolve_from_session = name == SESSION_PROJECT_TOOL
+        if not project_id and not resolve_from_session:
             return _error("missing_project_id", "project_id is required")
         scope_kwargs = dict(kwargs)
         try:
@@ -41,6 +43,16 @@ class StoryToolService:
                 else self.permissions
             )
             scope = _scope_from_gate(gate, **scope_kwargs)
+            if resolve_from_session:
+                # The binding, not the model, names the project: arguments are
+                # ignored so a session can never ask for another project.
+                bound = gate.bound_scope(scope.session_id)
+                if bound is None:
+                    return _error(
+                        "session_not_bound",
+                        "this session is not bound to a Story project",
+                    )
+                project_id = bound.project_id
             gate.require_read(scope, project_id)
             data = self._dispatch(name, project_id, payload)
             return _success(project_id, data)
@@ -63,6 +75,13 @@ class StoryToolService:
         return partial(self.handle, name)
 
     def _dispatch(self, name: str, project_id: str, payload: dict[str, Any]) -> Any:
+        if name == SESSION_PROJECT_TOOL:
+            tree = self.repository.get_project(project_id)
+            return {
+                "project": tree.project,
+                "volumes": tree.volumes,
+                "chapters": [_chapter_summary(chapter) for chapter in tree.chapters],
+            }
         if name == "story.get_project":
             return self.repository.get_project(project_id)
         if name == "story.get_world_info":

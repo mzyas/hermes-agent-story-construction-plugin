@@ -158,6 +158,7 @@ def test_registration_exposes_only_the_story_read_toolset() -> None:
 
     names = {call["name"] for call in calls}
     assert names == {
+        "story.get_session_project",
         "story.get_project",
         "story.get_world_info",
         "story.search_world_info",
@@ -192,7 +193,8 @@ def test_registration_uses_hermes_function_schemas_and_preserves_parameters() ->
         assert schema["name"] == name
         assert schema["description"]
         assert schema["parameters"]["type"] == "object"
-        assert schema["parameters"]["properties"]
+        if name != "story.get_session_project":  # takes no arguments
+            assert schema["parameters"]["properties"]
         assert "required" in schema["parameters"]
         descriptions.add(schema["description"])
 
