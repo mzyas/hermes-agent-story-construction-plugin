@@ -91,6 +91,26 @@ const en = {
     continueSession: 'Continue',
     retryFirstTask: 'Retry first task',
     removeStaleBinding: 'Remove stale binding',
+    currentSession: 'Current session',
+    untitledSession: 'Untitled session',
+    boundSession: name => `Bound · ${name}`,
+    manageSessions: 'Manage sessions',
+    doneManaging: 'Done',
+    selectAll: 'Select all',
+    clearSelection: 'Clear selection',
+    deleteSelected: count => `Delete selected (${count})`,
+    deleteOne: 'Delete',
+    selectSession: name => `Select ${name}`,
+    confirmCount: count => `${count} session(s) selected`,
+    confirmUnbindHint: 'Removing the binding keeps the session in Hermes, and you can bind it again later.',
+    confirmHardLabel: 'Also permanently delete the session itself (cannot be undone)',
+    confirmHardActive: 'The session in use cannot be permanently deleted. Switch to another session first.',
+    confirmUnbind: 'Remove binding',
+    confirmHard: 'Delete permanently',
+    confirmCancel: 'Cancel',
+    removing: 'Working…',
+    removed: count => `${count} session(s) done.`,
+    removedPartial: (count, failed, error) => `${count} done, ${failed} failed: ${error}`,
     stageCreating: 'Creating session…',
     stageBinding: 'Binding session to project…',
     stageSubmitting: 'Submitting first writing task…',
@@ -204,7 +224,7 @@ const zh = {
     saveConfirmed: '保存已确认的草稿'
   },
   agent: {
-    title: '代理',
+    title: '智能体',
     binding: '正在绑定…',
     bound: '已绑定到当前会话',
     bindFailed: error => `绑定失败：${error}`,
@@ -220,6 +240,26 @@ const zh = {
     continueSession: '继续',
     retryFirstTask: '重试首次任务',
     removeStaleBinding: '移除失效绑定',
+    currentSession: '当前会话',
+    untitledSession: '未命名会话',
+    boundSession: name => `已绑定 · ${name}`,
+    manageSessions: '管理会话',
+    doneManaging: '完成',
+    selectAll: '全选',
+    clearSelection: '取消全选',
+    deleteSelected: count => `删除所选（${count}）`,
+    deleteOne: '删除',
+    selectSession: name => `选择 ${name}`,
+    confirmCount: count => `已选择 ${count} 个会话`,
+    confirmUnbindHint: '移除绑定后，会话仍保留在 Hermes 中，之后可以重新绑定。',
+    confirmHardLabel: '同时彻底删除会话本身（不可恢复）',
+    confirmHardActive: '正在使用的会话无法彻底删除，请先切换到其他会话。',
+    confirmUnbind: '移除绑定',
+    confirmHard: '彻底删除',
+    confirmCancel: '取消',
+    removing: '正在处理…',
+    removed: count => `已处理 ${count} 个会话。`,
+    removedPartial: (count, failed, error) => `成功 ${count} 个，失败 ${failed} 个：${error}`,
     stageCreating: '正在创建会话…',
     stageBinding: '正在将会话绑定到项目…',
     stageSubmitting: '正在提交首次写作任务…',
@@ -808,6 +848,76 @@ export async function removeStaleStoryBinding({
   const normalizedProjectId = requiredSessionId(projectId, 'project')
   const normalizedStoredId = requiredSessionId(storedSessionId, 'stored session')
   return removeSession(normalizedProjectId, normalizedStoredId, { profile, connectionId })
+}
+
+// Hermes' own session name (what its sidebar shows), keyed by session id.
+export function storySessionTitles(sessions) {
+  const titles = {}
+  for (const session of Array.isArray(sessions) ? sessions : []) {
+    const id = typeof session?.id === 'string' ? session.id : ''
+    const title = typeof session?.title === 'string' ? session.title.trim() : ''
+    if (id && title) titles[id] = title
+  }
+  return titles
+}
+
+// The name follows Hermes' sidebar; the title saved at bind time is only a
+// fallback for when the Hermes list is unavailable.
+export function storySessionName(storedSessionId, { titles = {}, bindings = [] } = {}) {
+  if (!storedSessionId) return ''
+  const binding = bindings.find(row => row.stored_session_id === storedSessionId)
+  return titles[storedSessionId] || binding?.title || ''
+}
+
+// removeBinding only forgets the project link, so the Hermes session stays and
+// can be bound again. deleteSession also deletes the Hermes session itself.
+// Sessions are handled one by one so a failure never hides the ones that worked.
+export async function removeStoryProjectSessions({
+  projectId,
+  storedSessionIds,
+  profile,
+  connectionId,
+  deleteSession = false,
+  profileRoutes = host.profileRoutes,
+  requestProfile = host.requestProfile,
+  removeSession = removeStorySession
+} = {}) {
+  const normalizedProjectId = requiredSessionId(projectId, 'project')
+  const ids = [...new Set((Array.isArray(storedSessionIds) ? storedSessionIds : []).map(id => requiredSessionId(id, 'stored session')))]
+  if (!ids.length) throw new Error('no sessions selected')
+  const normalizedProfile = typeof profile === 'string' ? profile.trim() : ''
+  if (!normalizedProfile) throw new Error('a Hermes profile is required')
+  let route = null
+  if (deleteSession) {
+    if (typeof requestProfile !== 'function') throw new Error('this Hermes Desktop version cannot delete saved sessions')
+    route = await resolveStoryProfileRoute({ profile: normalizedProfile, connectionId, profileRoutes })
+    if (!route) throw new Error('the locked Hermes profile route is unavailable')
+  }
+  const done = []
+  const failed = []
+  for (const storedSessionId of ids) {
+    try {
+      if (deleteSession) {
+        // Delete the Hermes session first: if that fails (for example Hermes
+        // still has it open) nothing has changed. If it works and the unbind
+        // below fails, the leftover is a stale binding with its own removal.
+        try {
+          await requestProfile(route, 'session.delete', {
+            session_id: storedSessionId,
+            profile: route.targetProfile || normalizedProfile
+          })
+        } catch (error) {
+          // An already-missing session is the state we want.
+          if (!isSessionGoneError(error)) throw error
+        }
+      }
+      await removeSession(normalizedProjectId, storedSessionId, { profile: normalizedProfile, connectionId })
+      done.push(storedSessionId)
+    } catch (error) {
+      failed.push({ storedSessionId, error })
+    }
+  }
+  return { done, failed }
 }
 
 export function buildStoryKickoff({ project, volumes = [], chapters = [] }) {
@@ -1996,6 +2106,9 @@ function ProjectSessionsPanel({ profile, connectionId, project, sessionId }) {
   const [creatingSession, setCreatingSession] = useState(false)
   const [kickoffRecovery, setKickoffRecovery] = useState(null)
   const [staleSessionIds, setStaleSessionIds] = useState({})
+  const [managing, setManaging] = useState(false)
+  const [selectedIds, setSelectedIds] = useState({})
+  const [confirm, setConfirm] = useState(null)
   const sessionsQuery = useQuery({
     enabled: Boolean(project?.id && profile && connectionId),
     queryKey: ['story-construction', 'project-sessions', profile, connectionId, project?.id],
@@ -2003,13 +2116,76 @@ function ProjectSessionsPanel({ profile, connectionId, project, sessionId }) {
     refetchInterval: 60_000
   })
   const sessions = projectSessionRows(sessionsQuery.data)
+  // Hermes' own session names, so this panel follows its sidebar.
+  const titlesQuery = useQuery({
+    enabled: Boolean(profile && connectionId),
+    queryKey: ['story-construction', 'session-titles', profile, connectionId],
+    queryFn: () => listStorySessions({ profile, connectionId }),
+    refetchInterval: 30_000
+  })
+  const titles = storySessionTitles(titlesQuery.data?.sessions)
+  const nameOf = id => storySessionName(id, { titles, bindings: sessions }) || t('agent.untitledSession')
+  const focusedBound = Boolean(sessionId && sessions.some(row => row.stored_session_id === sessionId))
+  const selectedCount = Object.keys(selectedIds).length
 
   useEffect(() => {
     setBindingState(null)
     setSessionState(null)
     setKickoffRecovery(null)
     setStaleSessionIds({})
+    setManaging(false)
+    setSelectedIds({})
+    setConfirm(null)
   }, [project?.id, profile, connectionId])
+
+  const toggleManaging = () => {
+    if (creatingSession) return
+    setManaging(previous => !previous)
+    setSelectedIds({})
+    setConfirm(null)
+  }
+
+  const toggleSelected = id => {
+    setSelectedIds(previous => {
+      const next = { ...previous }
+      if (next[id]) delete next[id]
+      else next[id] = true
+      return next
+    })
+  }
+
+  const toggleSelectAll = () => {
+    setSelectedIds(
+      selectedCount === sessions.length ? {} : Object.fromEntries(sessions.map(row => [row.stored_session_id, true]))
+    )
+  }
+
+  const runRemove = () => {
+    if (creatingSession || !confirm || !project?.id) return
+    // Hermes refuses to delete the session that is open, so do not even try.
+    if (confirm.hard && confirm.ids.includes(sessionId)) return
+    setCreatingSession(true)
+    setSessionState({ key: 'agent.removing', args: [] })
+    void removeStoryProjectSessions({
+      projectId: project.id,
+      storedSessionIds: confirm.ids,
+      profile,
+      connectionId,
+      deleteSession: confirm.hard
+    })
+      .then(async ({ done, failed }) => {
+        await Promise.allSettled([sessionsQuery.refetch(), titlesQuery.refetch?.()])
+        setSelectedIds({})
+        setConfirm(null)
+        setSessionState(
+          failed.length
+            ? { key: 'agent.removedPartial', args: [done.length, failed.length, failed[0].error?.message || 'unknown error'] }
+            : { key: 'agent.removed', args: [done.length] }
+        )
+      })
+      .catch(error => setSessionState({ key: 'agent.removeFailed', args: [error.message] }))
+      .finally(() => setCreatingSession(false))
+  }
 
   const setStage = stage => {
     const key = SESSION_STAGE_KEYS[stage]
@@ -2112,7 +2288,8 @@ function ProjectSessionsPanel({ profile, connectionId, project, sessionId }) {
       profile,
       connection_id: connectionId,
       project_id: project.id,
-      project_name: project.name
+      project_name: project.name,
+      ...(storySessionName(sessionId, { titles }) ? { title: storySessionName(sessionId, { titles }) } : {})
     })
       .then(async () => {
         await sessionsQuery.refetch()
@@ -2130,9 +2307,10 @@ function ProjectSessionsPanel({ profile, connectionId, project, sessionId }) {
     className: 'hermes-story-sessions-panel',
     children: [
       jsx('div', { className: 'font-medium', children: t('agent.title') }),
+      jsx('div', { className: 'font-medium', children: t('agent.currentSession') }),
       jsx('div', {
         className: 'break-words text-(--ui-text-secondary)',
-        children: `${busy ? t('agent.working') : t('agent.idle')} · ${sessionId || t('agent.noFocusedSession')}`
+        children: `${busy ? t('agent.working') : t('agent.idle')} · ${sessionId ? nameOf(sessionId) : t('agent.noFocusedSession')}`
       }),
       jsx('div', { className: 'font-medium', children: t('agent.sessions') }),
       jsx('button', {
@@ -2142,6 +2320,38 @@ function ProjectSessionsPanel({ profile, connectionId, project, sessionId }) {
         type: 'button',
         children: t('agent.newWritingSession')
       }),
+      sessions.length
+        ? jsxs('div', {
+            className: 'flex flex-wrap gap-2',
+            children: [
+              jsx('button', {
+                className: 'rounded border border-(--ui-stroke-secondary) px-2 py-1 hover:bg-(--chrome-action-hover) disabled:opacity-50',
+                disabled: creatingSession,
+                onClick: toggleManaging,
+                type: 'button',
+                children: managing ? t('agent.doneManaging') : t('agent.manageSessions')
+              }),
+              managing
+                ? jsx('button', {
+                    className: 'rounded border border-(--ui-stroke-secondary) px-2 py-1 hover:bg-(--chrome-action-hover) disabled:opacity-50',
+                    disabled: creatingSession,
+                    onClick: toggleSelectAll,
+                    type: 'button',
+                    children: selectedCount === sessions.length ? t('agent.clearSelection') : t('agent.selectAll')
+                  })
+                : null,
+              managing
+                ? jsx('button', {
+                    className: 'rounded border border-(--ui-stroke-secondary) px-2 py-1 text-red-400 hover:bg-(--chrome-action-hover) disabled:opacity-50',
+                    disabled: creatingSession || !selectedCount,
+                    onClick: () => setConfirm({ ids: Object.keys(selectedIds), hard: false }),
+                    type: 'button',
+                    children: t('agent.deleteSelected', selectedCount)
+                  })
+                : null
+            ]
+          })
+        : null,
       sessionsQuery.isLoading
         ? jsx('div', { className: 'text-(--ui-text-tertiary)', children: t('agent.loadingSessions') })
         : sessionsQuery.error
@@ -2159,20 +2369,39 @@ function ProjectSessionsPanel({ profile, connectionId, project, sessionId }) {
                   return jsxs('div', {
                     className: 'rounded border border-(--ui-stroke-secondary) p-2',
                     children: [
-                      jsx('div', {
-                        className: 'truncate',
-                        children: binding.title || storedSessionId
+                      jsxs('div', {
+                        className: 'flex items-center gap-2',
+                        children: [
+                          managing
+                            ? jsx('input', {
+                                'aria-label': t('agent.selectSession', nameOf(storedSessionId)),
+                                checked: Boolean(selectedIds[storedSessionId]),
+                                disabled: creatingSession,
+                                onChange: () => toggleSelected(storedSessionId),
+                                type: 'checkbox'
+                              })
+                            : null,
+                          jsx('div', { className: 'min-w-0 flex-1 truncate', children: nameOf(storedSessionId) })
+                        ]
                       }),
                       jsxs('div', {
                         className: 'mt-1 flex flex-wrap gap-2',
                         children: [
-                          jsx('button', {
-                            className: 'rounded border border-(--ui-stroke-secondary) px-2 py-1 hover:bg-(--chrome-action-hover) disabled:opacity-50',
-                            disabled: creatingSession,
-                            onClick: () => continueSession(binding),
-                            type: 'button',
-                            children: t('agent.continueSession')
-                          }),
+                          managing
+                            ? jsx('button', {
+                                className: 'rounded border border-(--ui-stroke-secondary) px-2 py-1 text-red-400 hover:bg-(--chrome-action-hover) disabled:opacity-50',
+                                disabled: creatingSession,
+                                onClick: () => setConfirm({ ids: [storedSessionId], hard: false }),
+                                type: 'button',
+                                children: t('agent.deleteOne')
+                              })
+                            : jsx('button', {
+                                className: 'rounded border border-(--ui-stroke-secondary) px-2 py-1 hover:bg-(--chrome-action-hover) disabled:opacity-50',
+                                disabled: creatingSession,
+                                onClick: () => continueSession(binding),
+                                type: 'button',
+                                children: t('agent.continueSession')
+                              }),
                           stale
                             ? jsx('button', {
                                 className: 'rounded border border-(--ui-stroke-secondary) px-2 py-1 hover:bg-(--chrome-action-hover) disabled:opacity-50',
@@ -2188,6 +2417,52 @@ function ProjectSessionsPanel({ profile, connectionId, project, sessionId }) {
                   }, storedSessionId)
                 })
               }),
+      confirm
+        ? jsxs('div', {
+            className: 'flex flex-col gap-2 rounded border border-red-400 p-2',
+            role: 'alertdialog',
+            children: [
+              jsx('div', { className: 'font-medium', children: t('agent.confirmCount', confirm.ids.length) }),
+              jsx('div', { className: 'text-(--ui-text-tertiary)', children: t('agent.confirmUnbindHint') }),
+              jsxs('label', {
+                className: 'flex items-start gap-2',
+                children: [
+                  jsx('input', {
+                    checked: confirm.hard,
+                    disabled: creatingSession,
+                    onChange: () => setConfirm(previous => ({ ...previous, hard: !previous.hard })),
+                    type: 'checkbox'
+                  }),
+                  jsx('span', { children: t('agent.confirmHardLabel') })
+                ]
+              }),
+              confirm.hard && confirm.ids.includes(sessionId)
+                ? jsx('div', { className: 'text-red-400', children: t('agent.confirmHardActive') })
+                : null,
+              jsxs('div', {
+                className: 'flex flex-wrap gap-2',
+                children: [
+                  jsx('button', {
+                    className:
+                      'rounded border px-2 py-1 disabled:opacity-50 ' +
+                      (confirm.hard ? 'border-red-400 text-red-400' : 'border-(--ui-stroke-secondary)'),
+                    disabled: creatingSession || (confirm.hard && confirm.ids.includes(sessionId)),
+                    onClick: runRemove,
+                    type: 'button',
+                    children: confirm.hard ? t('agent.confirmHard') : t('agent.confirmUnbind')
+                  }),
+                  jsx('button', {
+                    className: 'rounded border border-(--ui-stroke-secondary) px-2 py-1 hover:bg-(--chrome-action-hover) disabled:opacity-50',
+                    disabled: creatingSession,
+                    onClick: () => setConfirm(null),
+                    type: 'button',
+                    children: t('agent.confirmCancel')
+                  })
+                ]
+              })
+            ]
+          })
+        : null,
       kickoffRecovery
         ? jsx('button', {
             className: 'rounded border border-(--ui-stroke-secondary) px-2 py-1 text-left hover:bg-(--chrome-action-hover) disabled:opacity-50',
@@ -2203,13 +2478,18 @@ function ProjectSessionsPanel({ profile, connectionId, project, sessionId }) {
             children: t(sessionState.key, ...sessionState.args)
           })
         : null,
-      jsx('button', {
-        className: 'rounded border border-(--ui-stroke-secondary) px-2 py-1 text-left hover:bg-(--chrome-action-hover) disabled:opacity-50',
-        disabled: creatingSession || !sessionId || !project?.id,
-        onClick: bind,
-        type: 'button',
-        children: t('agent.bindFocusedSession')
-      }),
+      focusedBound
+        ? jsx('div', {
+            className: 'break-words text-(--ui-text-secondary)',
+            children: t('agent.boundSession', nameOf(sessionId))
+          })
+        : jsx('button', {
+            className: 'rounded border border-(--ui-stroke-secondary) px-2 py-1 text-left hover:bg-(--chrome-action-hover) disabled:opacity-50',
+            disabled: creatingSession || !sessionId || !project?.id,
+            onClick: bind,
+            type: 'button',
+            children: t('agent.bindFocusedSession')
+          }),
       bindingState
         ? jsx('div', {
             className: 'break-words text-(--ui-text-tertiary)',

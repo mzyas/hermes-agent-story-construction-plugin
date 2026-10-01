@@ -262,6 +262,16 @@ An unbound session gets `session_not_bound` and stays an ordinary chat. If a
 durable binding points to a deleted Hermes session, “Continue”
 shows “Remove stale binding”; removal occurs only after that explicit action.
 
+The panel shows the focused session by its Hermes name (what the Hermes sidebar
+shows), and a focused session that is already bound shows “Bound · name”
+instead of the bind button. “Manage sessions” is the only way to delete:
+rows then get checkboxes and a Delete button, with Select all and Delete
+selected on top. Every deletion asks for confirmation first. The default is
+“Remove binding”, which keeps the Hermes session so it can be bound again;
+ticking “Also permanently delete the session itself” calls Hermes
+`session.delete` and then removes the binding. The session currently open
+cannot be permanently deleted, because Hermes refuses it.
+
 ### Project workspace
 
 Leaving the Story page and coming back resumes the project last opened for that
