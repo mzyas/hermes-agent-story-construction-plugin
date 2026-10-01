@@ -349,6 +349,62 @@ export function storyDiagnostic(error, status) {
   }
 }
 
+const PROJECT_MEMORY_KEY = 'story-construction.last-project.v1'
+
+function projectMemoryStorage() {
+  try {
+    return globalThis.localStorage || null
+  } catch {
+    return null
+  }
+}
+
+// The project a user last entered, per (connection, Profile), so leaving the
+// Story page and coming back resumes it instead of showing the project library.
+// In-memory first; localStorage only carries it across restarts, and any
+// storage failure just means nothing is remembered.
+export function createProjectMemory(storage = projectMemoryStorage()) {
+  const cache = new Map()
+  let loaded = false
+  const keyOf = ({ profile, connectionId } = {}) => JSON.stringify([connectionId || '', profile || ''])
+  const load = () => {
+    if (loaded) return
+    loaded = true
+    try {
+      const parsed = JSON.parse(storage?.getItem(PROJECT_MEMORY_KEY) || '{}')
+      if (parsed && typeof parsed === 'object') {
+        for (const [key, value] of Object.entries(parsed)) {
+          if (typeof value === 'string' && value) cache.set(key, value)
+        }
+      }
+    } catch {
+      // Unreadable memory is the same as an empty one.
+    }
+  }
+  const persist = () => {
+    try {
+      storage?.setItem(PROJECT_MEMORY_KEY, JSON.stringify(Object.fromEntries(cache)))
+    } catch {
+      // Still remembered for this run.
+    }
+  }
+  return {
+    get(scope) {
+      load()
+      return cache.get(keyOf(scope)) || null
+    },
+    set(scope, projectId) {
+      load()
+      const key = keyOf(scope)
+      if (typeof projectId === 'string' && projectId) cache.set(key, projectId)
+      else cache.delete(key)
+      persist()
+    }
+  }
+}
+
+export const storyProjectMemory = createProjectMemory()
+
 export function selectedProjectForScope(selection, { profile, connectionId } = {}) {
   if (selection?.profile !== profile || selection?.connectionId !== connectionId) {
     return null
@@ -2264,6 +2320,7 @@ function ProjectWorkspace() {
         setVaultCorrectionActive(false)
         setVaultRootInput('')
         // The previous Vault's projects and bindings no longer apply.
+        storyProjectMemory.set({ profile, connectionId }, null)
         setProjectSelection({ profile, connectionId, projectId: null })
         void projectsQuery.refetch()
       }
@@ -2319,9 +2376,31 @@ function ProjectWorkspace() {
     refetchInterval: 60_000
   })
   const projects = projectRows(projectsQuery.data)
-  const [projectSelection, setProjectSelection] = useState({ profile, connectionId, projectId: null })
+  const [projectSelection, setProjectSelection] = useState(() => ({
+    profile,
+    connectionId,
+    projectId: storyProjectMemory.get({ profile, connectionId })
+  }))
   const selectedProjectId = selectedProjectForScope(projectSelection, { profile, connectionId })
   const [selectedChapterId, setSelectedChapterId] = useState(null)
+
+  // A different (connection, Profile) resumes whatever that scope last had open.
+  useEffect(() => {
+    setProjectSelection(previous =>
+      previous.profile === profile && previous.connectionId === connectionId
+        ? previous
+        : { profile, connectionId, projectId: storyProjectMemory.get({ profile, connectionId }) }
+    )
+  }, [profile, connectionId])
+
+  // A remembered project that no longer exists (deleted, or another Vault) must
+  // not strand the page on an empty workspace: fall back to the library.
+  useEffect(() => {
+    if (!selectedProjectId || !projectsQuery.data || projectsQuery.isFetching) return
+    if (projects.some(item => item.id === selectedProjectId)) return
+    storyProjectMemory.set({ profile, connectionId }, null)
+    setProjectSelection({ profile, connectionId, projectId: null })
+  }, [selectedProjectId, projectsQuery.data, projectsQuery.isFetching, profile, connectionId])
   const [scope, setScope] = useState({ profile, connectionId, sessionId, projectId: null, tree: null, selectedChapterId: null, status: 'idle' })
 
   useEffect(() => {
@@ -2376,12 +2455,14 @@ function ProjectWorkspace() {
   const openProject = projectId => {
     if (!projectId) return
     if (!guardLeave({ kind: 'openProject', projectId })) return
+    storyProjectMemory.set({ profile, connectionId }, projectId)
     setProjectSelection({ profile, connectionId, projectId })
     setSelectedChapterId(null)
   }
 
   const backToLibrary = () => {
     if (!guardLeave({ kind: 'project' })) return
+    storyProjectMemory.set({ profile, connectionId }, null)
     setProjectSelection({ profile, connectionId, projectId: null })
     setSelectedChapterId(null)
   }
@@ -2395,6 +2476,7 @@ function ProjectWorkspace() {
     await projectsQuery.refetch()
     if (request?.generation !== viewGenerationRef.current) return
     // Enter by the id the POST response returned — never the first list row.
+    storyProjectMemory.set({ profile: request.profile, connectionId: request.connectionId }, projectId)
     setProjectSelection({ profile: request.profile, connectionId: request.connectionId, projectId })
     setSelectedChapterId(null)
   }

@@ -260,6 +260,13 @@ An unbound session gets `session_not_bound` and stays an ordinary chat. If a
 durable binding points to a deleted Hermes session, “Continue”
 shows “Remove stale binding”; removal occurs only after that explicit action.
 
+### Project workspace
+
+Leaving the Story page and coming back resumes the project last opened for that
+connection and Profile (kept in memory and in `localStorage`); “Back to library”
+forgets it, and a remembered project that no longer exists falls back to the
+library.
+
 ## Project Markdown contract
 
 The backend recognizes Markdown files with YAML frontmatter records:
