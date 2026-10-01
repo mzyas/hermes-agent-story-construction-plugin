@@ -3439,24 +3439,41 @@ const plugin = {
         area: ROUTES_AREA,
         data: { path: STORY_ROUTE_PATH },
         render: () => jsx(ProjectWorkspace, {})
-      },
-      {
-        id: 'nav',
-        area: SIDEBAR_NAV_AREA,
-        order: 55,
-        data: { codicon: 'book', label: ctx.i18n.t('workspace.title'), path: STORY_ROUTE_PATH }
-      },
-      {
-        id: 'open',
-        area: PALETTE_AREA,
-        data: {
-          id: 'story-construction.open',
-          label: ctx.i18n.t('palette.open'),
-          keywords: ['story', 'construction', 'project', 'chapter', 'workspace'],
-          run: () => host.navigate(STORY_ROUTE_PATH)
-        }
       }
     ])
+    // The sidebar and palette labels are plain strings, so they are registered
+    // again whenever the Hermes language changes. Registering them once would
+    // freeze whatever language was active at load time.
+    const registerLabels = () =>
+      ctx.registerMany([
+        {
+          id: 'nav',
+          area: SIDEBAR_NAV_AREA,
+          order: 55,
+          data: { codicon: 'book', label: ctx.i18n.t('workspace.title'), path: STORY_ROUTE_PATH }
+        },
+        {
+          id: 'open',
+          area: PALETTE_AREA,
+          data: {
+            id: 'story-construction.open',
+            label: ctx.i18n.t('palette.open'),
+            keywords: ['story', 'construction', 'project', 'chapter', 'workspace'],
+            run: () => host.navigate(STORY_ROUTE_PATH)
+          }
+        }
+      ])
+    let disposeLabels = registerLabels()
+    if (typeof ctx.i18n.onLocaleChange === 'function') {
+      const stopWatching = ctx.i18n.onLocaleChange(() => {
+        disposeLabels?.()
+        disposeLabels = registerLabels()
+      })
+      ctx.onDispose?.(() => {
+        if (typeof stopWatching === 'function') stopWatching()
+        disposeLabels?.()
+      })
+    }
   }
 }
 

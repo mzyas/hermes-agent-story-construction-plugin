@@ -28,11 +28,18 @@ const child = `
 const plugin = (await import(${JSON.stringify(pathToFileURL(pluginPath).href)})).default
 const contributions = []
 const registeredLocales = []
+const removed = []
+let locale = 'en'
+let onLocale = null
 plugin.register({
-  registerMany(items) { contributions.push(...items) },
+  registerMany(items) {
+    contributions.push(...items)
+    return () => removed.push(...items)
+  },
   i18n: {
     register(bundles) { registeredLocales.push(bundles); return () => {} },
-    t(key) { return key }
+    t(key) { return locale + ':' + key },
+    onLocaleChange(listener) { onLocale = listener; return () => { onLocale = null } }
   }
 })
 if (plugin.id !== 'story-construction') throw new Error('wrong plugin id')
@@ -46,6 +53,16 @@ const open = contributions.find(item => item.area === 'palette')
 if (!open) throw new Error('missing palette opener')
 open.data.run()
 if (globalThis.navigatedPaths[0] !== '/story-construction') throw new Error('palette opener did not open the Story Construction page')
+// A language change re-registers the labels in the new language and drops the old ones.
+if (typeof onLocale !== 'function') throw new Error('sidebar labels do not follow the language')
+const before = contributions.length
+locale = 'zh'
+onLocale()
+const fresh = contributions.slice(before)
+const freshNav = fresh.find(item => item.id === 'nav')
+if (freshNav?.data?.label !== 'zh:workspace.title') throw new Error('sidebar label did not follow the language')
+if (!fresh.some(item => item.area === 'palette' && item.data.label === 'zh:palette.open')) throw new Error('palette label did not follow the language')
+if (!removed.some(item => item.id === 'nav' && item.data.label === 'en:workspace.title')) throw new Error('old labels were not removed')
 `
 
 const result = spawnSync(
