@@ -136,7 +136,7 @@ def delete_project(
 
     runtime, state = _require_runtime()
     normalized_profile = _required_value(profile, "profile")
-    _required_value(connection_id, "connection_id")
+    connection_id = _required_value(connection_id, "connection_id")
     repository_module = _component(runtime, "repository")
     try:
         state.permissions.require_profile(normalized_profile)
@@ -161,7 +161,89 @@ def delete_project(
         "project_id": project.id,
         "trash_folder": destination.name,
         "unbound_sessions": unbound,
+        # The Hermes project is archived by the Desktop, never deleted; the
+        # workspace folder stays because it may hold drafts.
+        "hermes_project_id": _archive_workspace_link(
+            runtime, state, normalized_profile, connection_id, project.id
+        ),
     }
+
+
+@router.post("/projects/{project_id}/workspace")
+def ensure_project_workspace(project_id: str, body: dict[str, Any]) -> dict[str, Any]:
+    """Create (or reuse) the Story project's folder under the Profile workspace."""
+
+    runtime, state = _require_runtime()
+    profile = _required_body(body, "profile")
+    connection_id = _required_body(body, "connection_id")
+    project = _workspace_project(runtime, state, project_id, profile)
+    workspaces, base, registry = _workspace_context(runtime, state)
+    try:
+        with _selected_target_guard(state):
+            folder, created = workspaces.ensure_project_folder(base, project.id)
+        link = registry.get(profile=profile, connection_id=connection_id, project_id=project.id)
+    except workspaces.WorkspaceError as exc:
+        raise HTTPException(status_code=409, detail={"code": exc.code}) from exc
+    except workspaces.WorkspaceLinkStoreError as exc:
+        raise HTTPException(status_code=503, detail={"code": "workspace_state_invalid"}) from exc
+    return {
+        "folder": str(folder),
+        "created": created,
+        "link": asdict(link) if link else None,
+    }
+
+
+@router.get("/projects/{project_id}/workspace")
+def get_project_workspace(
+    project_id: str,
+    profile: str | None = None,
+    connection_id: str | None = None,
+) -> dict[str, Any]:
+    runtime, state = _require_runtime()
+    normalized_profile = _required_value(profile, "profile")
+    normalized_connection = _required_value(connection_id, "connection_id")
+    project = _workspace_project(runtime, state, project_id, normalized_profile)
+    workspaces = _component(runtime, "workspaces")
+    registry = _workspace_registry(runtime, state)
+    try:
+        link = registry.get(
+            profile=normalized_profile, connection_id=normalized_connection, project_id=project.id
+        )
+    except workspaces.WorkspaceLinkStoreError as exc:
+        raise HTTPException(status_code=503, detail={"code": "workspace_state_invalid"}) from exc
+    return {"link": asdict(link) if link else None}
+
+
+@router.put("/projects/{project_id}/workspace/link")
+def link_project_workspace(project_id: str, body: dict[str, Any]) -> dict[str, Any]:
+    """Remember which Hermes project belongs to the Story project's folder."""
+
+    runtime, state = _require_runtime()
+    profile = _required_body(body, "profile")
+    connection_id = _required_body(body, "connection_id")
+    hermes_project_id = _required_body(body, "hermes_project_id")
+    folder_text = _required_body(body, "folder")
+    project = _workspace_project(runtime, state, project_id, profile)
+    workspaces, base, registry = _workspace_context(runtime, state)
+    try:
+        # Only the folder this backend would create may be linked, so a request
+        # cannot point a project at an arbitrary directory.
+        expected = (base / workspaces.project_folder_name(project.id)).resolve()
+        if Path(folder_text).resolve() != expected or not expected.is_dir():
+            raise HTTPException(status_code=422, detail={"code": "workspace_folder_mismatch"})
+        with _selected_target_guard(state):
+            link = registry.link(
+                profile=profile,
+                connection_id=connection_id,
+                project_id=project.id,
+                hermes_project_id=hermes_project_id,
+                folder=str(expected),
+            )
+    except workspaces.WorkspaceError as exc:
+        raise HTTPException(status_code=409, detail={"code": exc.code}) from exc
+    except workspaces.WorkspaceLinkStoreError as exc:
+        raise HTTPException(status_code=503, detail={"code": "workspace_state_invalid"}) from exc
+    return {"link": asdict(link)}
 
 
 @router.get("/projects/{project_id}")
@@ -350,6 +432,54 @@ def save_chapter(project_id: str, chapter_id: str, body: dict[str, Any]) -> dict
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {"chapter": asdict(result.chapter)}
+
+
+def _workspace_project(runtime: Any, state: Any, project_id: str, profile: str) -> Any:
+    """The Story project a workspace request names, after the Profile lock check."""
+
+    repository_module = _component(runtime, "repository")
+    try:
+        state.permissions.require_profile(profile)
+        return state.repository.get_project(project_id).project
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=_permission_detail(exc)) from exc
+    except repository_module.NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+def _workspace_registry(runtime: Any, state: Any) -> Any:
+    workspaces = _component(runtime, "workspaces")
+    runtime_module = _component(runtime, "runtime")
+    return workspaces.WorkspaceLinkRegistry(runtime_module.workspace_state_path(state.hermes_home))
+
+
+def _workspace_context(runtime: Any, state: Any) -> tuple[Any, Path, Any]:
+    """The workspaces module, this Profile's project base folder and the link store."""
+
+    workspaces = _component(runtime, "workspaces")
+    profile_config = _component(runtime, "profile_config")
+    try:
+        raw_config = profile_config.read_profile_config(state.hermes_home)
+        base = workspaces.resolve_workspace_base(state.hermes_home, raw_config)
+    except workspaces.WorkspaceError as exc:
+        raise HTTPException(status_code=409, detail={"code": exc.code}) from exc
+    except profile_config.StorySetupError as exc:
+        raise HTTPException(status_code=503, detail=_uninitialized_status(exc.code)) from exc
+    return workspaces, base, _workspace_registry(runtime, state)
+
+
+def _archive_workspace_link(
+    runtime: Any, state: Any, profile: str, connection_id: str, project_id: str
+) -> str | None:
+    """Mark the project's workspace link archived; never fails a deletion."""
+
+    try:
+        link = _workspace_registry(runtime, state).mark_archived(
+            profile=profile, connection_id=connection_id, project_id=project_id
+        )
+    except Exception:
+        return None
+    return link.hermes_project_id if link else None
 
 
 def _create_record(runtime: Any, state: Any, profile: str, create: Any) -> Any:

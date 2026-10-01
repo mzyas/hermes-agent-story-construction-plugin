@@ -81,6 +81,10 @@ def _session_state_path(hermes_home: Path) -> Path:
     return hermes_home / "plugin-data" / "story-construction" / "sessions.json"
 
 
+def workspace_state_path(hermes_home: Path) -> Path:
+    return hermes_home / "plugin-data" / "story-construction" / "workspaces.json"
+
+
 def runtime_state_for(plugin_root: str | Path, hermes_home: str | Path) -> StoryRuntimeState | None:
     key = _runtime_key(plugin_root, hermes_home)
     with _RUNTIME_STATES_LOCK:

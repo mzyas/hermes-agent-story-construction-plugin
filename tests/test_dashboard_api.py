@@ -1200,6 +1200,7 @@ def test_delete_project_needs_the_typed_name_and_unbinds_every_session(monkeypat
     assert result == {
         "trashed": True, "project_id": "p1",
         "trash_folder": "p1-20260101-000000", "unbound_sessions": 2,
+        "hermes_project_id": None,
     }
     assert repository.trashed == ["p1"]
     assert [row.stored_session_id for row in state.sessions.all()] == ["c"]
@@ -1217,3 +1218,106 @@ def test_delete_project_checks_profile_scope_and_existence(monkeypatch, tmp_path
     )
     _assert_http_error(lambda: plugin_api.delete_project("p1", profile="writer", confirm_name="Novel"), 422)
     assert repository.trashed == []
+
+
+SCOPE = {"profile": "writer", "connection_id": "local"}
+
+
+def _set_terminal(state, text: str) -> None:
+    config = state.hermes_home / "config.yaml"
+    config.write_text(config.read_text(encoding="utf-8") + text, encoding="utf-8")
+
+
+def test_workspace_folder_is_created_under_the_profile_when_nothing_is_configured(monkeypatch, tmp_path: Path) -> None:
+    plugin_api, state, _ = _ready_runtime(monkeypatch, tmp_path)
+
+    result = plugin_api.ensure_project_workspace("p1", dict(SCOPE))
+
+    expected = (state.hermes_home / "story-workspaces" / "p1").resolve()
+    assert result == {"folder": str(expected), "created": True, "link": None}
+    assert expected.is_dir()
+    again = plugin_api.ensure_project_workspace("p1", dict(SCOPE))
+    assert again["created"] is False and again["folder"] == str(expected)
+
+
+def test_workspace_folder_follows_the_profile_terminal_cwd(monkeypatch, tmp_path: Path) -> None:
+    plugin_api, state, _ = _ready_runtime(monkeypatch, tmp_path)
+    work = tmp_path / "work"
+    work.mkdir()
+    _set_terminal(state, f"terminal:\n  backend: local\n  cwd: {work.as_posix()}\n")
+
+    result = plugin_api.ensure_project_workspace("p1", dict(SCOPE))
+
+    assert result["folder"] == str((work / "story" / "p1").resolve())
+
+
+def test_workspace_refuses_an_ssh_terminal_without_creating_anything(monkeypatch, tmp_path: Path) -> None:
+    plugin_api, state, _ = _ready_runtime(monkeypatch, tmp_path)
+    _set_terminal(state, "terminal:\n  backend: ssh\n  cwd: /home/me\n")
+
+    _assert_http_error(
+        lambda: plugin_api.ensure_project_workspace("p1", dict(SCOPE)), 409, "workspace_unsupported_backend"
+    )
+    assert not (state.hermes_home / "story-workspaces").exists()
+
+
+def test_workspace_requests_check_scope_and_project(monkeypatch, tmp_path: Path) -> None:
+    plugin_api, state, _ = _ready_runtime(monkeypatch, tmp_path)
+
+    _assert_http_error(
+        lambda: plugin_api.ensure_project_workspace("p1", {**SCOPE, "profile": "other"}), 403, "profile_lock_mismatch"
+    )
+    _assert_http_error(lambda: plugin_api.ensure_project_workspace("missing", dict(SCOPE)), 404)
+    _assert_http_error(lambda: plugin_api.ensure_project_workspace("p1", {"profile": "writer"}), 422)
+    _assert_http_error(lambda: plugin_api.get_project_workspace("p1", profile="writer"), 422)
+    assert not (state.hermes_home / "story-workspaces").exists()
+
+
+def test_linking_remembers_the_hermes_project_and_survives_a_reread(monkeypatch, tmp_path: Path) -> None:
+    plugin_api, _, _ = _ready_runtime(monkeypatch, tmp_path)
+    folder = plugin_api.ensure_project_workspace("p1", dict(SCOPE))["folder"]
+
+    assert plugin_api.get_project_workspace("p1", **SCOPE) == {"link": None}
+    linked = plugin_api.link_project_workspace(
+        "p1", {**SCOPE, "hermes_project_id": "p_abc", "folder": folder}
+    )["link"]
+
+    assert linked["hermes_project_id"] == "p_abc" and linked["folder"] == folder
+    assert plugin_api.get_project_workspace("p1", **SCOPE)["link"]["hermes_project_id"] == "p_abc"
+    assert plugin_api.ensure_project_workspace("p1", dict(SCOPE))["link"]["hermes_project_id"] == "p_abc"
+    assert plugin_api.get_project_workspace("p1", profile="writer", connection_id="remote") == {"link": None}
+
+
+def test_linking_only_accepts_the_projects_own_existing_folder(monkeypatch, tmp_path: Path) -> None:
+    plugin_api, state, _ = _ready_runtime(monkeypatch, tmp_path)
+    plugin_api.ensure_project_workspace("p1", dict(SCOPE))
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    missing = state.hermes_home / "story-workspaces" / "other-project"
+
+    for folder in (str(elsewhere), str(missing), str(state.hermes_home / "story-workspaces")):
+        _assert_http_error(
+            lambda folder=folder: plugin_api.link_project_workspace(
+                "p1", {**SCOPE, "hermes_project_id": "p_abc", "folder": folder}
+            ),
+            422, "workspace_folder_mismatch",
+        )
+    assert plugin_api.get_project_workspace("p1", **SCOPE) == {"link": None}
+
+
+def test_deleting_a_project_archives_its_link_and_reports_the_hermes_project(monkeypatch, tmp_path: Path) -> None:
+    plugin_api, _, _ = _ready_runtime(monkeypatch, tmp_path)
+    folder = plugin_api.ensure_project_workspace("p1", dict(SCOPE))["folder"]
+    plugin_api.link_project_workspace("p1", {**SCOPE, "hermes_project_id": "p_abc", "folder": folder})
+
+    result = plugin_api.delete_project("p1", **SCOPE, confirm_name="Novel")
+
+    assert result["hermes_project_id"] == "p_abc"
+    assert Path(folder).is_dir()  # drafts in the workspace are never touched
+    link = _request_workspace_registry(plugin_api).get(profile="writer", connection_id="local", project_id="p1")
+    assert link is not None and link.archived is True
+
+
+def _request_workspace_registry(plugin_api):
+    runtime, state = plugin_api._require_runtime()
+    return plugin_api._workspace_registry(runtime, state)

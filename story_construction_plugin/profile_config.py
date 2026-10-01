@@ -237,6 +237,12 @@ def _read_raw_config(home: Path) -> dict:
         raise StorySetupError("config_invalid") from exc
 
 
+def read_profile_config(home: Path) -> dict:
+    """The Profile's raw ``config.yaml`` mapping (empty when it has none)."""
+
+    return _read_raw_config(home)
+
+
 def _read_manifest(path: Path) -> dict:
     if not path.is_file():
         raise StorySetupError("agent_not_installed")
