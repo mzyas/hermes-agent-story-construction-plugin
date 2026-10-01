@@ -447,6 +447,29 @@ export async function resolveStoryProfileRoute({ profile, connectionId, profileR
   return selectStoryProfileRoute(await profileRoutes(), { profile, connectionId })
 }
 
+function currentStoryConnectionId() {
+  try {
+    return host.state.connectionId.get()
+  } catch {
+    return undefined
+  }
+}
+
+export function storySessionOpenOptions(route, profile, connectionId = currentStoryConnectionId()) {
+  // Passing a route makes Hermes force the sidebar to "All profiles", and a
+  // bare profile does the same unless keepAllProfilesScope is false. For the
+  // connection the user is already on, open by profile and keep the sidebar
+  // scoped to it. Only another connection needs the route to be reachable.
+  const base = { intent: 'in-place', awaitHydration: true, expectHistory: true, forceResume: true }
+  const routeConnectionId = typeof route?.connectionId === 'string' ? route.connectionId.trim() : ''
+  const activeConnectionId = typeof connectionId === 'string' ? connectionId.trim() : ''
+  if (!route || (routeConnectionId && routeConnectionId === activeConnectionId)) {
+    const target = (route?.targetProfile || route?.profile || profile || '').trim()
+    return { profile: target, keepAllProfilesScope: false, ...base }
+  }
+  return { route, ...base }
+}
+
 export async function listStorySessions({
   profile,
   connectionId,
@@ -473,13 +496,7 @@ export async function switchStorySession({
   if (!normalizedSessionId || !normalizedProfile) throw new Error('a session and Hermes profile are required')
   if (typeof openSession !== 'function') throw new Error('this Hermes Desktop version cannot open saved sessions')
   const route = await resolveStoryProfileRoute({ profile: normalizedProfile, connectionId, profileRoutes })
-  return openSession(normalizedSessionId, {
-    ...(route ? { route } : { profile: normalizedProfile }),
-    intent: 'in-place',
-    awaitHydration: true,
-    expectHistory: true,
-    forceResume: true
-  })
+  return openSession(normalizedSessionId, storySessionOpenOptions(route, normalizedProfile))
 }
 
 function call(path, options) {
@@ -843,13 +860,7 @@ export async function createStoryWritingSession({
 
     onStage?.('opening')
     try {
-      await openSession(storedId, {
-        route,
-        intent: 'in-place',
-        awaitHydration: true,
-        expectHistory: true,
-        forceResume: true
-      })
+      await openSession(storedId, storySessionOpenOptions(route, profile))
     } catch (error) {
       throw workflowError('opening', error)
     }
@@ -878,13 +889,7 @@ export async function retryStoryKickoff({
   }
 
   try {
-    await openSession(recovery.storedId, {
-      route: recovery.route,
-      intent: 'in-place',
-      awaitHydration: true,
-      expectHistory: true,
-      forceResume: true
-    })
+    await openSession(recovery.storedId, storySessionOpenOptions(recovery.route, recovery.profile))
   } catch (error) {
     throw workflowError('opening', error)
   }
