@@ -74,4 +74,5 @@ def test_prompt_tells_the_agent_to_judge_intent_and_use_the_tool() -> None:
     assert TOOL in rendered
     assert "session_not_bound" in rendered
     assert "ordinary conversation" in rendered
+    assert "this project" in rendered  # vague project questions go straight to the tool
     assert "project_id:" not in rendered  # the frozen prompt carries no live records

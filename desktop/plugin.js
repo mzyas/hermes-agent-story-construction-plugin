@@ -869,6 +869,25 @@ export function storySessionName(storedSessionId, { titles = {}, bindings = [] }
   return titles[storedSessionId] || binding?.title || ''
 }
 
+// Hermes refuses session.delete while the gateway still holds the session in
+// memory, and every session opened since the gateway started stays there. Close
+// the idle ones first; one that is working is left alone so the delete reports
+// that it is in use instead of cutting off a running turn.
+async function closeLiveStorySession(requestProfile, route, storedSessionId) {
+  let live = []
+  try {
+    const response = await requestProfile(route, 'session.active_list', {})
+    live = Array.isArray(response?.sessions) ? response.sessions : []
+  } catch {
+    return // no live list: let session.delete report what is wrong
+  }
+  for (const row of live) {
+    if (row?.session_key !== storedSessionId || !row?.id) continue
+    if (row.status && row.status !== 'idle') throw new Error('the session is still working; try again when it is idle')
+    await requestProfile(route, 'session.close', { session_id: row.id })
+  }
+}
+
 // removeBinding only forgets the project link, so the Hermes session stays and
 // can be bound again. deleteSession also deletes the Hermes session itself.
 // Sessions are handled one by one so a failure never hides the ones that worked.
@@ -901,6 +920,7 @@ export async function removeStoryProjectSessions({
         // Delete the Hermes session first: if that fails (for example Hermes
         // still has it open) nothing has changed. If it works and the unbind
         // below fails, the leftover is a stale binding with its own removal.
+        await closeLiveStorySession(requestProfile, route, storedSessionId)
         try {
           await requestProfile(route, 'session.delete', {
             session_id: storedSessionId,

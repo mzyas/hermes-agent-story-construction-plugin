@@ -42,7 +42,7 @@ const { storySessionTitles, storySessionName, removeStoryProjectSessions } = awa
 
 const route = { connectionId: 'local', mode: 'local', profile: 'writer', targetProfile: 'writer' }
 
-function harness({ failDelete = {}, failUnbind = {} } = {}) {
+function harness({ failDelete = {}, failUnbind = {}, live = [] } = {}) {
   const calls = []
   return {
     calls,
@@ -52,6 +52,11 @@ function harness({ failDelete = {}, failUnbind = {} } = {}) {
       connectionId: 'local',
       profileRoutes: async () => [route],
       requestProfile: async (_route, method, payload) => {
+        if (method === 'session.active_list') return { sessions: live }
+        if (method === 'session.close') {
+          calls.push(['close', payload.session_id])
+          return { closed: true }
+        }
         calls.push(['delete', payload.session_id])
         if (failDelete[payload.session_id]) throw failDelete[payload.session_id]
         return {}
@@ -110,4 +115,23 @@ test('an already missing Hermes session still loses its binding', async () => {
 test('nothing selected is rejected', async () => {
   const { options } = harness()
   await assert.rejects(removeStoryProjectSessions({ ...options, storedSessionIds: [] }), /no sessions/)
+})
+
+test('an idle live session is closed before it is deleted', async () => {
+  const live = [
+    { id: 'rt-1', session_key: 's1', status: 'idle' },
+    { id: 'rt-2', session_key: 'other', status: 'idle' }
+  ]
+  const { calls, options } = harness({ live })
+  const result = await removeStoryProjectSessions({ ...options, storedSessionIds: ['s1'], deleteSession: true })
+  assert.deepEqual(calls, [['close', 'rt-1'], ['delete', 's1'], ['unbind', 's1']])
+  assert.deepEqual(result.done, ['s1'])
+})
+
+test('a working live session is not closed or deleted', async () => {
+  const { calls, options } = harness({ live: [{ id: 'rt-1', session_key: 's1', status: 'working' }] })
+  const result = await removeStoryProjectSessions({ ...options, storedSessionIds: ['s1'], deleteSession: true })
+  assert.deepEqual(calls, [])
+  assert.deepEqual(result.done, [])
+  assert.match(result.failed[0].error.message, /still working/)
 })

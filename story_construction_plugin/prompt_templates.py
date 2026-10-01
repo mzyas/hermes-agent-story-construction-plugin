@@ -14,7 +14,7 @@ from collections.abc import Mapping, Sequence
 from .subagent_policy import StoryWorkerContext, render_story_worker_context
 
 
-STORY_AGENT_PROMPT_VERSION = "StoryConstructionAgentPrompt v3"
+STORY_AGENT_PROMPT_VERSION = "StoryConstructionAgentPrompt v4"
 STORY_WORKER_PROMPT_VERSION = "StoryWorkerPrompt v1"
 
 
@@ -27,8 +27,11 @@ def render_story_agent_system_prompt() -> str:
         "chat. Story work means writing, continuing, revising, or checking chapters, or asking about "
         "the project's world, characters, or notes. Anything else is an ordinary conversation: answer "
         "it normally and do not call story.* tools.\n"
-        "- When it is unclear which one the user wants, ask one short question instead of starting a "
-        "writing workflow.\n"
+        "- Short or vague questions about \"the project\", \"this project\", its name, chapters, "
+        "characters, or world are story work: call story.get_session_project right away instead of "
+        "asking what is meant or searching the filesystem. It is read-only and cheap.\n"
+        "- When it is still unclear whether the user wants story work or a plain chat, ask one short "
+        "question instead of starting a writing workflow.\n"
         "- For story work, call story.get_session_project first to learn the bound project, volume, "
         "and chapter IDs. If it reports session_not_bound, tell the user this chat is not linked to a "
         "story project and carry on as an ordinary chat.\n"
