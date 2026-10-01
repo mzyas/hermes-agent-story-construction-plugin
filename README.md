@@ -244,16 +244,20 @@ requiring a dedicated Gateway process. Its normal project-first workflow is:
 
 ```text
 Create project → initialize Obsidian skeleton → create and bind Hermes session
-→ submit visible first writing task → choose chapter/goal in chat → continue the bound session
+→ open an empty chat → user writes first → Agent decides story work or plain chat
+→ choose chapter/goal in chat → continue the bound session
 ```
 
 Project creation does not require a focused chat. The backend initializes the
 Obsidian project, world, first volume, and first chapter; “New writing session”
 then creates a Hermes session that follows the locked Profile configuration,
-binds it on the backend, submits the visible kickoff task, and opens it in the
-main chat. If kickoff submission fails after binding, use “Retry first task”;
-it reuses the same stored/runtime session IDs and does not create another
-session. If a durable binding points to a deleted Hermes session, “Continue”
+binds it on the backend, and opens it as an empty main chat. No first task is
+sent. The Agent judges from the user's own words whether they want story work
+or just a chat; for story work it calls `story.get_session_project`, which
+returns the project bound to that session (the model cannot name another
+project), then confirms the chapter title, goal, and output scope as before.
+An unbound session gets `session_not_bound` and stays an ordinary chat. If a
+durable binding points to a deleted Hermes session, “Continue”
 shows “Remove stale binding”; removal occurs only after that explicit action.
 
 ## Project Markdown contract

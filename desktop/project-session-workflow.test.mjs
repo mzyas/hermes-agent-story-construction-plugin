@@ -81,7 +81,7 @@ function workflowHarness(overrides = {}) {
   return { calls, dependencies }
 }
 
-test('creates, binds, starts, and opens a retained Story writing session', async () => {
+test('creates, binds, and opens a retained Story writing session without a first task', async () => {
   const { calls, dependencies } = workflowHarness()
 
   const result = await createStoryWritingSession(dependencies)
@@ -91,7 +91,6 @@ test('creates, binds, starts, and opens a retained Story writing session', async
     'session.create',
     'bind',
     'session.title',
-    'prompt.submit',
     'open',
     'release'
   ])
@@ -101,9 +100,9 @@ test('creates, binds, starts, and opens a retained Story writing session', async
     follow_profile_config: true
   })
   assert.deepEqual(calls.find(call => call[0] === 'session.create')[4], { spawnPriority: 'foreground' })
-  assert.match(calls.find(call => call[0] === 'prompt.submit')[2].text, /project_id: novel/)
-  assert.match(calls.find(call => call[0] === 'prompt.submit')[2].text, /chapter_id: novel:chapter-1/)
+  assert.equal(calls.some(call => call[0] === 'prompt.submit'), false)
   assert.equal(calls.find(call => call[0] === 'open')[1], 'stored-1')
+  assert.equal(calls.find(call => call[0] === 'open')[2].expectHistory, false)
   assert.equal(result.storedSessionId, 'stored-1')
   assert.equal(result.runtimeSessionId, 'runtime-1')
 })
@@ -126,54 +125,24 @@ test('stops after a bind failure and releases the retained route', async () => {
   assert.deepEqual(calls.map(call => call[0]), ['retain', 'session.create', 'bind', 'release'])
 })
 
-test('resumes once when the first kickoff reports a missing runtime session', async () => {
-  let promptAttempts = 0
-  const { calls, dependencies } = workflowHarness({
-    requestProfile: async (selectedRoute, method, payload, transfer, options) => {
-      calls.push([method, selectedRoute, payload, transfer, options])
-      if (method === 'session.create') {
-        return { session_id: 'runtime-1', stored_session_id: 'stored-1' }
-      }
-      if (method === 'prompt.submit' && promptAttempts++ === 0) {
-        throw Object.assign(new Error('session not in memory'), { code: 4001 })
-      }
-      if (method === 'session.resume') return { session_id: 'runtime-2' }
-      return {}
-    }
-  })
+test('binds the created runtime session and never resumes or rebinds it on its own', async () => {
+  const { calls, dependencies } = workflowHarness()
 
   const result = await createStoryWritingSession(dependencies)
 
-  assert.equal(calls.filter(call => call[0] === 'session.resume').length, 1)
-  assert.equal(calls.filter(call => call[0] === 'prompt.submit').length, 2)
-  assert.deepEqual(calls.map(call => call[0]), [
-    'retain',
-    'session.create',
-    'bind',
-    'session.title',
-    'prompt.submit',
-    'session.resume',
-    'bind',
-    'prompt.submit',
-    'open',
-    'release'
-  ])
-  assert.deepEqual(calls.find(call => call[0] === 'session.resume')[2], {
-    session_id: 'stored-1',
-    profile: 'writer',
-    omit_messages: true
-  })
-  assert.deepEqual(calls.filter(call => call[0] === 'bind')[1][1], {
+  assert.equal(calls.some(call => call[0] === 'session.resume'), false)
+  assert.equal(calls.filter(call => call[0] === 'bind').length, 1)
+  assert.deepEqual(calls.find(call => call[0] === 'bind')[1], {
     session_id: 'stored-1',
     stored_session_id: 'stored-1',
-    runtime_session_id: 'runtime-2',
+    runtime_session_id: 'runtime-1',
     profile: 'writer',
     connection_id: 'remote-1',
     project_id: 'novel',
     project_name: 'Novel',
     title: 'Story: Novel'
   })
-  assert.equal(result.runtimeSessionId, 'runtime-2')
+  assert.equal(result.runtimeSessionId, 'runtime-1')
   assert.equal(calls.at(-1)[0], 'release')
 })
 
@@ -221,17 +190,6 @@ for (const scenario of [
     }
   },
   {
-    name: 'wraps kickoff failures as submitting errors',
-    stage: 'submitting',
-    overrides: {
-      requestProfile: async (selectedRoute, method) => {
-        if (method === 'session.create') return { session_id: 'runtime-1', stored_session_id: 'stored-1' }
-        if (method === 'prompt.submit') throw new Error('submit failed')
-        return {}
-      }
-    }
-  },
-  {
     name: 'wraps session opening failures as opening errors',
     stage: 'opening',
     overrides: { openSession: async () => { throw new Error('open failed') } }
@@ -244,10 +202,6 @@ for (const scenario of [
       assert.equal(error.stage, scenario.stage)
       assert.match(error.message, /failed/)
       assert.ok(error.cause instanceof Error)
-      if (scenario.stage === 'submitting') {
-        assert.equal(error.recovery.storedId, 'stored-1')
-        assert.equal(error.recovery.runtimeId, 'runtime-1')
-      }
       return true
     })
   })

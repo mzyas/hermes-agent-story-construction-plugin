@@ -832,40 +832,18 @@ export async function createStoryWritingSession({
       // Older gateways persist the row on prompt.submit instead.
     }
 
-    onStage?.('submitting')
-    let text
-    let liveRuntimeId
-    try {
-      text = buildStoryKickoff(binding.context)
-      liveRuntimeId = await submitStoryKickoff({
-        route,
-        runtimeId,
-        storedId,
-        profile,
-        text,
-        requestProfile,
-        bindSession,
-        bindingRequest
-      })
-    } catch (error) {
-      throw workflowError('submitting', error, {
-        route,
-        runtimeId,
-        storedId,
-        profile,
-        text,
-        bindingRequest
-      })
-    }
-
+    // No first task is submitted: the user speaks first and the Agent decides
+    // from their words whether this is story work or a plain chat, learning the
+    // bound project through story.get_session_project. The session has no
+    // history yet, so the open must not wait for any.
     onStage?.('opening')
     try {
-      await openSession(storedId, storySessionOpenOptions(route, profile))
+      await openSession(storedId, { ...storySessionOpenOptions(route, profile), expectHistory: false })
     } catch (error) {
       throw workflowError('opening', error)
     }
     onStage?.('ready')
-    return { storedSessionId: storedId, runtimeSessionId: liveRuntimeId, binding }
+    return { storedSessionId: storedId, runtimeSessionId: runtimeId, binding }
   } finally {
     if (typeof release === 'function') release()
   }
