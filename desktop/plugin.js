@@ -119,6 +119,8 @@ const en = {
     confirmUnbind: 'Remove binding',
     confirmHard: 'Delete permanently',
     confirmCancel: 'Cancel',
+    workspaceUnavailable: 'The session was created, but it is not grouped under a Hermes project because the project folder could not be used.',
+    workspaceUnsupported: 'The session was created, but this Profile uses an ssh terminal, so no Hermes project folder is created.',
     removing: 'Working…',
     removed: count => `${count} session(s) done.`,
     removedPartial: (count, failed, error) => `${count} done, ${failed} failed: ${error}`,
@@ -279,6 +281,8 @@ const zh = {
     confirmUnbind: '移除绑定',
     confirmHard: '彻底删除',
     confirmCancel: '取消',
+    workspaceUnavailable: '写作会话已创建，但没有归入 Hermes 项目，因为项目文件夹无法使用。',
+    workspaceUnsupported: '写作会话已创建；此 Profile 使用 ssh 终端，所以不会创建 Hermes 项目文件夹。',
     removing: '正在处理…',
     removed: count => `已处理 ${count} 个会话。`,
     removedPartial: (count, failed, error) => `成功 ${count} 个，失败 ${failed} 个：${error}`,
@@ -831,6 +835,16 @@ export const deleteStoryProject = (projectId, scope, confirmName) =>
       '&confirm_name=' + encodeURIComponent(confirmName),
     { method: 'DELETE' }
   )
+export const requestStoryWorkspace = (projectId, { profile, connectionId }) =>
+  call('/projects/' + encodeURIComponent(projectId) + '/workspace', {
+    method: 'POST',
+    body: { profile, connection_id: connectionId }
+  })
+export const linkStoryWorkspace = (projectId, { profile, connectionId, hermesProjectId, folder }) =>
+  call('/projects/' + encodeURIComponent(projectId) + '/workspace/link', {
+    method: 'PUT',
+    body: { profile, connection_id: connectionId, hermes_project_id: hermesProjectId, folder }
+  })
 export const fetchProjectTree = (projectId, scope) =>
   call('/projects/' + encodeURIComponent(projectId) + buildStoryScopeQuery(scope))
 export const fetchProjectSessions = (projectId, scope) =>
@@ -1033,6 +1047,90 @@ async function submitStoryKickoff({
   }
 }
 
+const HERMES_NO_PROJECT = 5062
+
+function samePath(left, right) {
+  const normalize = value => String(value || '').replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
+  return Boolean(normalize(left)) && normalize(left) === normalize(right)
+}
+
+// Makes sure the Story project has its own folder and a Hermes project around
+// it, so its writing sessions group together in the Hermes sidebar. The backend
+// creates the folder (on the machine that serves this connection); Hermes only
+// registers it. Every step is safe to repeat: an existing folder, link or
+// Hermes project is reused.
+export async function ensureStoryProjectWorkspace({
+  project,
+  profile,
+  connectionId,
+  profileRoutes = host.profileRoutes,
+  requestProfile = host.requestProfile,
+  requestFolder = requestStoryWorkspace,
+  linkFolder = linkStoryWorkspace
+} = {}) {
+  const projectId = requiredSessionId(project?.id, 'project')
+  const scope = { profile, connectionId }
+  const { folder, link } = await requestFolder(projectId, scope)
+  const normalizedFolder = requiredSessionId(folder, 'workspace folder')
+  if (typeof requestProfile !== 'function') throw new Error('this Hermes Desktop version cannot create projects')
+  const route = await resolveStoryProfileRoute({ profile, connectionId, profileRoutes })
+  if (!route) throw new Error('the locked Hermes profile route is unavailable')
+  const params = { profile: route.targetProfile || profile }
+
+  if (link && link.folder && samePath(link.folder, normalizedFolder)) {
+    try {
+      if (link.archived) {
+        await requestProfile(route, 'projects.archive', { ...params, id: link.hermes_project_id, restore: true })
+      } else {
+        await requestProfile(route, 'projects.get', { ...params, id: link.hermes_project_id })
+      }
+      return { folder: normalizedFolder, hermesProjectId: link.hermes_project_id }
+    } catch (error) {
+      // The Hermes project was deleted by hand: fall through and register a new one.
+      if (error?.code !== HERMES_NO_PROJECT) throw error
+    }
+  }
+
+  let hermesProjectId
+  try {
+    const created = await requestProfile(route, 'projects.create', {
+      ...params,
+      name: project.name || projectId,
+      folders: [normalizedFolder],
+      primary_path: normalizedFolder
+    })
+    hermesProjectId = created?.project?.id
+  } catch (error) {
+    // The folder already belongs to a Hermes project: adopt that one.
+    const found = await requestProfile(route, 'projects.for_cwd', { ...params, cwd: normalizedFolder }).catch(() => null)
+    hermesProjectId = found?.project?.id
+    if (!hermesProjectId) throw error
+  }
+  hermesProjectId = requiredSessionId(hermesProjectId, 'hermes project')
+  await linkFolder(projectId, { ...scope, hermesProjectId, folder: normalizedFolder })
+  return { folder: normalizedFolder, hermesProjectId }
+}
+
+// Deleting a Story project archives its Hermes project (recoverable) and leaves
+// the workspace folder alone.
+export async function archiveHermesStoryProject({
+  hermesProjectId,
+  profile,
+  connectionId,
+  profileRoutes = host.profileRoutes,
+  requestProfile = host.requestProfile
+} = {}) {
+  const id = requiredSessionId(hermesProjectId, 'hermes project')
+  if (typeof requestProfile !== 'function') throw new Error('this Hermes Desktop version cannot archive projects')
+  const route = await resolveStoryProfileRoute({ profile, connectionId, profileRoutes })
+  if (!route) throw new Error('the locked Hermes profile route is unavailable')
+  try {
+    await requestProfile(route, 'projects.archive', { profile: route.targetProfile || profile, id })
+  } catch (error) {
+    if (error?.code !== HERMES_NO_PROJECT) throw error
+  }
+}
+
 export async function createStoryWritingSession({
   project,
   profile,
@@ -1042,6 +1140,7 @@ export async function createStoryWritingSession({
   requestProfile = host.requestProfile,
   bindSession = bindStorySession,
   openSession = host.openSession,
+  ensureWorkspace = ensureStoryProjectWorkspace,
   onStage = () => undefined
 } = {}) {
   let route
@@ -1050,6 +1149,17 @@ export async function createStoryWritingSession({
     if (!route) throw new Error('the locked Hermes profile route is unavailable')
   } catch (error) {
     throw workflowError('routing', error)
+  }
+
+  // The project folder is what groups the session under a Hermes project. A
+  // failure here never blocks the session: it is created without a folder and
+  // the caller is told why.
+  let workspace = null
+  let workspaceIssue = null
+  try {
+    workspace = await ensureWorkspace({ project, profile, connectionId, profileRoutes, requestProfile })
+  } catch (error) {
+    workspaceIssue = safeStatusFromError(error)?.code || error?.detail?.code || error?.code || 'workspace_unavailable'
   }
 
   let release
@@ -1067,10 +1177,14 @@ export async function createStoryWritingSession({
       const created = await requestProfile(route, 'session.create', {
         profile: route.targetProfile || profile,
         title: `Story: ${project.name}`,
-        follow_profile_config: true
+        follow_profile_config: true,
+        ...(workspace ? { cwd: workspace.folder } : {})
       }, undefined, { spawnPriority: 'foreground' })
       runtimeId = requiredSessionId(created?.session_id, 'runtime session')
       storedId = requiredSessionId(created?.stored_session_id, 'stored session')
+      // Hermes silently ignores a working directory it cannot use, so check
+      // that it was applied instead of assuming.
+      if (workspace && !samePath(created?.info?.cwd, workspace.folder)) workspaceIssue = 'workspace_not_applied'
     } catch (error) {
       throw workflowError('creating', error)
     }
@@ -1110,7 +1224,7 @@ export async function createStoryWritingSession({
       throw workflowError('opening', error)
     }
     onStage?.('ready')
-    return { storedSessionId: storedId, runtimeSessionId: runtimeId, binding }
+    return { storedSessionId: storedId, runtimeSessionId: runtimeId, binding, workspaceIssue }
   } finally {
     if (typeof release === 'function') release()
   }
@@ -1918,6 +2032,14 @@ function NewProjectDialog({ profile, connectionId, ready, onCreated, onClose, ge
     })
       .then(async created => {
         const projectId = requiredSessionId(created?.tree?.project?.id, 'created project')
+        // Give the project its Hermes project and folder in the background. It
+        // is safe to repeat and never blocks creation: opening a writing
+        // session tries again and reports what is wrong.
+        void ensureStoryProjectWorkspace({
+          project: { id: projectId, name: created?.tree?.project?.name || normalized.name },
+          profile,
+          connectionId
+        }).catch(() => undefined)
         if (!requestLive()) return
         await onCreated(projectId, { ...requestScope, generation: requestGeneration })
         if (!requestLive()) return
@@ -2058,6 +2180,12 @@ function DeleteProjectDialog({ project, profile, connectionId, onDeleted, onClos
     setFailed(false)
     void deleteStoryProject(project.id, scope, project.name)
       .then(async result => {
+        // Archive, never delete, the Hermes project; a failure only leaves it listed.
+        if (result?.hermes_project_id) {
+          await archiveHermesStoryProject({ hermesProjectId: result.hermes_project_id, profile, connectionId }).catch(
+            () => undefined
+          )
+        }
         if (!requestLive()) return
         await onDeleted(project.id, { ...scope, generation: requestGeneration, folder: result?.trash_folder || '' })
         if (!requestLive()) return
@@ -2434,7 +2562,15 @@ function ProjectSessionsPanel({ profile, connectionId, project, sessionId }) {
       onStage: setStage,
       openSession: openAfterRefetch
     })
-      .then(() => setStage('ready'))
+      .then(result => {
+        setStage('ready')
+        if (result?.workspaceIssue) {
+          setSessionState({
+            key: result.workspaceIssue === 'workspace_unsupported_backend' ? 'agent.workspaceUnsupported' : 'agent.workspaceUnavailable',
+            args: []
+          })
+        }
+      })
       .catch(error => {
         if (error.stage === 'submitting' && error.recovery) {
           setKickoffRecovery(error.recovery)

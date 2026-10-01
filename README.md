@@ -137,6 +137,9 @@ PUT  /settings                                      select Profile and shared Va
 GET  /status                                        readiness and diagnostics (never the Vault path)
 POST /projects                                      create a project in the shared Vault
 DELETE /projects/{project_id}?confirm_name=             move a project to the Vault trash
+POST /projects/{project_id}/workspace                 create or reuse the project's workspace folder
+GET /projects/{project_id}/workspace                  the project's Hermes project link
+PUT /projects/{project_id}/workspace/link             remember the Hermes project for that folder
 POST /projects/{project_id}/volumes                  append a volume to a project
 POST /projects/{project_id}/volumes/{volume_id}/chapters   append an empty chapter to a volume
 POST /projects/{project_id}/sessions                bind a Hermes session to the project
@@ -272,6 +275,36 @@ selected on top. Every deletion asks for confirmation first. The default is
 ticking “Also permanently delete the session itself” calls Hermes
 `session.delete` and then removes the binding. The session currently open
 cannot be permanently deleted, because Hermes refuses it.
+
+### Hermes projects and workspace folders
+
+Hermes groups sessions into a Hermes project by their working directory, so
+each Story project gets its own folder and a Hermes project around it. Without
+this, every writing session lands loose in the Hermes sidebar.
+
+- **Folder**: `<terminal.cwd>/story/<project id>/` when the writing Profile's
+  `config.yaml` has an absolute `terminal.cwd` that exists on a local terminal.
+  Otherwise `<Profile home>/story-workspaces/<project id>/`. A Profile whose
+  terminal backend is `ssh` keeps its directory on another host, so no folder
+  is created for it and sessions are opened as before.
+- **Not the Vault**: Vault records are only written through tools and the
+  Desktop UI. The workspace folder is separate; it is where a session can keep
+  its own files.
+- **Who creates it**: the plugin backend, on the machine that serves the
+  connection, because Hermes only registers a folder and silently ignores a
+  `cwd` that does not exist. With the WSL backend that is the WSL filesystem
+  (reachable from Windows as `\\wsl$\...`), the same place the gateway checks.
+- **When**: right after a project is created, and again when a writing session
+  is opened (so projects made earlier are picked up). The folder, the Hermes
+  project (`projects.create`, or the existing one that already owns the
+  folder) and the link in `plugin-data/story-construction/workspaces.json` are
+  all reused when they exist. A failure never blocks the session; the panel
+  says the session was not grouped and why.
+- **Sessions**: `session.create` is given the folder as `cwd`, and the result
+  is checked, because an unusable `cwd` would otherwise be dropped silently.
+  Existing sessions keep their old directory.
+- **Deleting a project** archives its Hermes project (`projects.archive`, so it
+  can be restored) and leaves the workspace folder untouched.
 
 ### Deleting a project
 
