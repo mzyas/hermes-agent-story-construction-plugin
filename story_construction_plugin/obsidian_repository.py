@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import shutil
 import tempfile
 import threading
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -54,6 +56,7 @@ class ObsidianProjectRepository:
             raise RepositoryError(f"Vault root does not exist: {root}")
         self.vault_root = root
         self._cache_lock = threading.Lock()
+        self._create_lock = threading.Lock()
         self._records_cache: tuple[tuple[Any, ...], dict[str, tuple[Any, ...]]] | None = None
 
     def create_project(self, name: str, *, slug: str | None = None) -> ProjectTree:
@@ -110,6 +113,62 @@ class ObsidianProjectRepository:
         finally:
             shutil.rmtree(staging_parent, ignore_errors=True)
         return tree
+
+    def create_volume(self, project_id: str, title: str) -> Volume:
+        """Append a new empty volume to a project."""
+
+        clean_title = _clean_title(title, "volume")
+        with self._create_lock:
+            tree = self.get_project(project_id)
+            root = self._project_root(tree.project.id)
+            number, volume_id = _next_numbered_id(
+                tree.project.id, "volume", (row.id for row in tree.volumes)
+            )
+            _write_new_story_document(
+                root / "volumes" / f"volume-{number:03d}.md",
+                {
+                    "type": "volume", "id": volume_id,
+                    "project_id": tree.project.id, "title": clean_title,
+                },
+            )
+            self._invalidate_records()
+        return self._one(self.get_project(project_id).volumes, volume_id, "volume")
+
+    def create_chapter(self, project_id: str, volume_id: str, title: str) -> Chapter:
+        """Append a new empty chapter at the end of an existing volume."""
+
+        clean_title = _clean_title(title, "chapter")
+        with self._create_lock:
+            tree = self.get_project(project_id)
+            self._one(tree.volumes, volume_id, "volume")
+            root = self._project_root(tree.project.id)
+            number, chapter_id = _next_numbered_id(
+                tree.project.id, "chapter", (row.id for row in tree.chapters)
+            )
+            _write_new_story_document(
+                root / "chapters" / f"chapter-{number:03d}.md",
+                {
+                    "type": "chapter", "id": chapter_id,
+                    "project_id": tree.project.id, "volume_id": volume_id,
+                    "title": clean_title,
+                },
+            )
+            self._invalidate_records()
+        return self._one(self.get_project(project_id).chapters, chapter_id, "chapter")
+
+    def _project_root(self, project_id: str) -> Path:
+        """Directory holding a project's ``project.md``; created files go below it."""
+
+        # ``project.md`` is where this repository writes the record, so look at
+        # those first and only fall back to reading every other file.
+        for path in sorted(self._markdown_files(), key=lambda candidate: candidate.name != "project.md"):
+            document = _read_document(path)
+            if (
+                str(document.metadata.get("type", "")).strip() == "project"
+                and str(document.metadata.get("id", "")).strip() == project_id
+            ):
+                return path.parent
+        raise NotFoundError(f"project {project_id!r} was not found")
 
     def get_project(self, project_id: str) -> ProjectTree:
         records = self._records()
@@ -298,6 +357,59 @@ class ObsidianProjectRepository:
             if row.id == object_id:
                 return row
         raise NotFoundError(f"{kind} {object_id!r} was not found")
+
+
+_MAX_TITLE_LENGTH = 120
+
+
+def _clean_title(title: str, kind: str) -> str:
+    text = unicodedata.normalize("NFKC", title or "").strip()
+    if not text:
+        raise DomainValidationError(f"{kind} title is required")
+    if len(text) > _MAX_TITLE_LENGTH:
+        raise DomainValidationError(f"{kind} title is longer than {_MAX_TITLE_LENGTH} characters")
+    if any(unicodedata.category(char).startswith("C") for char in text):
+        raise DomainValidationError(f"{kind} title contains control characters")
+    return text
+
+
+def _next_numbered_id(project_id: str, kind: str, existing_ids: Any) -> tuple[int, str]:
+    """Next ``<project>:<kind>-N`` after the highest N already used."""
+
+    pattern = re.compile(rf"^{re.escape(project_id)}:{kind}-(\d+)$")
+    used = {row_id for row_id in existing_ids}
+    highest = 0
+    for row_id in used:
+        match = pattern.match(row_id)
+        if match:
+            highest = max(highest, int(match.group(1)))
+    number = highest + 1
+    while f"{project_id}:{kind}-{number}" in used:
+        number += 1
+    return number, f"{project_id}:{kind}-{number}"
+
+
+def _write_new_story_document(path: Path, metadata: dict[str, Any]) -> None:
+    """Create a Markdown record without ever replacing an existing file."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        raise RepositoryError(f"refusing to overwrite an existing file: {path.name}")
+    temporary_name: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", newline="", dir=path.parent,
+            prefix=f".{path.name}.", suffix=".tmp", delete=False,
+        ) as handle:
+            temporary_name = handle.name
+            frontmatter = yaml.safe_dump(metadata, allow_unicode=True, sort_keys=False).rstrip("\n")
+            handle.write(f"---\n{frontmatter}\n---\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_name, path)
+    finally:
+        if temporary_name and Path(temporary_name).exists():
+            Path(temporary_name).unlink()
 
 
 def _file_signature(path: Path, vault_root: Path) -> tuple[str, int, int, int]:

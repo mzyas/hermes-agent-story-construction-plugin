@@ -136,6 +136,8 @@ Setup goes through the Dashboard API under `/api/plugins/story-construction/`:
 PUT  /settings                                      select Profile and shared Vault
 GET  /status                                        readiness and diagnostics (never the Vault path)
 POST /projects                                      create a project in the shared Vault
+POST /projects/{project_id}/volumes                  append a volume to a project
+POST /projects/{project_id}/volumes/{volume_id}/chapters   append an empty chapter to a volume
 POST /projects/{project_id}/sessions                bind a Hermes session to the project
 GET  /projects/{project_id}/sessions                list the project's bindings
 DELETE /projects/{project_id}/sessions/{stored_session_id}    remove a binding
@@ -269,7 +271,21 @@ library.
 
 The left sidebar has two tabs. “Chapters” lists each volume as a group with its
 chapter count and its chapters beneath it; “Notes” holds the world info,
-characters, and notes.
+characters, and notes. “New volume” and “New chapter” (a chapter goes into the
+open chapter's volume, else the last volume) open an inline title field;
+Enter creates, Escape cancels, and Enter that confirms an IME candidate is
+ignored. The new volume or chapter is a new Markdown record
+(`volumes/volume-NNN.md`, `chapters/chapter-NNN.md`) with the next free
+`<project>:volume-N` / `<project>:chapter-N` ID; an existing file is never
+overwritten, titles are trimmed and limited to 120 characters without control
+characters, and a failed request shows generic copy rather than the raw error.
+
+Right-clicking a volume, a chapter, or the empty space below the list opens a
+menu. Its entries are registered data (`registerStoryMenuItem({ id, kinds,
+labelKey, order, when, disabled, run })`, with `kinds` drawn from `sidebar`,
+`volume`, and `chapter`), so a later feature adds an entry without touching the
+sidebar. The menu uses the Desktop SDK's context-menu components and is simply
+absent on an SDK that lacks them; the toolbar buttons still work.
 
 ## Project Markdown contract
 

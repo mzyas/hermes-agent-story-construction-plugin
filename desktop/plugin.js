@@ -1,4 +1,7 @@
 import { PALETTE_AREA, ROUTES_AREA, SIDEBAR_NAV_AREA, host, usePluginI18n, useQuery, useValue } from '@hermes/plugin-sdk'
+// Namespace import: the context-menu components are optional, so an SDK that
+// lacks them degrades to no menu instead of failing to link the plugin.
+import * as storySdk from '@hermes/plugin-sdk'
 import { useEffect, useState } from 'react'
 import { jsx, jsxs } from 'react/jsx-runtime'
 
@@ -45,7 +48,18 @@ const en = {
     selectProject: 'Select a project.',
     tabChapters: 'Chapters',
     tabNotes: 'Notes',
-    unassignedVolume: 'No volume'
+    unassignedVolume: 'No volume',
+    newVolume: 'New volume',
+    newChapter: 'New chapter',
+    createConfirm: 'Create',
+    createCancel: 'Cancel',
+    creating: 'Creating…',
+    volumeTitlePlaceholder: 'Volume title',
+    chapterTitlePlaceholder: 'Chapter title',
+    defaultVolumeTitle: number => `Volume ${number}`,
+    defaultChapterTitle: number => `Chapter ${number}`,
+    createFailed: 'Could not create it. Try again.',
+    createInvalid: 'That title cannot be used.'
   },
   chapter: {
     openPrompt: 'Open a chapter to read or edit it.',
@@ -163,7 +177,18 @@ const zh = {
     selectProject: '请选择一个项目。',
     tabChapters: '章节',
     tabNotes: '笔记',
-    unassignedVolume: '未分卷'
+    unassignedVolume: '未分卷',
+    newVolume: '新建卷',
+    newChapter: '新建章节',
+    createConfirm: '创建',
+    createCancel: '取消',
+    creating: '正在创建…',
+    volumeTitlePlaceholder: '卷名称',
+    chapterTitlePlaceholder: '章节名称',
+    defaultVolumeTitle: number => `第${number}卷`,
+    defaultChapterTitle: number => `第${number}章`,
+    createFailed: '创建失败，请重试。',
+    createInvalid: '这个名称无法使用。'
   },
   chapter: {
     openPrompt: '打开一个章节以阅读或编辑。',
@@ -734,6 +759,10 @@ export async function submitStoryVaultPath(profile, vaultRoot, {
 
 export const fetchProjects = scope => call('/projects' + buildStoryScopeQuery(scope))
 export const createStoryProject = body => call('/projects', { method: 'POST', body })
+export const createStoryVolume = (projectId, body) =>
+  call('/projects/' + encodeURIComponent(projectId) + '/volumes', { method: 'POST', body })
+export const createStoryChapter = (projectId, volumeId, body) =>
+  call('/projects/' + encodeURIComponent(projectId) + '/volumes/' + encodeURIComponent(volumeId) + '/chapters', { method: 'POST', body })
 export const fetchProjectTree = (projectId, scope) =>
   call('/projects/' + encodeURIComponent(projectId) + buildStoryScopeQuery(scope))
 export const fetchProjectSessions = (projectId, scope) =>
@@ -1182,43 +1211,251 @@ function ProjectBranch({ branch, onOpenChapter, t }) {
 
 const SIDEBAR_NOTE_BRANCHES = ['worldInfo', 'characters', 'notes']
 
-function ChapterOutline({ outline, onOpenChapter, selectedChapterId, t }) {
-  if (!outline.length) {
-    return jsx('div', { className: 'p-3 text-(--ui-text-tertiary)', children: t('tree.empty') })
+// Right-click menu entries are data, not markup: anything can add one with
+// registerStoryMenuItem and it appears wherever its `kinds` apply. `kind` is
+// the thing right-clicked: 'sidebar' (empty space), 'volume', or 'chapter'.
+const storyMenuItems = []
+
+export function registerStoryMenuItem(item) {
+  storyMenuItems.push(item)
+  return () => {
+    const index = storyMenuItems.indexOf(item)
+    if (index >= 0) storyMenuItems.splice(index, 1)
   }
-  return jsx('div', {
-    children: outline.map(group =>
-      jsxs('details', {
-        className: 'border-b border-(--ui-stroke-secondary)',
-        open: true,
-        children: [
-          jsxs('summary', {
-            className: 'flex cursor-pointer items-center gap-2 px-3 py-2',
-            children: [
-              jsx('span', { className: 'min-w-0 flex-1 truncate font-medium', children: displayName(group.volume, t) }),
-              jsx('span', { className: 'shrink-0 text-xs text-(--ui-text-tertiary)', children: String(group.chapters.length) })
-            ]
-          }),
-          group.chapters.length
-            ? group.chapters.map(chapter =>
-                jsx('button', {
-                  'aria-current': chapter.id === selectedChapterId ? 'true' : undefined,
-                  className:
-                    'block w-full truncate px-4 py-2 text-left hover:bg-(--chrome-action-hover) ' +
-                    (chapter.id === selectedChapterId ? 'bg-(--chrome-action-hover) font-medium' : 'text-(--ui-text-secondary)'),
-                  onClick: () => onOpenChapter(chapter.id),
-                  type: 'button',
-                  children: displayName(chapter, t)
-                }, chapter.id)
-              )
-            : jsx('div', { className: 'px-4 py-2 text-(--ui-text-tertiary)', children: t('tree.empty') })
-        ]
-      }, group.volume.id || 'unassigned')
-    )
+}
+
+export function storyMenuItemsFor(kind, target = {}, context = {}) {
+  return storyMenuItems
+    .filter(item => item.kinds.includes(kind) && (!item.when || item.when(target, context)))
+    .sort((left, right) => (left.order ?? 100) - (right.order ?? 100))
+    .map(item => ({
+      id: item.id,
+      labelKey: item.labelKey,
+      disabled: Boolean(item.disabled?.(target, context)),
+      run: () => item.run(target, context)
+    }))
+}
+
+registerStoryMenuItem({
+  id: 'story.newChapter',
+  kinds: ['volume', 'chapter'],
+  labelKey: 'tree.newChapter',
+  order: 10,
+  when: (target, context) => Boolean(context.onCreate && target.volumeId),
+  disabled: (target, context) => Boolean(context.createBusy),
+  run: (target, context) => context.onCreate('chapter', target.volumeId)
+})
+
+registerStoryMenuItem({
+  id: 'story.newVolume',
+  kinds: ['sidebar', 'volume', 'chapter'],
+  labelKey: 'tree.newVolume',
+  order: 20,
+  when: (target, context) => Boolean(context.onCreate),
+  disabled: (target, context) => Boolean(context.createBusy),
+  run: (target, context) => context.onCreate('volume')
+})
+
+function StoryContextMenu({ kind, target, context, t, children }) {
+  const { ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem } = storySdk
+  const items = storyMenuItemsFor(kind, target, context)
+  if (!ContextMenu || !ContextMenuTrigger || !ContextMenuContent || !ContextMenuItem || !items.length) {
+    return children
+  }
+  return jsxs(ContextMenu, {
+    children: [
+      jsx(ContextMenuTrigger, { asChild: true, children }),
+      jsx(ContextMenuContent, {
+        children: items.map(item =>
+          jsx(ContextMenuItem, { disabled: item.disabled, onSelect: item.run, children: t(item.labelKey) }, item.id)
+        )
+      })
+    ]
   })
 }
 
-export function StorySidebar({ tree, tab = 'chapters', onTab, onOpenChapter, selectedChapterId, t }) {
+function StoryCreateRow({ kind, defaultTitle, busy, error, onSubmit, onCancel, t }) {
+  const [title, setTitle] = useState(defaultTitle)
+  const submit = () => {
+    const value = String(title || '').trim()
+    if (value && !busy) onSubmit(value)
+  }
+  return jsxs('div', {
+    className: 'flex flex-col gap-1 border-b border-(--ui-stroke-secondary) p-2',
+    children: [
+      jsx('input', {
+        autoFocus: true,
+        className: 'w-full rounded border border-(--ui-stroke-secondary) bg-transparent px-2 py-1',
+        disabled: busy,
+        onChange: event => setTitle(event.target.value),
+        onKeyDown: event => {
+          // Enter that confirms an IME candidate must not create the record.
+          if (event.isComposing || event.nativeEvent?.isComposing) return
+          if (event.key === 'Enter') {
+            event.preventDefault()
+            submit()
+          } else if (event.key === 'Escape') {
+            event.preventDefault()
+            onCancel()
+          }
+        },
+        placeholder: t(kind === 'volume' ? 'tree.volumeTitlePlaceholder' : 'tree.chapterTitlePlaceholder'),
+        value: title
+      }),
+      error ? jsx('div', { className: 'text-xs text-(--ui-text-secondary)', children: error }) : null,
+      jsxs('div', {
+        className: 'flex gap-2',
+        children: [
+          jsx('button', {
+            className: 'rounded border border-(--ui-stroke-secondary) px-2 py-1 hover:bg-(--chrome-action-hover) disabled:opacity-50',
+            disabled: busy || !String(title || '').trim(),
+            onClick: submit,
+            type: 'button',
+            children: busy ? t('tree.creating') : t('tree.createConfirm')
+          }),
+          jsx('button', {
+            className: 'rounded px-2 py-1 text-(--ui-text-secondary) hover:bg-(--chrome-action-hover) disabled:opacity-50',
+            disabled: busy,
+            onClick: onCancel,
+            type: 'button',
+            children: t('tree.createCancel')
+          })
+        ]
+      })
+    ]
+  })
+}
+
+function ChapterOutline({ outline, onOpenChapter, selectedChapterId, creating, createBusy, createError, onCreate, onSubmitCreate, onCancelCreate, t }) {
+  const realGroups = outline.filter(group => group.volume.id)
+  const chapterTotal = outline.reduce((total, group) => total + group.chapters.length, 0)
+  const menuContext = { onCreate, createBusy }
+  // "New chapter" from the toolbar goes to the open chapter's volume, else the last volume.
+  const selectedGroup = outline.find(
+    group => group.volume.id && group.chapters.some(chapter => chapter.id === selectedChapterId)
+  )
+  const defaultVolumeId = (selectedGroup || realGroups.at(-1))?.volume.id || null
+  const createRow = (kind, defaultTitle) =>
+    jsx(
+      StoryCreateRow,
+      {
+        busy: createBusy,
+        defaultTitle,
+        error: createError,
+        kind,
+        onCancel: onCancelCreate,
+        onSubmit: onSubmitCreate,
+        t
+      },
+      kind + ':' + (creating?.volumeId || '')
+    )
+  const toolbarButton = (label, onClick, disabled) =>
+    jsx(
+      'button',
+      {
+        className: 'rounded border border-(--ui-stroke-secondary) px-2 py-1 text-xs hover:bg-(--chrome-action-hover) disabled:opacity-50',
+        disabled,
+        onClick,
+        type: 'button',
+        children: label
+      },
+      label
+    )
+  return jsxs('div', {
+    className: 'flex min-h-full flex-col',
+    children: [
+      onCreate
+        ? jsxs('div', {
+            className: 'flex gap-1 border-b border-(--ui-stroke-secondary) p-2',
+            children: [
+              toolbarButton(t('tree.newVolume'), () => onCreate('volume'), createBusy),
+              toolbarButton(
+                t('tree.newChapter'),
+                () => defaultVolumeId && onCreate('chapter', defaultVolumeId),
+                createBusy || !defaultVolumeId
+              )
+            ]
+          })
+        : null,
+      creating?.kind === 'volume' ? createRow('volume', t('tree.defaultVolumeTitle', realGroups.length + 1)) : null,
+      outline.length
+        ? outline.map(group => {
+            const summary = jsxs('summary', {
+              className: 'flex cursor-pointer items-center gap-2 px-3 py-2',
+              children: [
+                jsx('span', { className: 'min-w-0 flex-1 truncate font-medium', children: displayName(group.volume, t) }),
+                jsx('span', {
+                  className: 'shrink-0 text-xs text-(--ui-text-tertiary)',
+                  children: String(group.chapters.length)
+                })
+              ]
+            })
+            return jsxs(
+              'details',
+              {
+                className: 'border-b border-(--ui-stroke-secondary)',
+                open: true,
+                children: [
+                  group.volume.id
+                    ? jsx(StoryContextMenu, {
+                        children: summary,
+                        context: menuContext,
+                        kind: 'volume',
+                        t,
+                        target: { volumeId: group.volume.id }
+                      })
+                    : summary,
+                  group.chapters.length
+                    ? group.chapters.map(chapter => {
+                        const button = jsx('button', {
+                          'aria-current': chapter.id === selectedChapterId ? 'true' : undefined,
+                          className:
+                            'block w-full truncate px-4 py-2 text-left hover:bg-(--chrome-action-hover) ' +
+                            (chapter.id === selectedChapterId
+                              ? 'bg-(--chrome-action-hover) font-medium'
+                              : 'text-(--ui-text-secondary)'),
+                          onClick: () => onOpenChapter(chapter.id),
+                          type: 'button',
+                          children: displayName(chapter, t)
+                        })
+                        return group.volume.id
+                          ? jsx(
+                              StoryContextMenu,
+                              {
+                                children: button,
+                                context: menuContext,
+                                kind: 'chapter',
+                                t,
+                                target: { chapterId: chapter.id, volumeId: group.volume.id }
+                              },
+                              chapter.id
+                            )
+                          : jsx('div', { children: button }, chapter.id)
+                      })
+                    : jsx('div', { className: 'px-4 py-2 text-(--ui-text-tertiary)', children: t('tree.empty') }),
+                  creating?.kind === 'chapter' && creating.volumeId === group.volume.id
+                    ? createRow('chapter', t('tree.defaultChapterTitle', chapterTotal + 1))
+                    : null
+                ]
+              },
+              group.volume.id || 'unassigned'
+            )
+          })
+        : jsx('div', { className: 'p-3 text-(--ui-text-tertiary)', children: t('tree.empty') }),
+      // Empty space below the list is its own right-click target, so the
+      // volume and chapter menus never nest inside another one.
+      jsx(StoryContextMenu, {
+        children: jsx('div', { className: 'min-h-16 flex-1' }),
+        context: menuContext,
+        kind: 'sidebar',
+        t,
+        target: {}
+      })
+    ]
+  })
+}
+
+export function StorySidebar({ tree, tab = 'chapters', onTab, onOpenChapter, selectedChapterId, creating, createBusy = false, createError = null, onCreate, onSubmitCreate, onCancelCreate, t }) {
   if (!tree) {
     return jsx('div', { className: 'p-3 text-(--ui-text-tertiary)', children: t('tree.selectProject') })
   }
@@ -1247,7 +1484,18 @@ export function StorySidebar({ tree, tab = 'chapters', onTab, onOpenChapter, sel
         children:
           tab === 'notes'
             ? noteBranches.map(branch => jsx(ProjectBranch, { branch, onOpenChapter, t }, branch.id))
-            : jsx(ChapterOutline, { outline: tree.outline || [], onOpenChapter, selectedChapterId, t })
+            : jsx(ChapterOutline, {
+                createBusy,
+                createError,
+                creating,
+                onCancelCreate,
+                onCreate,
+                onOpenChapter,
+                onSubmitCreate,
+                outline: tree.outline || [],
+                selectedChapterId,
+                t
+              })
       })
     ]
   })
@@ -2471,6 +2719,10 @@ function ProjectWorkspace() {
   const selectedProjectId = selectedProjectForScope(projectSelection, { profile, connectionId })
   const [selectedChapterId, setSelectedChapterId] = useState(null)
   const [sidebarTab, setSidebarTab] = useState('chapters')
+  const [creatingRecord, setCreatingRecord] = useState(null)
+  const [createState, setCreateState] = useState({ busy: false, error: null })
+  const selectedProjectIdRef = useMutableRef(selectedProjectId)
+  selectedProjectIdRef.current = selectedProjectId
 
   // A different (connection, Profile) resumes whatever that scope last had open.
   useEffect(() => {
@@ -2503,6 +2755,52 @@ function ProjectWorkspace() {
   })
   const tree = treeQuery.data ? buildProjectTree(treeQuery.data.tree || treeQuery.data, t) : scope.tree
   const project = tree?.project || projects.find(item => item.id === selectedProjectId) || null
+
+  // A creation row belongs to the project it was opened in.
+  useEffect(() => {
+    setCreatingRecord(null)
+    setCreateState({ busy: false, error: null })
+  }, [selectedProjectId, profile, connectionId])
+
+  const cancelCreate = () => {
+    setCreatingRecord(null)
+    setCreateState({ busy: false, error: null })
+  }
+
+  const startCreate = (kind, volumeId) => {
+    if (!selectedProjectId || createState.busy) return
+    setSidebarTab('chapters')
+    setCreatingRecord({ kind, volumeId: kind === 'chapter' ? volumeId : null })
+    setCreateState({ busy: false, error: null })
+  }
+
+  const submitCreate = title => {
+    const request = creatingRecord
+    if (!request || !selectedProjectId || createState.busy) return
+    // Like project creation, a late answer must not touch a view it did not come from.
+    const generation = viewGenerationRef.current
+    const projectId = selectedProjectId
+    const live = () => generation === viewGenerationRef.current && selectedProjectIdRef.current === projectId
+    const body = { title, profile, connection_id: connectionId }
+    setCreateState({ busy: true, error: null })
+    const created = request.kind === 'volume'
+      ? createStoryVolume(projectId, body)
+      : createStoryChapter(projectId, request.volumeId, body)
+    void created
+      .then(async result => {
+        await treeQuery.refetch()
+        if (!live()) return
+        setCreatingRecord(null)
+        setCreateState({ busy: false, error: null })
+        if (request.kind === 'chapter' && result?.chapter?.id) setSelectedChapterId(result.chapter.id)
+      })
+      .catch(error => {
+        if (!live()) return
+        // Generic copy plus a whitelisted status, never the raw error text.
+        const invalid = storyDiagnostic(error, null).httpStatus === 422
+        setCreateState({ busy: false, error: t(invalid ? 'tree.createInvalid' : 'tree.createFailed') })
+      })
+  }
 
   const handleDraftState = ({ key, draft, baseline, saving }) => {
     // ChapterEditor reports draft/baseline/saving; only string drafts touch the
@@ -2663,7 +2961,13 @@ function ProjectWorkspace() {
               children: t('workspace.projectUnavailable', treeQuery.error.message)
             })
           : jsx(StorySidebar, {
+              createBusy: createState.busy,
+              createError: createState.error,
+              creating: creatingRecord,
+              onCancelCreate: cancelCreate,
+              onCreate: startCreate,
               onOpenChapter: setSelectedChapterId,
+              onSubmitCreate: submitCreate,
               onTab: setSidebarTab,
               selectedChapterId,
               t,

@@ -42,6 +42,7 @@ class FakeRepository:
             content="full chapter body", source_ref="chapters/ch1.md", version="v1",
         )
         self.created: list[tuple[str, str | None]] = []
+        self.created_records: list[tuple[str, ...]] = []
         self._created_projects: dict[str, object] = {}
 
     def create_project(self, name, *, slug=None):
@@ -75,6 +76,23 @@ class FakeRepository:
             return self._created_projects[project_id]
         except KeyError as exc:
             raise self._repository_module.NotFoundError(f"project {project_id!r} was not found") from exc
+
+    def create_volume(self, project_id, title):
+        self.get_project(project_id)
+        if not title.strip():
+            raise self._repository_module.DomainValidationError("volume title is required")
+        self.created_records.append(("volume", project_id, title))
+        return Volume(id=f"{project_id}:volume-2", project_id=project_id, title=title.strip())
+
+    def create_chapter(self, project_id, volume_id, title):
+        tree = self.get_project(project_id)
+        if volume_id not in {row.id for row in tree.volumes}:
+            raise self._repository_module.NotFoundError(f"volume {volume_id!r} was not found")
+        self.created_records.append(("chapter", project_id, volume_id, title))
+        return Chapter(
+            id=f"{project_id}:chapter-2", project_id=project_id, volume_id=volume_id,
+            title=title.strip(), content="",
+        )
 
     def get_chapter(self, project_id, chapter_id):
         assert (project_id, chapter_id) == ("p1", "ch1")
@@ -257,6 +275,56 @@ def test_create_project_maps_invalid_slug_to_unprocessable(monkeypatch, tmp_path
         }),
         422,
     )
+
+
+def test_create_volume_requires_locked_profile_but_not_a_session(monkeypatch, tmp_path: Path) -> None:
+    plugin_api, _, repository = _ready_runtime(monkeypatch, tmp_path)
+
+    created = plugin_api.create_volume("p1", {
+        "title": " Volume II ", "profile": "writer", "connection_id": "local",
+    })
+
+    assert created == {"volume": {"id": "p1:volume-2", "project_id": "p1", "title": "Volume II"}}
+    assert repository.created_records == [("volume", "p1", "Volume II")]
+
+
+def test_create_chapter_lands_in_the_requested_volume(monkeypatch, tmp_path: Path) -> None:
+    plugin_api, _, repository = _ready_runtime(monkeypatch, tmp_path)
+
+    created = plugin_api.create_chapter("p1", "v1", {
+        "title": "Two", "profile": "writer", "connection_id": "local",
+    })
+
+    assert created["chapter"]["id"] == "p1:chapter-2"
+    assert created["chapter"]["volume_id"] == "v1"
+    assert repository.created_records == [("chapter", "p1", "v1", "Two")]
+
+
+def test_create_volume_and_chapter_reject_locked_profile_mismatch(monkeypatch, tmp_path: Path) -> None:
+    plugin_api, _, repository = _ready_runtime(monkeypatch, tmp_path)
+    body = {"title": "X", "profile": "other", "connection_id": "local"}
+
+    _assert_http_error(lambda: plugin_api.create_volume("p1", body), 403, "profile_lock_mismatch")
+    _assert_http_error(lambda: plugin_api.create_chapter("p1", "v1", body), 403, "profile_lock_mismatch")
+    assert repository.created_records == []
+
+
+def test_create_volume_and_chapter_map_missing_targets_to_not_found(monkeypatch, tmp_path: Path) -> None:
+    plugin_api, _, _ = _ready_runtime(monkeypatch, tmp_path)
+    body = {"title": "X", "profile": "writer", "connection_id": "local"}
+
+    _assert_http_error(lambda: plugin_api.create_volume("missing", body), 404)
+    _assert_http_error(lambda: plugin_api.create_chapter("p1", "missing", body), 404)
+
+
+def test_create_volume_and_chapter_reject_blank_title_and_missing_scope(monkeypatch, tmp_path: Path) -> None:
+    plugin_api, _, repository = _ready_runtime(monkeypatch, tmp_path)
+    scope = {"profile": "writer", "connection_id": "local"}
+
+    _assert_http_error(lambda: plugin_api.create_volume("p1", {**scope, "title": "   "}), 422)
+    _assert_http_error(lambda: plugin_api.create_chapter("p1", "v1", {**scope, "title": ""}), 422)
+    _assert_http_error(lambda: plugin_api.create_volume("p1", {"title": "X", "profile": "writer"}), 422)
+    assert repository.created_records == []
 
 
 def test_create_project_rejects_non_string_optional_slug(monkeypatch, tmp_path: Path) -> None:

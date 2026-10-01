@@ -98,6 +98,33 @@ def create_project(body: dict[str, Any]) -> dict[str, Any]:
     return {"tree": _tree_payload(tree)}
 
 
+@router.post("/projects/{project_id}/volumes")
+def create_volume(project_id: str, body: dict[str, Any]) -> dict[str, Any]:
+    runtime, state = _require_runtime()
+    profile = _required_body(body, "profile")
+    _required_body(body, "connection_id")
+    title = _required_body(body, "title")
+    volume = _create_record(
+        runtime, state, profile, lambda: state.repository.create_volume(project_id, title)
+    )
+    return {"volume": asdict(volume)}
+
+
+@router.post("/projects/{project_id}/volumes/{volume_id}/chapters")
+def create_chapter(project_id: str, volume_id: str, body: dict[str, Any]) -> dict[str, Any]:
+    runtime, state = _require_runtime()
+    profile = _required_body(body, "profile")
+    _required_body(body, "connection_id")
+    title = _required_body(body, "title")
+    chapter = _create_record(
+        runtime,
+        state,
+        profile,
+        lambda: state.repository.create_chapter(project_id, volume_id, title),
+    )
+    return {"chapter": asdict(chapter)}
+
+
 @router.get("/projects/{project_id}")
 def get_project_tree(
     project_id: str,
@@ -284,6 +311,22 @@ def save_chapter(project_id: str, chapter_id: str, body: dict[str, Any]) -> dict
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {"chapter": asdict(result.chapter)}
+
+
+def _create_record(runtime: Any, state: Any, profile: str, create: Any) -> Any:
+    """Run one repository create under the profile lock and write guard."""
+
+    repository_module = _component(runtime, "repository")
+    try:
+        state.permissions.require_profile(profile)
+        with _selected_target_guard(state):
+            return create()
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=_permission_detail(exc)) from exc
+    except repository_module.NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except repository_module.DomainValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 class _SetupFailure(Exception):
