@@ -85,6 +85,53 @@ const en = {
     saveFailed: error => `Save failed: ${error}`,
     saveConfirmed: 'Save confirmed draft'
   },
+  proposal: {
+    strip: count => `The Agent has ${count} change(s) waiting`,
+    review: 'Review',
+    pending: 'Waiting for approval',
+    approvedLeft: minutes => `Approved · ${minutes} min left`,
+    expired: 'Approval expired',
+    stale: 'The chapter changed since this was proposed',
+    newChapter: title => `New chapter: ${title}`,
+    editChapter: title => `Changes to ${title}`,
+    close: 'Close',
+    approve: 'Approve selected changes',
+    approveText: 'Approve this text',
+    revoke: 'Withdraw approval',
+    discard: 'Discard',
+    editResult: 'Edit the result',
+    backToChanges: 'Back to the changes',
+    editHint: 'Edit the whole resulting text. Only this text can be written, and only when the Agent applies it.',
+    editLabel: 'Resulting text',
+    changeN: (number, op) => `Change ${number} · ${op}`,
+    line: number => `line ${number}`,
+    warnLeading: 'Looks like an introduction, not story text',
+    warnTrailing: 'Looks like a closing remark, not story text',
+    warnTitle: 'Repeats the chapter title',
+    warnFence: 'A code fence around the text was removed',
+    approvalMessage: id => `Proposal ${id} is approved (valid for 15 minutes). Please call story.apply_edit to write it.`,
+    approvedSent: 'Approved, and the Agent was asked to write it.',
+    approvedNotSent: 'Approved. Tell the Agent in the chat to apply the proposal.',
+    saveDraftFirst: 'Save or discard your unsaved changes to this chapter first.',
+    conflictAt: number => `Change ${number} no longer matches the chapter text.`,
+    conflict: 'The chapter changed and these changes no longer match it.',
+    versionChanged: 'The chapter changed since you opened this. Reopen the proposal.',
+    frontmatter: 'Remove the --- header block: only story text is allowed.',
+    nothingSelected: 'Select at least one change.',
+    failed: 'Could not complete that. Try again.',
+    undo: title => `Undo the Agent's last write (${title})`,
+    undone: 'Restored the text from before the Agent wrote.',
+    undoChanged: 'The chapter was edited after the Agent wrote, so it cannot be undone.',
+    undoFailed: 'Could not undo that write.',
+    op: {
+      replace: 'Replace',
+      insert_after: 'Insert after',
+      insert_before: 'Insert before',
+      append: 'Add at the end',
+      prepend: 'Add at the start',
+      rewrite: 'Rewrite the whole chapter'
+    }
+  },
   agent: {
     title: 'Agent',
     binding: 'Binding…',
@@ -246,6 +293,53 @@ const zh = {
     saveUnavailable: error => `无法保存：${error}`,
     saveFailed: error => `保存失败：${error}`,
     saveConfirmed: '保存已确认的草稿'
+  },
+  proposal: {
+    strip: count => `智能体有 ${count} 条修改待处理`,
+    review: '审阅',
+    pending: '待确认',
+    approvedLeft: minutes => `已批准 · 剩余 ${minutes} 分钟`,
+    expired: '批准已过期',
+    stale: '章节在提案之后已被修改',
+    newChapter: title => `新章节：${title}`,
+    editChapter: title => `对《${title}》的修改`,
+    close: '关闭',
+    approve: '批准所选修改',
+    approveText: '批准这段文字',
+    revoke: '撤销批准',
+    discard: '放弃',
+    editResult: '编辑结果',
+    backToChanges: '返回逐处选择',
+    editHint: '直接编辑修改后的全文。只有这段文字会被写入，并且要等智能体执行后才会写入。',
+    editLabel: '修改后的全文',
+    changeN: (number, op) => `第 ${number} 处 · ${op}`,
+    line: number => `第 ${number} 行`,
+    warnLeading: '看起来是开场白，不是正文',
+    warnTrailing: '看起来是结尾说明，不是正文',
+    warnTitle: '重复了章节标题',
+    warnFence: '已去掉文字外面的代码围栏',
+    approvalMessage: id => `提案 ${id} 已批准（15 分钟内有效），请调用 story.apply_edit 写入这份提案。`,
+    approvedSent: '已批准，并已通知智能体写入。',
+    approvedNotSent: '已批准。请在聊天里告诉智能体执行这份提案。',
+    saveDraftFirst: '请先保存或放弃这一章未保存的修改。',
+    conflictAt: number => `第 ${number} 处修改在章节里找不到对应的原文。`,
+    conflict: '章节已被修改，这些修改和它对不上了。',
+    versionChanged: '章节在你打开之后又变了，请重新打开这份提案。',
+    frontmatter: '请去掉开头的 --- 头信息块：这里只能是正文。',
+    nothingSelected: '请至少选择一处修改。',
+    failed: '操作没有完成，请重试。',
+    undo: title => `撤销智能体最近一次写入（${title}）`,
+    undone: '已恢复到智能体写入之前的文字。',
+    undoChanged: '智能体写入之后章节又被修改过，所以不能撤销。',
+    undoFailed: '无法撤销这次写入。',
+    op: {
+      replace: '替换',
+      insert_after: '在其后插入',
+      insert_before: '在其前插入',
+      append: '追加到末尾',
+      prepend: '加到开头',
+      rewrite: '重写整章'
+    }
   },
   agent: {
     title: '智能体',
@@ -845,6 +939,35 @@ export const linkStoryWorkspace = (projectId, { profile, connectionId, hermesPro
     method: 'PUT',
     body: { profile, connection_id: connectionId, hermes_project_id: hermesProjectId, folder }
   })
+export const fetchProjectProposals = (projectId, scope) =>
+  call('/projects/' + encodeURIComponent(projectId) + '/proposals' + buildStoryScopeQuery(scope))
+export const approveStoryProposal = (projectId, proposalId, { profile, connectionId, selected, text, baseVersion }) =>
+  call('/projects/' + encodeURIComponent(projectId) + '/proposals/' + encodeURIComponent(proposalId) + '/approve', {
+    method: 'POST',
+    body: {
+      profile,
+      connection_id: connectionId,
+      ...(Array.isArray(selected) ? { selected } : {}),
+      ...(typeof text === 'string' ? { text, base_version: baseVersion || '' } : {})
+    }
+  })
+export const revokeStoryProposal = (projectId, proposalId, { profile, connectionId }) =>
+  call('/projects/' + encodeURIComponent(projectId) + '/proposals/' + encodeURIComponent(proposalId) + '/revoke', {
+    method: 'POST',
+    body: { profile, connection_id: connectionId }
+  })
+export const discardStoryProposal = (projectId, proposalId, scope) =>
+  call(
+    '/projects/' + encodeURIComponent(projectId) + '/proposals/' + encodeURIComponent(proposalId) + buildStoryScopeQuery(scope),
+    { method: 'DELETE' }
+  )
+export const undoStoryAgentWrite = (projectId, chapterId, { profile, connectionId }) =>
+  call('/projects/' + encodeURIComponent(projectId) + '/chapters/' + encodeURIComponent(chapterId) + '/undo', {
+    method: 'POST',
+    body: { profile, connection_id: connectionId }
+  })
+export const fetchStoryWrites = (projectId, scope) =>
+  call('/projects/' + encodeURIComponent(projectId) + '/writes' + buildStoryScopeQuery(scope))
 export const fetchProjectTree = (projectId, scope) =>
   call('/projects/' + encodeURIComponent(projectId) + buildStoryScopeQuery(scope))
 export const fetchProjectSessions = (projectId, scope) =>
@@ -1773,6 +1896,421 @@ export function StorySidebar({ tree, tab = 'chapters', onTab, onOpenChapter, sel
   })
 }
 
+// How often open proposals are refreshed: quickly while the Agent is working
+// (a proposal is most likely to appear then), slowly otherwise.
+export function proposalPollInterval(busy) {
+  return busy ? 5_000 : 30_000
+}
+
+export function approvalMinutesLeft(proposal, now = Date.now()) {
+  const expires = Date.parse(proposal?.approval?.expires_at || '')
+  if (!Number.isFinite(expires)) return 0
+  return Math.max(0, Math.ceil((expires - now) / 60_000))
+}
+
+// Fixed wording, so the message the Agent receives is never free-form text.
+export function proposalApprovalMessage(proposal, t) {
+  return t('proposal.approvalMessage', proposal.id)
+}
+
+// Tells the Agent's session that a proposal was approved so it can apply it.
+// Returns {sent:false} instead of throwing: the approval itself already stands.
+export async function notifyAgentOfApproval({
+  proposal,
+  profile,
+  connectionId,
+  text,
+  profileRoutes = host.profileRoutes,
+  requestProfile = host.requestProfile
+} = {}) {
+  const sessionId = typeof proposal?.session_id === 'string' ? proposal.session_id.trim() : ''
+  if (!sessionId || typeof requestProfile !== 'function' || !text) return { sent: false }
+  try {
+    const route = await resolveStoryProfileRoute({ profile, connectionId, profileRoutes })
+    if (!route) return { sent: false }
+    const params = { profile: route.targetProfile || profile }
+    const active = await requestProfile(route, 'session.active_list', params).catch(() => null)
+    const rows = Array.isArray(active?.sessions) ? active.sessions : []
+    let runtimeId = rows.find(row => row?.id === sessionId || row?.session_key === sessionId)?.id
+    if (!runtimeId) {
+      const resumed = await requestProfile(route, 'session.resume', { ...params, session_id: sessionId, omit_messages: true })
+      runtimeId = resumed?.session_id
+    }
+    if (!runtimeId) return { sent: false }
+    await requestProfile(route, 'prompt.submit', { session_id: runtimeId, text })
+    return { sent: true }
+  } catch {
+    return { sent: false }
+  }
+}
+
+// Whitelisted wording for a failed proposal request; never the raw server text.
+export function proposalErrorNote(error) {
+  const detail = safeStatusFromError(error) || {}
+  switch (detail.code) {
+    case 'conflict':
+      return Number.isInteger(detail.edit)
+        ? { key: 'proposal.conflictAt', args: [detail.edit + 1] }
+        : { key: 'proposal.conflict', args: [] }
+    case 'version_changed':
+      return { key: 'proposal.versionChanged', args: [] }
+    case 'frontmatter_not_allowed':
+      return { key: 'proposal.frontmatter', args: [] }
+    case 'invalid_selection':
+      return { key: 'proposal.nothingSelected', args: [] }
+    case 'chapter_changed':
+      return { key: 'proposal.undoChanged', args: [] }
+    default:
+      return { key: 'proposal.failed', args: [] }
+  }
+}
+
+function InlineDiff({ parts }) {
+  return jsx('pre', {
+    className: 'whitespace-pre-wrap break-words rounded border border-(--ui-stroke-secondary) p-2 text-xs',
+    children: (Array.isArray(parts) ? parts : []).map((part, index) =>
+      jsx('span', {
+        className: part.op === 'delete' ? 'hermes-story-diff-del' : part.op === 'insert' ? 'hermes-story-diff-ins' : undefined,
+        children: part.text
+      }, index)
+    )
+  })
+}
+
+const PROPOSAL_WARNING_KEYS = {
+  leading_guidance: 'proposal.warnLeading',
+  trailing_guidance: 'proposal.warnTrailing',
+  duplicate_title: 'proposal.warnTitle',
+  fence_removed: 'proposal.warnFence'
+}
+
+export function ProposalReview({ proposal, projectId, profile, connectionId, draftStore, onClose, onChanged, t }) {
+  const initial = Array.isArray(proposal.approval?.selected) ? proposal.approval.selected : proposal.edits.map((_, index) => index)
+  const [selected, setSelected] = useState(Object.fromEntries(initial.map(index => [index, true])))
+  const [editedText, setEditedText] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [note, setNote] = useState(null)
+  const scope = { profile, connectionId }
+  const approved = proposal.status === 'approved'
+  const stale = proposal.kind === 'edit' && proposal.current_version && proposal.current_version !== proposal.base_version
+  const title = proposal.chapter_title || proposal.title || ''
+
+  const run = async work => {
+    if (busy) return
+    setBusy(true)
+    setNote(null)
+    try {
+      await work()
+    } catch (error) {
+      setNote(proposalErrorNote(error))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const approve = () =>
+    run(async () => {
+      const chosen = Object.keys(selected).filter(key => selected[key]).map(Number).sort((a, b) => a - b)
+      if (editedText === null && !chosen.length) {
+        setNote({ key: 'proposal.nothingSelected', args: [] })
+        return
+      }
+      // A write over an unsaved draft of the same chapter would hide the Agent's change.
+      const unsaved = proposal.kind === 'edit' && draftStore?.current && retainedStoryDraftExists(draftStore.current, parts =>
+        parts[0] === draftSlot(connectionId) && parts[1] === draftSlot(profile) &&
+        parts[3] === draftSlot(projectId) && parts[4] === draftSlot(proposal.chapter_id)
+      )
+      if (unsaved) {
+        setNote({ key: 'proposal.saveDraftFirst', args: [] })
+        return
+      }
+      await approveStoryProposal(
+        projectId,
+        proposal.id,
+        editedText !== null
+          ? { ...scope, text: editedText, baseVersion: proposal.current_version || '' }
+          : { ...scope, selected: chosen }
+      )
+      await onChanged()
+      const sent = await notifyAgentOfApproval({
+        proposal,
+        ...scope,
+        text: proposalApprovalMessage(proposal, t)
+      })
+      setNote({ key: sent.sent ? 'proposal.approvedSent' : 'proposal.approvedNotSent', args: [] })
+    })
+
+  const revoke = () =>
+    run(async () => {
+      await revokeStoryProposal(projectId, proposal.id, scope)
+      await onChanged()
+    })
+
+  const discard = () =>
+    run(async () => {
+      await discardStoryProposal(projectId, proposal.id, scope)
+      await onChanged()
+      onClose()
+    })
+
+  const buttonClass = 'rounded border border-(--ui-stroke-secondary) px-3 py-1 text-xs hover:bg-(--chrome-action-hover) disabled:opacity-50'
+
+  return jsxs('div', {
+    className: 'flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-4',
+    role: 'region',
+    children: [
+      jsxs('div', {
+        className: 'flex flex-wrap items-center gap-2',
+        children: [
+          jsx('h2', {
+            className: 'min-w-0 flex-1 truncate text-base font-medium',
+            children: proposal.kind === 'new_chapter' ? t('proposal.newChapter', title) : t('proposal.editChapter', title)
+          }),
+          jsx('span', {
+            className: 'text-xs text-(--ui-text-secondary)',
+            children: approved ? t('proposal.approvedLeft', approvalMinutesLeft(proposal)) : proposal.status === 'expired' ? t('proposal.expired') : t('proposal.pending')
+          }),
+          jsx('button', { className: buttonClass, onClick: onClose, type: 'button', children: t('proposal.close') })
+        ]
+      }),
+      stale ? jsx('div', { className: 'hermes-story-danger text-xs', children: t('proposal.stale') }) : null,
+      ...proposal.warnings.map((warning, index) =>
+        jsxs('div', {
+          className: 'hermes-story-danger text-xs',
+          role: 'alert',
+          children: [
+            `${t(PROPOSAL_WARNING_KEYS[warning.kind] || 'proposal.failed')} · ${t('proposal.changeN', warning.edit + 1, t('proposal.op.' + (proposal.edits[warning.edit]?.op || 'replace')))}`,
+            warning.text ? jsx('div', { className: 'break-words text-(--ui-text-secondary)', children: warning.text }) : null
+          ]
+        }, index)
+      ),
+      editedText === null
+        ? jsx('div', {
+            className: 'flex flex-col gap-3',
+            children: proposal.previews.map(preview =>
+              jsxs('div', {
+                className: 'flex flex-col gap-2 rounded border border-(--ui-stroke-secondary) p-2',
+                children: [
+                  jsxs('label', {
+                    className: 'flex items-center gap-2 text-xs text-(--ui-text-secondary)',
+                    children: [
+                      jsx('input', {
+                        checked: Boolean(selected[preview.edit]),
+                        disabled: busy,
+                        onChange: () => setSelected(previous => ({ ...previous, [preview.edit]: !previous[preview.edit] })),
+                        type: 'checkbox'
+                      }),
+                      t('proposal.changeN', preview.edit + 1, t('proposal.op.' + preview.op))
+                    ]
+                  }),
+                  ...preview.regions.map((region, index) =>
+                    jsxs('div', {
+                      className: 'flex flex-col gap-1',
+                      children: [
+                        jsx('div', { className: 'text-xs text-(--ui-text-tertiary)', children: t('proposal.line', region.line) }),
+                        jsx(InlineDiff, { parts: region.inline })
+                      ]
+                    }, index)
+                  )
+                ]
+              }, preview.edit)
+            )
+          })
+        : jsxs('label', {
+            className: 'flex flex-col gap-1 text-xs text-(--ui-text-secondary)',
+            children: [
+              t('proposal.editLabel'),
+              jsx('div', { className: 'text-(--ui-text-tertiary)', children: t('proposal.editHint') }),
+              jsx('textarea', {
+                className: 'min-h-64 w-full rounded border border-(--ui-stroke-secondary) bg-transparent p-2 text-sm',
+                disabled: busy,
+                onChange: event => setEditedText(event.target.value),
+                value: editedText
+              })
+            ]
+          }),
+      note ? jsx('div', { className: 'text-xs text-(--ui-text-secondary)', role: 'status', children: t(note.key, ...note.args) }) : null,
+      jsxs('div', {
+        className: 'flex flex-wrap gap-2',
+        children: [
+          jsx('button', {
+            className: 'hermes-story-btn-primary rounded bg-(--ui-accent) px-3 py-1 text-xs disabled:opacity-50',
+            disabled: busy,
+            onClick: approve,
+            type: 'button',
+            children: editedText !== null ? t('proposal.approveText') : t('proposal.approve')
+          }),
+          jsx('button', {
+            className: buttonClass,
+            disabled: busy,
+            onClick: () => setEditedText(previous => (previous === null ? proposal.result_text : null)),
+            type: 'button',
+            children: editedText === null ? t('proposal.editResult') : t('proposal.backToChanges')
+          }),
+          approved
+            ? jsx('button', { className: buttonClass, disabled: busy, onClick: revoke, type: 'button', children: t('proposal.revoke') })
+            : null,
+          jsx('button', {
+            className: buttonClass + ' hermes-story-danger',
+            disabled: busy,
+            onClick: discard,
+            type: 'button',
+            children: t('proposal.discard')
+          })
+        ]
+      })
+    ]
+  })
+}
+
+// Shows what the Agent has proposed and lets the person review it. The chapter
+// editor stays mounted underneath, hidden, so an unsaved draft is never lost.
+function ProposalArea({ projectId, profile, connectionId, draftStore, children }) {
+  const t = usePluginI18n('story-construction')
+  const busy = useValue(host.state.busy)
+  const queryClient = typeof storySdk.useQueryClient === 'function' ? storySdk.useQueryClient() : null
+  const enabled = Boolean(projectId && profile && connectionId)
+  const scope = { profile, connectionId }
+  const proposalsQuery = useQuery({
+    enabled,
+    queryKey: ['story-construction', 'proposals', profile, connectionId, projectId],
+    queryFn: () => fetchProjectProposals(projectId, scope),
+    refetchInterval: proposalPollInterval(busy)
+  })
+  const writesQuery = useQuery({
+    enabled,
+    queryKey: ['story-construction', 'writes', profile, connectionId, projectId],
+    queryFn: () => fetchStoryWrites(projectId, scope),
+    refetchInterval: 30_000
+  })
+  const proposals = Array.isArray(proposalsQuery.data?.proposals) ? proposalsQuery.data.proposals : []
+  const writes = Array.isArray(writesQuery.data?.writes) ? writesQuery.data.writes : []
+  const [reviewId, setReviewId] = useState(null)
+  const [undoNote, setUndoNote] = useState(null)
+  const [undoing, setUndoing] = useState(false)
+  const wasBusyRef = useMutableRef(busy)
+  const lastWriteRef = useMutableRef(undefined)
+  const reviewing = proposals.find(proposal => proposal.id === reviewId) || null
+  const latestWrite = writes.find(write => !write.undone && write.kind === 'edit') || null
+  const openIds = proposals.map(proposal => proposal.id).join(',')
+  const writeMark = writes[0] ? `${writes[0].proposal_id}:${writes[0].undone}` : ''
+
+  useEffect(() => {
+    setReviewId(null)
+    setUndoNote(null)
+  }, [projectId, profile, connectionId])
+
+  // The moment the Agent stops working is when a proposal most likely appeared.
+  useEffect(() => {
+    if (wasBusyRef.current && !busy) {
+      void proposalsQuery.refetch?.()
+      void writesQuery.refetch?.()
+    }
+    wasBusyRef.current = busy
+  }, [busy])
+
+  // A proposal that left the open list may have been written: look at the log.
+  useEffect(() => {
+    void writesQuery.refetch?.()
+  }, [openIds])
+
+  // A new write (or an undo) changed a chapter: reload chapters and the tree.
+  useEffect(() => {
+    if (lastWriteRef.current !== undefined && lastWriteRef.current !== writeMark) {
+      void queryClient?.invalidateQueries?.({ queryKey: ['story-construction'] })
+    }
+    lastWriteRef.current = writeMark
+  }, [writeMark])
+
+  const refresh = async () => {
+    await Promise.allSettled([proposalsQuery.refetch?.(), writesQuery.refetch?.()])
+  }
+
+  const undo = () => {
+    if (undoing || !latestWrite) return
+    setUndoing(true)
+    setUndoNote(null)
+    void undoStoryAgentWrite(projectId, latestWrite.chapter_id, scope)
+      .then(async () => {
+        setUndoNote({ key: 'proposal.undone', args: [] })
+        await refresh()
+        await queryClient?.invalidateQueries?.({ queryKey: ['story-construction'] })
+      })
+      .catch(error => {
+        const note = proposalErrorNote(error)
+        setUndoNote(note.key === 'proposal.failed' ? { key: 'proposal.undoFailed', args: [] } : note)
+      })
+      .finally(() => setUndoing(false))
+  }
+
+  const statusLabel = proposal =>
+    proposal.status === 'approved'
+      ? t('proposal.approvedLeft', approvalMinutesLeft(proposal))
+      : proposal.status === 'expired'
+        ? t('proposal.expired')
+        : t('proposal.pending')
+
+  const strip = proposals.length || latestWrite || undoNote
+    ? jsxs('div', {
+        className: 'flex flex-col gap-1 border-b border-(--ui-stroke-secondary) px-3 py-2 text-xs',
+        children: [
+          proposals.length
+            ? jsxs('div', {
+                className: 'flex flex-wrap items-center gap-2',
+                children: [
+                  jsx('span', { className: 'font-medium', children: t('proposal.strip', proposals.length) }),
+                  ...proposals.map(proposal =>
+                    jsx('button', {
+                      className: 'rounded border border-(--ui-stroke-secondary) px-2 py-0.5 hover:bg-(--chrome-action-hover)',
+                      onClick: () => setReviewId(proposal.id),
+                      type: 'button',
+                      children: `${proposal.chapter_title || proposal.title || proposal.id} · ${statusLabel(proposal)}`
+                    }, proposal.id)
+                  )
+                ]
+              })
+            : null,
+          latestWrite
+            ? jsx('div', {
+                children: jsx('button', {
+                  className: 'rounded border border-(--ui-stroke-secondary) px-2 py-0.5 hover:bg-(--chrome-action-hover) disabled:opacity-50',
+                  disabled: undoing,
+                  onClick: undo,
+                  type: 'button',
+                  children: t('proposal.undo', latestWrite.chapter_title || latestWrite.chapter_id)
+                })
+              })
+            : null,
+          undoNote ? jsx('div', { className: 'text-(--ui-text-secondary)', role: 'status', children: t(undoNote.key, ...undoNote.args) }) : null
+        ]
+      })
+    : null
+
+  return jsxs('div', {
+    className: 'flex min-h-0 flex-1 flex-col',
+    children: [
+      strip,
+      reviewing
+        ? jsx(ProposalReview, {
+            connectionId,
+            draftStore,
+            onChanged: refresh,
+            onClose: () => setReviewId(null),
+            profile,
+            projectId,
+            proposal: reviewing,
+            t
+          }, reviewing.id)
+        : null,
+      jsx('div', {
+        className: 'flex min-h-0 flex-1 flex-col',
+        style: reviewing ? { display: 'none' } : undefined,
+        children
+      })
+    ]
+  })
+}
+
 function ChapterEditor({ projectId, chapterId, profile, connectionId, sessionId, draftStore, onDraftState }) {
   const t = usePluginI18n('story-construction')
   const chapterQuery = useQuery({
@@ -2206,7 +2744,7 @@ function DeleteProjectDialog({ project, profile, connectionId, onDeleted, onClos
     },
     children: jsxs('form', {
       'aria-modal': 'true',
-      className: 'flex w-full max-w-sm flex-col gap-3 rounded border border-red-400 p-4 shadow',
+      className: 'flex w-full max-w-sm flex-col gap-3 rounded border hermes-story-danger-border border-red-400 p-4 shadow',
       style: { backgroundColor: 'var(--chrome-bg, var(--ui-bg, Canvas))' },
       onKeyDown: event => {
         if (event.key === 'Escape' && !busy) onClose()
@@ -2235,7 +2773,7 @@ function DeleteProjectDialog({ project, profile, connectionId, onDeleted, onClos
             })
           ]
         }),
-        failed ? jsx('div', { className: 'text-xs text-red-400', role: 'alert', children: t('library.deleteFailed') }) : null,
+        failed ? jsx('div', { className: 'text-xs hermes-story-danger text-red-400', role: 'alert', children: t('library.deleteFailed') }) : null,
         jsxs('div', {
           className: 'flex justify-end gap-2',
           children: [
@@ -2247,7 +2785,7 @@ function DeleteProjectDialog({ project, profile, connectionId, onDeleted, onClos
               children: t('dialog.cancel')
             }),
             jsx('button', {
-              className: 'rounded border border-red-400 px-3 py-1 text-xs text-red-400 disabled:opacity-50',
+              className: 'rounded border hermes-story-danger-border border-red-400 px-3 py-1 text-xs hermes-story-danger text-red-400 disabled:opacity-50',
               disabled: busy || !matches,
               type: 'submit',
               children: busy ? t('library.deleting') : t('library.deleteConfirm')
@@ -2396,7 +2934,7 @@ function ProjectLibrary({ projects, loading, error, ready, profile, connectionId
                             role: 'menu',
                             style: { backgroundColor: 'var(--chrome-bg, var(--ui-bg, Canvas))' },
                             children: jsx('button', {
-                              className: 'px-3 py-1 text-left text-xs text-red-400 hover:bg-(--chrome-action-hover)',
+                              className: 'px-3 py-1 text-left text-xs hermes-story-danger text-red-400 hover:bg-(--chrome-action-hover)',
                               onClick: () => {
                                 setMenuFor(null)
                                 setDeleting(item)
@@ -2699,7 +3237,7 @@ function ProjectSessionsPanel({ profile, connectionId, project, sessionId }) {
                 : null,
               managing
                 ? jsx('button', {
-                    className: 'rounded border border-(--ui-stroke-secondary) px-2 py-1 text-red-400 hover:bg-(--chrome-action-hover) disabled:opacity-50',
+                    className: 'rounded border border-(--ui-stroke-secondary) px-2 py-1 hermes-story-danger text-red-400 hover:bg-(--chrome-action-hover) disabled:opacity-50',
                     disabled: creatingSession || !selectedCount,
                     onClick: () => setConfirm({ ids: Object.keys(selectedIds), hard: false }),
                     type: 'button',
@@ -2746,7 +3284,7 @@ function ProjectSessionsPanel({ profile, connectionId, project, sessionId }) {
                         children: [
                           managing
                             ? jsx('button', {
-                                className: 'rounded border border-(--ui-stroke-secondary) px-2 py-1 text-red-400 hover:bg-(--chrome-action-hover) disabled:opacity-50',
+                                className: 'rounded border border-(--ui-stroke-secondary) px-2 py-1 hermes-story-danger text-red-400 hover:bg-(--chrome-action-hover) disabled:opacity-50',
                                 disabled: creatingSession,
                                 onClick: () => setConfirm({ ids: [storedSessionId], hard: false }),
                                 type: 'button',
@@ -2776,7 +3314,7 @@ function ProjectSessionsPanel({ profile, connectionId, project, sessionId }) {
               }),
       confirm
         ? jsxs('div', {
-            className: 'flex flex-col gap-2 rounded border border-red-400 p-2',
+            className: 'flex flex-col gap-2 rounded border hermes-story-danger-border border-red-400 p-2',
             role: 'alertdialog',
             children: [
               jsx('div', { className: 'font-medium', children: t('agent.confirmCount', confirm.ids.length) }),
@@ -2794,7 +3332,7 @@ function ProjectSessionsPanel({ profile, connectionId, project, sessionId }) {
                 ]
               }),
               confirm.hard && confirm.ids.includes(sessionId)
-                ? jsx('div', { className: 'text-red-400', children: t('agent.confirmHardActive') })
+                ? jsx('div', { className: 'hermes-story-danger text-red-400', children: t('agent.confirmHardActive') })
                 : null,
               jsxs('div', {
                 className: 'flex flex-wrap gap-2',
@@ -2802,7 +3340,7 @@ function ProjectSessionsPanel({ profile, connectionId, project, sessionId }) {
                   jsx('button', {
                     className:
                       'rounded border px-2 py-1 disabled:opacity-50 ' +
-                      (confirm.hard ? 'border-red-400 text-red-400' : 'border-(--ui-stroke-secondary)'),
+                      (confirm.hard ? 'hermes-story-danger-border border-red-400 hermes-story-danger text-red-400' : 'border-(--ui-stroke-secondary)'),
                     disabled: creatingSession || (confirm.hard && confirm.ids.includes(sessionId)),
                     onClick: runRemove,
                     type: 'button',
@@ -3624,14 +4162,20 @@ function ProjectWorkspace() {
   })
   const editorCell = jsx('div', {
     className: 'hermes-story-editor',
-    children: jsx(ChapterEditor, {
-      chapterId: selectedChapterId,
+    children: jsx(ProposalArea, {
       connectionId,
       draftStore: draftsRef,
-      onDraftState: handleDraftState,
       profile,
       projectId: selectedProjectId,
-      sessionId
+      children: jsx(ChapterEditor, {
+        chapterId: selectedChapterId,
+        connectionId,
+        draftStore: draftsRef,
+        onDraftState: handleDraftState,
+        profile,
+        projectId: selectedProjectId,
+        sessionId
+      })
     })
   })
   // ProjectSessionsPanel is always mounted inside this region — collapse only
@@ -3758,6 +4302,10 @@ const CSS = `
 .hermes-story-sessions-panel{display:flex;flex-direction:column;gap:8px;min-width:0;min-height:0;flex:1;overflow:auto;padding:12px;font-size:12px;line-height:16px}
 .hermes-story-workspace[data-layout=compact] .hermes-story-sessions-panel,.hermes-story-workspace[data-layout=narrow] .hermes-story-sessions-panel{flex:none;max-height:18rem}
 .hermes-story-workspace[data-layout=compact] .hermes-story-sessions[data-open=false] .hermes-story-sessions-panel,.hermes-story-workspace[data-layout=narrow] .hermes-story-sessions[data-open=false] .hermes-story-sessions-panel{display:none}
+.hermes-story-danger{color:#f87171}
+.hermes-story-danger-border{border-color:#f87171}
+.hermes-story-diff-del{background:rgba(239,68,68,.22);text-decoration:line-through}
+.hermes-story-diff-ins{background:rgba(34,197,94,.22)}
 .hermes-story-btn-primary{color:var(--dt-accent-foreground,var(--ui-text-primary))}
 .hermes-story-overlay{background:rgba(0,0,0,.5)}
 .hermes-story-focus:focus{border-color:var(--ui-accent)}
