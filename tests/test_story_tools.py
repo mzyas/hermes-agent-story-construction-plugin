@@ -147,7 +147,7 @@ def test_story_tool_rejects_profile_outside_runtime_lock() -> None:
     assert response["error"]["code"] == "profile_lock_mismatch"
     assert "locked profile" in response["error"]["message"]
 
-def test_registration_exposes_only_the_story_read_toolset() -> None:
+def test_registration_exposes_the_story_toolset() -> None:
     calls = []
 
     class Context:
@@ -159,6 +159,9 @@ def test_registration_exposes_only_the_story_read_toolset() -> None:
     names = {call["name"] for call in calls}
     assert names == {
         "story.get_session_project",
+        "story.propose_edit",
+        "story.propose_chapter",
+        "story.apply_edit",
         "story.get_project",
         "story.get_world_info",
         "story.search_world_info",

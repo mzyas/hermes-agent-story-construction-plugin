@@ -163,6 +163,7 @@ def delete_project(
         "unbound_sessions": unbound,
         # The Hermes project is archived by the Desktop, never deleted; the
         # workspace folder stays because it may hold drafts.
+        "closed_proposals": _forget_proposals(runtime, state, project.id),
         "hermes_project_id": _archive_workspace_link(
             runtime, state, normalized_profile, connection_id, project.id
         ),
@@ -244,6 +245,120 @@ def link_project_workspace(project_id: str, body: dict[str, Any]) -> dict[str, A
     except workspaces.WorkspaceLinkStoreError as exc:
         raise HTTPException(status_code=503, detail={"code": "workspace_state_invalid"}) from exc
     return {"link": asdict(link)}
+
+
+@router.get("/projects/{project_id}/proposals")
+def list_proposals(
+    project_id: str,
+    profile: str | None = None,
+    connection_id: str | None = None,
+) -> dict[str, Any]:
+    """The Agent's open chapter proposals, with the diff the person reviews."""
+
+    runtime, state = _require_runtime()
+    normalized_profile = _required_value(profile, "profile")
+    normalized_connection = _required_value(connection_id, "connection_id")
+    proposals = _proposal_call(
+        runtime, state, project_id, normalized_profile,
+        lambda service: service.list_open(
+            project_id=project_id, profile=normalized_profile, connection_id=normalized_connection
+        ),
+    )
+    return {"proposals": proposals}
+
+
+@router.post("/projects/{project_id}/proposals/{proposal_id}/approve")
+def approve_proposal(project_id: str, proposal_id: str, body: dict[str, Any]) -> dict[str, Any]:
+    """Approve one proposal; this is the only way the Agent gets to write it."""
+
+    runtime, state = _require_runtime()
+    profile = _required_body(body, "profile")
+    connection_id = _required_body(body, "connection_id")
+    selected = body.get("selected")
+    if selected is not None and (
+        not isinstance(selected, list) or any(isinstance(i, bool) or not isinstance(i, int) for i in selected)
+    ):
+        raise HTTPException(status_code=422, detail={"code": "invalid_selection"})
+    text = body.get("text")
+    if text is not None and not isinstance(text, str):
+        raise HTTPException(status_code=422, detail={"code": "invalid_request"})
+    base_version = _optional_body(body, "base_version")
+    proposal = _proposal_call(
+        runtime, state, project_id, profile,
+        lambda service: service.approve(
+            project_id=project_id, proposal_id=proposal_id, profile=profile,
+            connection_id=connection_id, selected=selected, text=text, base_version=base_version,
+        ),
+        write=True,
+    )
+    return {"proposal": proposal}
+
+
+@router.post("/projects/{project_id}/proposals/{proposal_id}/revoke")
+def revoke_proposal(project_id: str, proposal_id: str, body: dict[str, Any]) -> dict[str, Any]:
+    runtime, state = _require_runtime()
+    profile = _required_body(body, "profile")
+    connection_id = _required_body(body, "connection_id")
+    proposal = _proposal_call(
+        runtime, state, project_id, profile,
+        lambda service: service.revoke(
+            project_id=project_id, proposal_id=proposal_id, profile=profile, connection_id=connection_id
+        ),
+        write=True,
+    )
+    return {"proposal": proposal}
+
+
+@router.delete("/projects/{project_id}/proposals/{proposal_id}")
+def discard_proposal(
+    project_id: str,
+    proposal_id: str,
+    profile: str | None = None,
+    connection_id: str | None = None,
+) -> dict[str, Any]:
+    runtime, state = _require_runtime()
+    normalized_profile = _required_value(profile, "profile")
+    normalized_connection = _required_value(connection_id, "connection_id")
+    proposal = _proposal_call(
+        runtime, state, project_id, normalized_profile,
+        lambda service: service.discard(
+            project_id=project_id, proposal_id=proposal_id,
+            profile=normalized_profile, connection_id=normalized_connection,
+        ),
+        write=True,
+    )
+    return {"proposal": proposal}
+
+
+@router.post("/projects/{project_id}/chapters/{chapter_id}/undo")
+def undo_agent_write(project_id: str, chapter_id: str, body: dict[str, Any]) -> dict[str, Any]:
+    """Put a chapter back the way it was before the Agent's last write."""
+
+    runtime, state = _require_runtime()
+    profile = _required_body(body, "profile")
+    _required_body(body, "connection_id")
+    result = _proposal_call(
+        runtime, state, project_id, profile,
+        lambda service: service.undo(project_id=project_id, chapter_id=chapter_id),
+        write=True,
+    )
+    return {"restored": result}
+
+
+@router.get("/projects/{project_id}/writes")
+def list_agent_writes(
+    project_id: str,
+    profile: str | None = None,
+    connection_id: str | None = None,
+) -> dict[str, Any]:
+    runtime, state = _require_runtime()
+    normalized_profile = _required_value(profile, "profile")
+    _required_value(connection_id, "connection_id")
+    writes = _proposal_call(
+        runtime, state, project_id, normalized_profile,
+        lambda service: service.writes(project_id=project_id),
+    )
+    return {"writes": writes}
 
 
 @router.get("/projects/{project_id}")
@@ -432,6 +547,53 @@ def save_chapter(project_id: str, chapter_id: str, body: dict[str, Any]) -> dict
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {"chapter": asdict(result.chapter)}
+
+
+_PROPOSAL_CONFLICT_CODES = frozenset({
+    "version_changed", "conflict", "chapter_changed", "snapshot_missing",
+    "nothing_to_undo", "already_applied", "proposal_closed",
+})
+
+
+def _proposal_call(
+    runtime: Any, state: Any, project_id: str, profile: str, call: Any, *, write: bool = False
+) -> Any:
+    """Run one proposal operation with the Profile lock and error mapping."""
+
+    repository_module = _component(runtime, "repository")
+    service_module = _component(runtime, "proposal_service")
+    edits_module = _component(runtime, "edits")
+    store_module = _component(runtime, "proposal_store")
+    runtime_module = _component(runtime, "runtime")
+    try:
+        state.permissions.require_profile(profile)
+        state.repository.get_project(project_id)
+        service = runtime_module.proposal_service_for(state)
+        if write:
+            with _selected_target_guard(state):
+                return call(service)
+        return call(service)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=_permission_detail(exc)) from exc
+    except repository_module.NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (service_module.ProposalError, edits_module.EditError) as exc:
+        status = 409 if exc.code in _PROPOSAL_CONFLICT_CODES else 422
+        raise HTTPException(status_code=status, detail=exc.as_dict()) from exc
+    except store_module.ProposalStoreError as exc:
+        raise HTTPException(status_code=503, detail={"code": "proposal_state_invalid"}) from exc
+    except repository_module.RepositoryError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+def _forget_proposals(runtime: Any, state: Any, project_id: str) -> int:
+    """Close a deleted project's open proposals; never fails a deletion."""
+
+    try:
+        service = _component(runtime, "runtime").proposal_service_for(state)
+        return service.store.forget_project(project_id)
+    except Exception:
+        return 0
 
 
 def _workspace_project(runtime: Any, state: Any, project_id: str, profile: str) -> Any:

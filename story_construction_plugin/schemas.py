@@ -47,6 +47,99 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         ),
         "parameters": _parameters({}, []),
     },
+    "story.propose_edit": {
+        "name": "story.propose_edit",
+        "description": (
+            "Propose changes to the text of an existing chapter. Nothing is "
+            "written: the user reviews the proposal as a diff in the Story panel "
+            "and approves it. Read the chapter first with story.get_chapter and "
+            "pass its version as base_version. Each edit locates text that must "
+            "appear exactly once in the chapter, copied exactly from what "
+            "story.get_chapter returned; if it does not match, or matches more "
+            "than once, the whole proposal is rejected, so include enough "
+            "surrounding text. Every new_text and content must be only the story "
+            "text that belongs in the chapter: no greeting, no \"here is\", no "
+            "explanation, no closing remark, no code fence, no frontmatter, no "
+            "chapter heading. Put all conversation in your chat reply instead. "
+            "The project comes from this session's binding."
+        ),
+        "parameters": _parameters(
+            {
+                "chapter_id": {"type": "string", "description": "ID of the chapter to change."},
+                "base_version": {
+                    "type": "string",
+                    "description": "The version string story.get_chapter returned for this chapter.",
+                },
+                "edits": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 50,
+                    "description": (
+                        "Edits applied in order; each sees the result of the previous one. "
+                        "A rewrite must be the only edit."
+                    ),
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "op": {
+                                "type": "string",
+                                "enum": [
+                                    "replace", "insert_after", "insert_before",
+                                    "append", "prepend", "rewrite",
+                                ],
+                                "description": (
+                                    "replace: swap old_text for new_text (new_text may be empty to "
+                                    "delete). insert_after / insert_before: add new_text next to "
+                                    "anchor_text. append / prepend: add new_text as a new paragraph "
+                                    "at the end / start. rewrite: replace the whole chapter with content."
+                                ),
+                            },
+                            "old_text": {"type": "string", "description": "replace only: text to swap out, appearing exactly once."},
+                            "anchor_text": {"type": "string", "description": "insert_after / insert_before only: text to insert next to, appearing exactly once."},
+                            "new_text": {"type": "string", "description": "Story text to write, nothing else."},
+                            "content": {"type": "string", "description": "rewrite only: the whole new chapter text, nothing else."},
+                        },
+                        "required": ["op"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            ["chapter_id", "base_version", "edits"],
+        ),
+    },
+    "story.propose_chapter": {
+        "name": "story.propose_chapter",
+        "description": (
+            "Propose a new chapter at the end of a volume. Nothing is written: the "
+            "user reviews and approves it in the Story panel. content must be only "
+            "the chapter's story text: no greeting, no explanation, no closing "
+            "remark, no code fence, no frontmatter, no repeated title. Put all "
+            "conversation in your chat reply instead. The project comes from this "
+            "session's binding."
+        ),
+        "parameters": _parameters(
+            {
+                "volume_id": {"type": "string", "description": "ID of the volume that will hold the chapter."},
+                "title": {"type": "string", "minLength": 1, "maxLength": 120, "description": "Chapter title."},
+                "content": {"type": "string", "minLength": 1, "description": "The chapter's story text, nothing else."},
+            },
+            ["volume_id", "title", "content"],
+        ),
+    },
+    "story.apply_edit": {
+        "name": "story.apply_edit",
+        "description": (
+            "Write a proposal the user has approved. Takes only the proposal_id; it "
+            "writes exactly what the user approved, within 15 minutes of the "
+            "approval, and nothing else. Call it only after the user tells you the "
+            "proposal is approved. If it says the proposal is not approved, expired "
+            "or in conflict, tell the user instead of retrying with other content."
+        ),
+        "parameters": _parameters(
+            {"proposal_id": {"type": "string", "minLength": 1, "description": "The proposal_id returned by story.propose_edit or story.propose_chapter."}},
+            ["proposal_id"],
+        ),
+    },
     "story.get_project": {
         "name": "story.get_project",
         "description": (

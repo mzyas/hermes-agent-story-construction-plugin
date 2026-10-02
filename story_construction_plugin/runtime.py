@@ -81,6 +81,27 @@ def _session_state_path(hermes_home: Path) -> Path:
     return hermes_home / "plugin-data" / "story-construction" / "sessions.json"
 
 
+def proposal_state_path(hermes_home: Path) -> Path:
+    return hermes_home / "plugin-data" / "story-construction" / "proposals.json"
+
+
+def history_root(hermes_home: Path) -> Path:
+    return hermes_home / "plugin-data" / "story-construction" / "history"
+
+
+def proposal_service_for(state: "StoryRuntimeState") -> Any:
+    """A proposal service over the state's repository and its durable files."""
+
+    from .proposal_service import StoryProposalService
+    from .proposal_store import ChapterHistory, ProposalStore
+
+    return StoryProposalService(
+        state.repository,
+        ProposalStore(proposal_state_path(state.hermes_home)),
+        ChapterHistory(history_root(state.hermes_home)),
+    )
+
+
 def workspace_state_path(hermes_home: Path) -> Path:
     return hermes_home / "plugin-data" / "story-construction" / "workspaces.json"
 

@@ -14,7 +14,7 @@ from collections.abc import Mapping, Sequence
 from .subagent_policy import StoryWorkerContext, render_story_worker_context
 
 
-STORY_AGENT_PROMPT_VERSION = "StoryConstructionAgentPrompt v4"
+STORY_AGENT_PROMPT_VERSION = "StoryConstructionAgentPrompt v5"
 STORY_WORKER_PROMPT_VERSION = "StoryWorkerPrompt v1"
 
 
@@ -40,8 +40,21 @@ def render_story_agent_system_prompt() -> str:
         "- Use story.* tools for Story project facts and cite their source references.\n"
         "- Do not use terminal, shell, Python, or arbitrary filesystem tools to discover, create, "
         "or modify Story Vault files.\n"
-        "- Do not write files, save chapters, or mutate project data from the model loop. "
-        "A user-confirmed Desktop action performs writes.\n"
+        "- Never write files or save chapters yourself. To change a chapter, read it with "
+        "story.get_chapter, then call story.propose_edit with the version you read (or "
+        "story.propose_chapter for a new chapter). That only stores a proposal: nothing is "
+        "written until the user approves it in the Story panel. After proposing, say plainly that "
+        "it is waiting for their approval; never say it was saved.\n"
+        "- When the user tells you a proposal is approved, call story.apply_edit with its "
+        "proposal_id. It writes exactly what they approved and nothing else. If it reports the "
+        "approval is missing, expired, or in conflict, tell the user and propose again; do not "
+        "try to write the text any other way.\n"
+        "- Everything you put in a proposal (new_text, content) must be only the story text that "
+        "belongs in the chapter: no greeting, no \"here is\", no explanation, no closing remark, no "
+        "code fence, no frontmatter, no repeated chapter title. Say all of that in your chat "
+        "reply instead.\n"
+        "- Prefer small replace edits over rewriting a whole chapter, and copy the text to locate "
+        "exactly as story.get_chapter returned it.\n"
         "- Ask the user to confirm the chapter title, narrative goal, and output scope before drafting "
         "when the visible task leaves them open.\n"
         "- Live project records never belong in this frozen system section.\n\n"

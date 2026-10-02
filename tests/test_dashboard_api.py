@@ -1200,7 +1200,7 @@ def test_delete_project_needs_the_typed_name_and_unbinds_every_session(monkeypat
     assert result == {
         "trashed": True, "project_id": "p1",
         "trash_folder": "p1-20260101-000000", "unbound_sessions": 2,
-        "hermes_project_id": None,
+        "hermes_project_id": None, "closed_proposals": 0,
     }
     assert repository.trashed == ["p1"]
     assert [row.stored_session_id for row in state.sessions.all()] == ["c"]

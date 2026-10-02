@@ -173,6 +173,7 @@ class LiveStoryRuntime:
             state.repository,
             state.permissions,
             permissions_provider=lambda: _runtime.permission_snapshot(state),
+            proposals_provider=lambda: _runtime.proposal_service_for(state),
         )
         with self._lock:
             if len(self._ready) >= 8:

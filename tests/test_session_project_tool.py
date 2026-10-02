@@ -76,3 +76,13 @@ def test_prompt_tells_the_agent_to_judge_intent_and_use_the_tool() -> None:
     assert "ordinary conversation" in rendered
     assert "this project" in rendered  # vague project questions go straight to the tool
     assert "project_id:" not in rendered  # the frozen prompt carries no live records
+
+
+def test_prompt_makes_the_agent_propose_wait_for_approval_and_keep_text_clean() -> None:
+    rendered = render_story_agent_system_prompt()
+
+    for tool in ("story.propose_edit", "story.propose_chapter", "story.apply_edit"):
+        assert tool in rendered
+    assert "never say it was saved" in rendered
+    assert "no greeting" in rendered and "no code fence" in rendered
+    assert "Never write files or save chapters yourself" in rendered

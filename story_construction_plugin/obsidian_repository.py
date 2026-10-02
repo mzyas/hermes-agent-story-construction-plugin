@@ -138,8 +138,10 @@ class ObsidianProjectRepository:
             self._invalidate_records()
         return self._one(self.get_project(project_id).volumes, volume_id, "volume")
 
-    def create_chapter(self, project_id: str, volume_id: str, title: str) -> Chapter:
-        """Append a new empty chapter at the end of an existing volume."""
+    def create_chapter(
+        self, project_id: str, volume_id: str, title: str, content: str = ""
+    ) -> Chapter:
+        """Append a new chapter, empty or with its first text, at the end of a volume."""
 
         clean_title = _clean_title(title, "chapter")
         with self._create_lock:
@@ -156,6 +158,7 @@ class ObsidianProjectRepository:
                     "project_id": tree.project.id, "volume_id": volume_id,
                     "title": clean_title,
                 },
+                content,
             )
             self._invalidate_records()
         return self._one(self.get_project(project_id).chapters, chapter_id, "chapter")
@@ -427,7 +430,7 @@ def _next_numbered_id(project_id: str, kind: str, existing_ids: Any) -> tuple[in
     return number, f"{project_id}:{kind}-{number}"
 
 
-def _write_new_story_document(path: Path, metadata: dict[str, Any]) -> None:
+def _write_new_story_document(path: Path, metadata: dict[str, Any], content: str = "") -> None:
     """Create a Markdown record without ever replacing an existing file."""
 
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -441,7 +444,8 @@ def _write_new_story_document(path: Path, metadata: dict[str, Any]) -> None:
         ) as handle:
             temporary_name = handle.name
             frontmatter = yaml.safe_dump(metadata, allow_unicode=True, sort_keys=False).rstrip("\n")
-            handle.write(f"---\n{frontmatter}\n---\n")
+            body = content.rstrip("\n")
+            handle.write(f"---\n{frontmatter}\n---\n" + (f"\n{body}\n" if body else ""))
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temporary_name, path)

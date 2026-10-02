@@ -19,7 +19,7 @@ def test_main_template_is_generic_and_forbids_direct_vault_tools() -> None:
     assert "story.*" in rendered
     assert "terminal" in rendered.lower()
     assert "python" in rendered.lower()
-    assert "do not write" in rendered.lower()
+    assert "never write files" in rendered.lower()
     assert "project_id:" not in rendered
     assert "project_name:" not in rendered
 

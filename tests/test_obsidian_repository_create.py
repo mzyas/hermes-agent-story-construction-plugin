@@ -167,3 +167,12 @@ def test_trashing_a_missing_project_changes_nothing(repository, tmp_path) -> Non
 
     assert (tmp_path / "novel" / "project.md").is_file()
     assert not (tmp_path / ".story-trash").exists()
+
+
+def test_a_new_chapter_can_start_with_its_text(repository, tmp_path) -> None:
+    chapter = repository.create_chapter("novel", "novel:volume-1", "第二章", "天亮了。\n\n雨停了。\n")
+
+    assert chapter.id == "novel:chapter-2" and chapter.content == "天亮了。\n\n雨停了。"
+    written = _read(tmp_path / "novel" / "chapters" / "chapter-002.md")
+    assert written.startswith("---\n") and written.endswith("---\n\n天亮了。\n\n雨停了。\n")
+    assert repository.create_chapter("novel", "novel:volume-1", "空章").content == ""
