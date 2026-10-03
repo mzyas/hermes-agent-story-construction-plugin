@@ -109,4 +109,4 @@ def test_prompt_keeps_the_agent_brief_and_from_acting_unasked() -> None:
 
 
 def test_prompt_version_names_the_current_protocol() -> None:
-    assert render_story_agent_system_prompt().startswith("# StoryConstructionAgentPrompt v9")
+    assert render_story_agent_system_prompt().startswith("# StoryConstructionAgentPrompt v8")

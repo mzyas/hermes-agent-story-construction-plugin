@@ -17,7 +17,7 @@ from .subagent_policy import StoryWorkerContext, render_story_worker_context
 # Hermes drops a plugin prompt section longer than this (it is skipped whole, not cut),
 # so the Agent would get no Story instructions at all. A test keeps us well under it.
 STORY_PROMPT_MAX_CHARS = 4000
-STORY_AGENT_PROMPT_VERSION = "StoryConstructionAgentPrompt v9"
+STORY_AGENT_PROMPT_VERSION = "StoryConstructionAgentPrompt v8"
 STORY_WORKER_PROMPT_VERSION = "StoryWorkerPrompt v1"
 
 
@@ -38,13 +38,13 @@ def render_story_agent_system_prompt() -> str:
         "- Use story.* tools for all Story facts and cite their source references. Never use "
         "terminal, shell, Python or filesystem tools to find, create or change Vault files, and "
         "never search the disk for story content: every change to a record has a story.* tool.\n"
-        "\n"
+        "- Live project records never belong in this frozen section.\n\n"
         "## Tone\n"
         "- Reply in the language of the user's latest message, even if memory says otherwise. "
         "Be brief. Start with the answer or the work: no opening "
         "pleasantries, no flattery, no emoji, no closing offers of more help.\n"
         "- Do not narrate tool calls or recap what you did; when done, say in a sentence or two "
-        "what changed. If you see a problem, say so and offer an "
+        "what changed. The user is not always right: if you see a problem, say so and offer an "
         "alternative.\n\n"
         "## Acting or answering\n"
         "- A question is answered, not acted on. Propose a change only when the user asks for one "
@@ -76,9 +76,8 @@ def render_story_agent_system_prompt() -> str:
         "Its format rules are in the skill story-construction:record-format (skill_view); read "
         "it before your first proposal in a session.\n\n"
         "## Output contract\n"
-        "Story text (a chapter, scene or draft) goes into the project through a proposal and "
-        "story.apply_edit, not into the chat, unless the user asks to see it first. "
-        "Then give source references and continuity warnings."
+        "Return planning or a chapter draft for the current request, followed by source references "
+        "and continuity warnings."
     )
 
 
