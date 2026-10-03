@@ -300,12 +300,119 @@ class ObsidianProjectRepository:
         expected_version: str,
     ) -> Chapter:
         chapter = self.get_chapter(project_id, chapter_id)
-        path = self.resolve_source_path(chapter.source_ref)
+        self._save_body(chapter.source_ref, "chapter", chapter_id, content, expected_version)
+        return self.get_chapter(project_id, chapter_id)
+
+    def get_note(self, project_id: str, note_id: str) -> Note:
+        return self._one(self.get_project(project_id).notes, note_id, "note")
+
+    def get_world_entry(self, project_id: str, entry_id: str) -> WorldInfoEntry:
+        return self._one(self.get_project(project_id).world_info_entries, entry_id, "world info entry")
+
+    def save_character(
+        self, project_id: str, character_id: str, content: str, *, expected_version: str
+    ) -> Character:
+        character = self.get_character(project_id, character_id)
+        self._save_body(character.source_ref, "character", character_id, content, expected_version)
+        return self.get_character(project_id, character_id)
+
+    def save_note(
+        self, project_id: str, note_id: str, content: str, *, expected_version: str
+    ) -> Note:
+        note = self.get_note(project_id, note_id)
+        self._save_body(note.source_ref, "note", note_id, content, expected_version)
+        return self.get_note(project_id, note_id)
+
+    def save_world_entry(
+        self, project_id: str, entry_id: str, content: str, *, expected_version: str
+    ) -> WorldInfoEntry:
+        entry = self.get_world_entry(project_id, entry_id)
+        self._save_body(entry.source_ref, "world info entry", entry_id, content, expected_version)
+        return self.get_world_entry(project_id, entry_id)
+
+    def create_character(self, project_id: str, name: str, content: str = "") -> Character:
+        """Add a character; a name already in use gets a number after it."""
+
+        clean = _clean_title(name, "character")
+        with self._create_lock:
+            tree = self.get_project(project_id)
+            root = self._project_root(tree.project.id)
+            number, character_id = _next_numbered_id(
+                tree.project.id, "character", (row.id for row in tree.characters)
+            )
+            _write_new_story_document(
+                root / "characters" / f"character-{number:03d}.md",
+                {
+                    "type": "character", "id": character_id,
+                    "project_id": tree.project.id,
+                    "name": _unique_title(clean, (row.name for row in tree.characters)),
+                },
+                content,
+            )
+            self._invalidate_records()
+        return self._one(self.get_project(project_id).characters, character_id, "character")
+
+    def create_world_entry(self, project_id: str, title: str, content: str = "") -> WorldInfoEntry:
+        """Add a world info entry; a title already in use gets a number after it."""
+
+        clean = _clean_title(title, "world info entry")
+        with self._create_lock:
+            tree = self.get_project(project_id)
+            if tree.world_info is None:
+                raise DomainValidationError("the project has no world info to add an entry to")
+            root = self._project_root(tree.project.id)
+            number, entry_id = _next_numbered_id(
+                tree.project.id, "world-entry", (row.id for row in tree.world_info_entries)
+            )
+            _write_new_story_document(
+                root / "world" / f"entry-{number:03d}.md",
+                {
+                    "type": "world_info_entry", "id": entry_id,
+                    "world_info_id": tree.world_info.id,
+                    "title": _unique_title(clean, (row.title for row in tree.world_info_entries)),
+                },
+                content,
+            )
+            self._invalidate_records()
+        return self._one(self.get_project(project_id).world_info_entries, entry_id, "world info entry")
+
+    def create_note(
+        self, project_id: str, title: str, content: str = "", category_id: str | None = None
+    ) -> Note:
+        """Add a note, optionally in a category; a title already in use there gets a number."""
+
+        clean = _clean_title(title, "note")
+        with self._create_lock:
+            tree = self.get_project(project_id)
+            if category_id is not None:
+                self._one(tree.categories, category_id, "note category")
+            root = self._project_root(tree.project.id)
+            number, note_id = _next_numbered_id(
+                tree.project.id, "note", (row.id for row in tree.notes)
+            )
+            metadata: dict[str, Any] = {
+                "type": "note", "id": note_id, "project_id": tree.project.id,
+                "title": _unique_title(
+                    clean, (row.title for row in tree.notes if row.category_id == category_id)
+                ),
+            }
+            if category_id is not None:
+                metadata["category_id"] = category_id
+            _write_new_story_document(root / "notes" / f"note-{number:03d}.md", metadata, content)
+            self._invalidate_records()
+        return self._one(self.get_project(project_id).notes, note_id, "note")
+
+    def _save_body(
+        self, source_ref: str, label: str, record_id: str, content: str, expected_version: str
+    ) -> None:
+        """Replace a record's text and keep its frontmatter; refuse a stale version."""
+
+        path = self.resolve_source_path(source_ref)
         current_bytes = path.read_bytes()
         current_version = _version(current_bytes)
         if current_version != expected_version:
             raise VersionConflictError(
-                f"chapter {chapter_id!r} changed since version {expected_version!r}"
+                f"{label} {record_id!r} changed since version {expected_version!r}"
             )
 
         original_text = current_bytes.decode("utf-8")
@@ -326,7 +433,6 @@ class ObsidianProjectRepository:
             if temporary_name and Path(temporary_name).exists():
                 Path(temporary_name).unlink()
         self._invalidate_records()
-        return self.get_chapter(project_id, chapter_id)
 
     def _records(self) -> dict[str, tuple[Any, ...]]:
         """Parsed Vault records, reused until any Markdown file changes.
@@ -412,6 +518,18 @@ def _clean_title(title: str, kind: str) -> str:
     if any(unicodedata.category(char).startswith("C") for char in text):
         raise DomainValidationError(f"{kind} title contains control characters")
     return text
+
+
+def _unique_title(title: str, taken: Any) -> str:
+    """``title``, or ``title (2)``, ``title (3)`` ... when the name is already used."""
+
+    used = {name.casefold() for name in taken}
+    if title.casefold() not in used:
+        return title
+    number = 2
+    while f"{title} ({number})".casefold() in used:
+        number += 1
+    return f"{title} ({number})"
 
 
 def _next_numbered_id(project_id: str, kind: str, existing_ids: Any) -> tuple[int, str]:

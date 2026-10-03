@@ -332,14 +332,19 @@ def discard_proposal(
 
 @router.post("/projects/{project_id}/chapters/{chapter_id}/undo")
 def undo_agent_write(project_id: str, chapter_id: str, body: dict[str, Any]) -> dict[str, Any]:
-    """Put a chapter back the way it was before the Agent's last write."""
+    """Put a record back the way it was before the Agent's last write.
+
+    The path says ``chapters`` for history's sake; ``target_type`` in the body
+    names another kind of record, and ``chapter_id`` is then that record's id.
+    """
 
     runtime, state = _require_runtime()
     profile = _required_body(body, "profile")
     _required_body(body, "connection_id")
+    target_type = _optional_body(body, "target_type") or "chapter"
     result = _proposal_call(
         runtime, state, project_id, profile,
-        lambda service: service.undo(project_id=project_id, chapter_id=chapter_id),
+        lambda service: service.undo(project_id=project_id, target_id=chapter_id, target_type=target_type),
         write=True,
     )
     return {"restored": result}

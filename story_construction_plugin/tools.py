@@ -9,7 +9,7 @@ from typing import Any, Callable, Mapping
 
 from .edits import EditError
 from .permissions import SessionScope, StoryPermissionGate, scope_from_tool_kwargs
-from .proposal_service import ProposalError, StoryProposalService
+from .proposal_service import ProposalError, StoryProposalService, read_record, record_summaries
 from .proposal_store import ProposalStoreError
 from .repository import NotFoundError, RepositoryError, StoryRepository
 from .session_store import SessionBindingStoreError
@@ -19,9 +19,14 @@ SESSION_PROJECT_TOOL = "story.get_session_project"
 PROPOSE_EDIT_TOOL = "story.propose_edit"
 PROPOSE_CHAPTER_TOOL = "story.propose_chapter"
 APPLY_EDIT_TOOL = "story.apply_edit"
+LIST_RECORDS_TOOL = "story.list_records"
+GET_RECORD_TOOL = "story.get_record"
 # The project of these tools comes from the session's binding, never from the model.
 SESSION_RESOLVED_TOOLS = frozenset(
-    {SESSION_PROJECT_TOOL, PROPOSE_EDIT_TOOL, PROPOSE_CHAPTER_TOOL, APPLY_EDIT_TOOL}
+    {
+        SESSION_PROJECT_TOOL, PROPOSE_EDIT_TOOL, PROPOSE_CHAPTER_TOOL, APPLY_EDIT_TOOL,
+        LIST_RECORDS_TOOL, GET_RECORD_TOOL,
+    }
 )
 DEFAULT_SEARCH_LIMIT = 20
 MAX_SEARCH_LIMIT = 50
@@ -99,6 +104,13 @@ class StoryToolService:
     ) -> Any:
         if name in (PROPOSE_EDIT_TOOL, PROPOSE_CHAPTER_TOOL, APPLY_EDIT_TOOL):
             return self._proposal_tool(name, project_id, payload, scope)
+        if name == LIST_RECORDS_TOOL:
+            return record_summaries(self.repository, project_id, _required(payload, "target_type"))
+        if name == GET_RECORD_TOOL:
+            return read_record(
+                self.repository, project_id,
+                _required(payload, "target_type"), _required(payload, "target_id"),
+            )
         if name == SESSION_PROJECT_TOOL:
             tree = self.repository.get_project(project_id)
             return {
@@ -148,14 +160,20 @@ class StoryToolService:
             return service.apply(proposal_id=_required(payload, "proposal_id"), **common)
         common["session_id"] = scope.session_id
         if name == PROPOSE_CHAPTER_TOOL:
-            return service.propose_chapter(
-                volume_id=_required(payload, "volume_id"),
+            return service.propose_new(
+                target_type=payload.get("target_type") or "chapter",
+                volume_id=str(payload.get("volume_id") or "").strip() or None,
+                category_id=str(payload.get("category_id") or "").strip() or None,
                 title=payload.get("title"),
                 content=payload.get("content"),
                 **common,
             )
+        target = str(payload.get("target_id") or payload.get("chapter_id") or "").strip()
+        if not target:
+            raise ValueError("target_id is required")
         return service.propose_edit(
-            chapter_id=_required(payload, "chapter_id"),
+            target_type=payload.get("target_type") or "chapter",
+            target_id=target,
             base_version=payload.get("base_version"),
             raw_edits=payload.get("edits"),
             **common,

@@ -116,8 +116,8 @@ def test_applied_proposals_record_when_and_what_version(store) -> None:
     applied = store.mark_applied(created["id"], {"version_after": "v2", "snapshot_id": "snap"})
 
     assert applied["status"] == "applied" and applied["applied"]["version_after"] == "v2"
-    assert store.latest_applied(project_id="novel", chapter_id="novel:chapter-1")["id"] == created["id"]
-    assert store.latest_applied(project_id="novel", chapter_id="novel:chapter-9") is None
+    assert store.latest_applied(project_id="novel", target_id="novel:chapter-1")["id"] == created["id"]
+    assert store.latest_applied(project_id="novel", target_id="novel:chapter-9") is None
     assert [row["id"] for row in store.recent_applied(project_id="novel")] == [created["id"]]
     assert store.list_for_project(project_id="novel", profile="writer", connection_id="local") == []
     assert len(store.list_for_project(project_id="novel", profile="writer", connection_id="local", include_finished=True)) == 1
@@ -130,7 +130,7 @@ def test_latest_applied_picks_the_most_recent_write(store, clock) -> None:
     second = store.create(_proposal(base_version="v2"))
     store.mark_applied(second["id"], {"version_after": "v3"})
 
-    assert store.latest_applied(project_id="novel", chapter_id="novel:chapter-1")["id"] == second["id"]
+    assert store.latest_applied(project_id="novel", target_id="novel:chapter-1")["id"] == second["id"]
 
 
 def test_forgetting_a_project_closes_its_open_proposals(store) -> None:
@@ -176,20 +176,20 @@ def test_concurrent_creates_all_survive(store) -> None:
 def test_snapshots_keep_the_text_and_trim_to_the_limit(tmp_path: Path) -> None:
     history = ChapterHistory(tmp_path / "history", keep=3)
     ids = [
-        history.save(project_id="novel", chapter_id="novel:chapter-1", text=f"text {n}", version=f"v{n}", proposal_id=f"p{n}")
+        history.save(project_id="novel", target_id="novel:chapter-1", text=f"text {n}", version=f"v{n}", proposal_id=f"p{n}")
         for n in range(5)
     ]
 
-    assert history.load(project_id="novel", chapter_id="novel:chapter-1", snapshot_id=ids[4])["text"] == "text 4"
-    assert history.load(project_id="novel", chapter_id="novel:chapter-1", snapshot_id=ids[0]) is None
-    assert history.load(project_id="novel", chapter_id="novel:chapter-1", snapshot_id=ids[2])["version"] == "v2"
-    assert history.load(project_id="novel", chapter_id="novel:chapter-2", snapshot_id=ids[4]) is None
+    assert history.load(project_id="novel", target_id="novel:chapter-1", snapshot_id=ids[4])["text"] == "text 4"
+    assert history.load(project_id="novel", target_id="novel:chapter-1", snapshot_id=ids[0]) is None
+    assert history.load(project_id="novel", target_id="novel:chapter-1", snapshot_id=ids[2])["version"] == "v2"
+    assert history.load(project_id="novel", target_id="novel:chapter-2", snapshot_id=ids[4]) is None
 
 
 def test_snapshot_names_cannot_leave_the_history_folder(tmp_path: Path) -> None:
     history = ChapterHistory(tmp_path / "history")
-    history.save(project_id="../x", chapter_id="..\\y", text="t", version="v", proposal_id="p")
+    history.save(project_id="../x", target_id="..\\y", text="t", version="v", proposal_id="p")
 
     assert not (tmp_path / "x").exists()
     assert any((tmp_path / "history").rglob("*.json"))
-    assert history.load(project_id="novel", chapter_id="c", snapshot_id="../../escape") is None
+    assert history.load(project_id="novel", target_id="c", snapshot_id="../../escape") is None

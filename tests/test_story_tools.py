@@ -162,6 +162,8 @@ def test_registration_exposes_the_story_toolset() -> None:
         "story.propose_edit",
         "story.propose_chapter",
         "story.apply_edit",
+        "story.list_records",
+        "story.get_record",
         "story.get_project",
         "story.get_world_info",
         "story.search_world_info",

@@ -97,6 +97,30 @@ class StoryRepository(Protocol):
         self, project_id: str, chapter_id: str, content: str, *, expected_version: str
     ) -> Chapter: ...
 
+    def get_note(self, project_id: str, note_id: str) -> Note: ...
+
+    def get_world_entry(self, project_id: str, entry_id: str) -> WorldInfoEntry: ...
+
+    def save_character(
+        self, project_id: str, character_id: str, content: str, *, expected_version: str
+    ) -> Character: ...
+
+    def save_note(
+        self, project_id: str, note_id: str, content: str, *, expected_version: str
+    ) -> Note: ...
+
+    def save_world_entry(
+        self, project_id: str, entry_id: str, content: str, *, expected_version: str
+    ) -> WorldInfoEntry: ...
+
+    def create_character(self, project_id: str, name: str, content: str = "") -> Character: ...
+
+    def create_world_entry(self, project_id: str, title: str, content: str = "") -> WorldInfoEntry: ...
+
+    def create_note(
+        self, project_id: str, title: str, content: str = "", category_id: str | None = None
+    ) -> Note: ...
+
 
 _WINDOWS_RESERVED = {
     "con", "prn", "aux", "nul",

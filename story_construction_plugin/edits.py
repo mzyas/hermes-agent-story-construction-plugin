@@ -135,27 +135,93 @@ def _apply_one(text: str, edit: Edit, index: int) -> str:
     if edit.op == "prepend":
         return _join(text, edit.new_text, after=False)
     needle = edit.old_text if edit.op == "replace" else edit.anchor_text
-    found = text.count(needle)
-    if found == 0:
-        raise EditError(
-            "edit_not_found",
-            "the text to locate does not appear in the chapter; read the chapter again and copy it exactly",
-            index=index,
-        )
-    if found > 1:
-        raise EditError(
-            "edit_ambiguous",
-            f"the text to locate appears {found} times; include more surrounding text so it appears once",
-            index=index,
-            matches=found,
-        )
-    position = text.index(needle)
+    start, end = _locate(text, needle, index)
     if edit.op == "replace":
-        return text[:position] + edit.new_text + text[position + len(needle):]
+        return text[:start] + edit.new_text + text[end:]
     if edit.op == "insert_after":
-        end = position + len(needle)
         return text[:end] + edit.new_text + text[end:]
-    return text[:position] + edit.new_text + text[position:]
+    return text[:start] + edit.new_text + text[start:]
+
+
+def _locate(text: str, needle: str, index: int) -> tuple[int, int]:
+    """The one span of ``text`` the edit points at; an exact match wins."""
+
+    found = text.count(needle)
+    if found == 1:
+        start = text.index(needle)
+        return start, start + len(needle)
+    if found > 1:
+        raise _ambiguous(index, found)
+    # No exact match: tolerate what a model routinely gets wrong when it copies
+    # text (curly vs straight quotes, dash and space variants, trailing blanks).
+    folded_text, positions = _fold(text)
+    folded_needle, _ = _fold(needle)
+    if folded_needle.strip():
+        matches = _find_all(folded_text, folded_needle)
+        if len(matches) > 1:
+            raise _ambiguous(index, len(matches))
+        if matches:
+            first = matches[0]
+            return positions[first], positions[first + len(folded_needle) - 1] + 1
+    raise EditError(
+        "edit_not_found",
+        "the text to locate does not appear in the text; read it again and copy it exactly",
+        index=index,
+    )
+
+
+def _ambiguous(index: int, matches: int) -> EditError:
+    return EditError(
+        "edit_ambiguous",
+        f"the text to locate appears {matches} times; include more surrounding text so it appears once",
+        index=index,
+        matches=matches,
+    )
+
+
+# Characters that only differ in typography. Folding maps one character to one
+# character, so a position in the folded text is a position in the original.
+_FOLD = {
+    **dict.fromkeys("\u2018\u2019\u201a\u201b", "'"),
+    **dict.fromkeys("\u201c\u201d\u201e\u201f", '"'),
+    **dict.fromkeys("\u2010\u2011\u2012\u2013\u2014\u2015\u2212", "-"),
+    **dict.fromkeys(
+        "\u00a0\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u202f\u205f\u3000", " "
+    ),
+}
+# NFKC is deliberately not used: it would turn full-width CJK punctuation into
+# half-width and stop a quoted sentence from matching its own source.
+
+
+def _fold(text: str) -> tuple[str, list[int]]:
+    """Typography-folded text with trailing blanks removed from every line, plus
+    the original position of each kept character."""
+
+    out: list[str] = []
+    positions: list[int] = []
+    offset = 0
+    lines = text.split("\n")
+    for number, line in enumerate(lines):
+        kept = line.rstrip(" \t　 ")
+        for column, char in enumerate(kept):
+            out.append(_FOLD.get(char, char))
+            positions.append(offset + column)
+        if number < len(lines) - 1:
+            out.append("\n")
+            positions.append(offset + len(line))
+        offset += len(line) + 1
+    return "".join(out), positions
+
+
+def _find_all(haystack: str, needle: str) -> list[int]:
+    """Start offsets of every non-overlapping occurrence of ``needle``."""
+
+    found: list[int] = []
+    start = haystack.find(needle)
+    while start != -1:
+        found.append(start)
+        start = haystack.find(needle, start + len(needle))
+    return found
 
 
 def _join(text: str, addition: str, *, after: bool) -> str:

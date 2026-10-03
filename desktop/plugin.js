@@ -91,9 +91,10 @@ const en = {
     pending: 'Waiting for approval',
     approvedLeft: minutes => `Approved · ${minutes} min left`,
     expired: 'Approval expired',
-    stale: 'The chapter changed since this was proposed',
-    newChapter: title => `New chapter: ${title}`,
-    editChapter: title => `Changes to ${title}`,
+    stale: 'This changed since it was proposed',
+    newRecord: (kind, title) => `New ${kind}: ${title}`,
+    editRecord: (kind, title) => `Changes to ${kind} ${title}`,
+    kind: { chapter: 'chapter', character: 'character', world_entry: 'world entry', note: 'note' },
     close: 'Close',
     approve: 'Approve selected changes',
     approveText: 'Approve this text',
@@ -109,19 +110,20 @@ const en = {
     warnTrailing: 'Looks like a closing remark, not story text',
     warnTitle: 'Repeats the chapter title',
     warnFence: 'A code fence around the text was removed',
+    warnNameInUse: 'This name is already used; it will get a number after it when written',
     approvalMessage: id => `Proposal ${id} is approved (valid for 15 minutes). Please call story.apply_edit to write it.`,
     approvedSent: 'Approved, and the Agent was asked to write it.',
     approvedNotSent: 'Approved. Tell the Agent in the chat to apply the proposal.',
     saveDraftFirst: 'Save or discard your unsaved changes to this chapter first.',
-    conflictAt: number => `Change ${number} no longer matches the chapter text.`,
-    conflict: 'The chapter changed and these changes no longer match it.',
-    versionChanged: 'The chapter changed since you opened this. Reopen the proposal.',
+    conflictAt: number => `Change ${number} no longer matches the text.`,
+    conflict: 'The text changed and these changes no longer match it.',
+    versionChanged: 'The text changed since you opened this. Reopen the proposal.',
     frontmatter: 'Remove the --- header block: only story text is allowed.',
     nothingSelected: 'Select at least one change.',
     failed: 'Could not complete that. Try again.',
     undo: title => `Undo the Agent's last write (${title})`,
     undone: 'Restored the text from before the Agent wrote.',
-    undoChanged: 'The chapter was edited after the Agent wrote, so it cannot be undone.',
+    undoChanged: 'It was edited after the Agent wrote, so it cannot be undone.',
     undoFailed: 'Could not undo that write.',
     op: {
       replace: 'Replace',
@@ -129,7 +131,7 @@ const en = {
       insert_before: 'Insert before',
       append: 'Add at the end',
       prepend: 'Add at the start',
-      rewrite: 'Rewrite the whole chapter'
+      rewrite: 'Rewrite everything'
     }
   },
   agent: {
@@ -301,9 +303,10 @@ const zh = {
     pending: '待确认',
     approvedLeft: minutes => `已批准 · 剩余 ${minutes} 分钟`,
     expired: '批准已过期',
-    stale: '章节在提案之后已被修改',
-    newChapter: title => `新章节：${title}`,
-    editChapter: title => `对《${title}》的修改`,
+    stale: '提案之后内容已被修改',
+    newRecord: (kind, title) => `新建${kind}：${title}`,
+    editRecord: (kind, title) => `对${kind}《${title}》的修改`,
+    kind: { chapter: '章节', character: '角色', world_entry: '世界设定条目', note: '笔记' },
     close: '关闭',
     approve: '批准所选修改',
     approveText: '批准这段文字',
@@ -319,19 +322,20 @@ const zh = {
     warnTrailing: '看起来是结尾说明，不是正文',
     warnTitle: '重复了章节标题',
     warnFence: '已去掉文字外面的代码围栏',
+    warnNameInUse: '这个名字已被使用，写入时会在后面加序号',
     approvalMessage: id => `提案 ${id} 已批准（15 分钟内有效），请调用 story.apply_edit 写入这份提案。`,
     approvedSent: '已批准，并已通知智能体写入。',
     approvedNotSent: '已批准。请在聊天里告诉智能体执行这份提案。',
     saveDraftFirst: '请先保存或放弃这一章未保存的修改。',
-    conflictAt: number => `第 ${number} 处修改在章节里找不到对应的原文。`,
-    conflict: '章节已被修改，这些修改和它对不上了。',
-    versionChanged: '章节在你打开之后又变了，请重新打开这份提案。',
+    conflictAt: number => `第 ${number} 处修改找不到对应的原文。`,
+    conflict: '内容已被修改，这些修改和它对不上了。',
+    versionChanged: '内容在你打开之后又变了，请重新打开这份提案。',
     frontmatter: '请去掉开头的 --- 头信息块：这里只能是正文。',
     nothingSelected: '请至少选择一处修改。',
     failed: '操作没有完成，请重试。',
     undo: title => `撤销智能体最近一次写入（${title}）`,
     undone: '已恢复到智能体写入之前的文字。',
-    undoChanged: '智能体写入之后章节又被修改过，所以不能撤销。',
+    undoChanged: '智能体写入之后又被修改过，所以不能撤销。',
     undoFailed: '无法撤销这次写入。',
     op: {
       replace: '替换',
@@ -339,7 +343,7 @@ const zh = {
       insert_before: '在其前插入',
       append: '追加到末尾',
       prepend: '加到开头',
-      rewrite: '重写整章'
+      rewrite: '重写全文'
     }
   },
   agent: {
@@ -972,10 +976,10 @@ export const discardStoryProposal = (projectId, proposalId, scope) =>
     '/projects/' + encodeURIComponent(projectId) + '/proposals/' + encodeURIComponent(proposalId) + buildStoryScopeQuery(scope),
     { method: 'DELETE' }
   )
-export const undoStoryAgentWrite = (projectId, chapterId, { profile, connectionId }) =>
-  call('/projects/' + encodeURIComponent(projectId) + '/chapters/' + encodeURIComponent(chapterId) + '/undo', {
+export const undoStoryAgentWrite = (projectId, targetId, { profile, connectionId, targetType }) =>
+  call('/projects/' + encodeURIComponent(projectId) + '/chapters/' + encodeURIComponent(targetId) + '/undo', {
     method: 'POST',
-    body: { profile, connection_id: connectionId }
+    body: { profile, connection_id: connectionId, ...(targetType ? { target_type: targetType } : {}) }
   })
 export const fetchStoryWrites = (projectId, scope) =>
   call('/projects/' + encodeURIComponent(projectId) + '/writes' + buildStoryScopeQuery(scope))
@@ -1996,7 +2000,8 @@ const PROPOSAL_WARNING_KEYS = {
   leading_guidance: 'proposal.warnLeading',
   trailing_guidance: 'proposal.warnTrailing',
   duplicate_title: 'proposal.warnTitle',
-  fence_removed: 'proposal.warnFence'
+  fence_removed: 'proposal.warnFence',
+  name_in_use: 'proposal.warnNameInUse'
 }
 
 export function ProposalReview({ proposal, projectId, profile, connectionId, draftStore, onClose, onChanged, t }) {
@@ -2008,7 +2013,9 @@ export function ProposalReview({ proposal, projectId, profile, connectionId, dra
   const scope = { profile, connectionId }
   const approved = proposal.status === 'approved'
   const stale = proposal.kind === 'edit' && proposal.current_version && proposal.current_version !== proposal.base_version
-  const title = proposal.chapter_title || proposal.title || ''
+  const targetType = proposal.target_type || 'chapter'
+  const isNew = String(proposal.kind || '').startsWith('new_')
+  const title = proposal.target_title || proposal.chapter_title || proposal.title || ''
 
   const run = async work => {
     if (busy) return
@@ -2031,7 +2038,8 @@ export function ProposalReview({ proposal, projectId, profile, connectionId, dra
         return
       }
       // A write over an unsaved draft of the same chapter would hide the Agent's change.
-      const unsaved = proposal.kind === 'edit' && draftStore?.current && retainedStoryDraftExists(draftStore.current, parts =>
+      // Only chapters have an editor, so only they can hold a draft.
+      const unsaved = proposal.kind === 'edit' && targetType === 'chapter' && draftStore?.current && retainedStoryDraftExists(draftStore.current, parts =>
         parts[0] === draftSlot(connectionId) && parts[1] === draftSlot(profile) &&
         parts[3] === draftSlot(projectId) && parts[4] === draftSlot(proposal.chapter_id)
       )
@@ -2079,7 +2087,9 @@ export function ProposalReview({ proposal, projectId, profile, connectionId, dra
         children: [
           jsx('h2', {
             className: 'min-w-0 flex-1 truncate text-base font-medium',
-            children: proposal.kind === 'new_chapter' ? t('proposal.newChapter', title) : t('proposal.editChapter', title)
+            children: isNew
+              ? t('proposal.newRecord', t('proposal.kind.' + targetType), title)
+              : t('proposal.editRecord', t('proposal.kind.' + targetType), title)
           }),
           jsx('span', {
             className: 'text-xs text-(--ui-text-secondary)',
@@ -2094,7 +2104,9 @@ export function ProposalReview({ proposal, projectId, profile, connectionId, dra
           className: 'hermes-story-danger text-xs',
           role: 'alert',
           children: [
-            `${t(PROPOSAL_WARNING_KEYS[warning.kind] || 'proposal.failed')} · ${t('proposal.changeN', warning.edit + 1, t('proposal.op.' + (proposal.edits[warning.edit]?.op || 'replace')))}`,
+            warning.kind === 'name_in_use'
+              ? t('proposal.warnNameInUse')
+              : `${t(PROPOSAL_WARNING_KEYS[warning.kind] || 'proposal.failed')} · ${t('proposal.changeN', warning.edit + 1, t('proposal.op.' + (proposal.edits[warning.edit]?.op || 'replace')))}`,
             warning.text ? jsx('div', { className: 'break-words text-(--ui-text-secondary)', children: warning.text }) : null
           ]
         }, index)
@@ -2245,7 +2257,10 @@ function ProposalArea({ projectId, profile, connectionId, draftStore, children }
     if (undoing || !latestWrite) return
     setUndoing(true)
     setUndoNote(null)
-    void undoStoryAgentWrite(projectId, latestWrite.chapter_id, scope)
+    void undoStoryAgentWrite(projectId, latestWrite.target_id || latestWrite.chapter_id, {
+      ...scope,
+      targetType: latestWrite.target_type
+    })
       .then(async () => {
         setUndoNote({ key: 'proposal.undone', args: [] })
         await refresh()
@@ -2279,7 +2294,7 @@ function ProposalArea({ projectId, profile, connectionId, draftStore, children }
                       className: 'rounded border border-(--ui-stroke-secondary) px-2 py-0.5 hover:bg-(--chrome-action-hover)',
                       onClick: () => setReviewId(proposal.id),
                       type: 'button',
-                      children: `${proposal.chapter_title || proposal.title || proposal.id} · ${statusLabel(proposal)}`
+                      children: `${proposal.target_title || proposal.chapter_title || proposal.title || proposal.id} · ${statusLabel(proposal)}`
                     }, proposal.id)
                   )
                 ]
@@ -2292,7 +2307,7 @@ function ProposalArea({ projectId, profile, connectionId, draftStore, children }
                   disabled: undoing,
                   onClick: undo,
                   type: 'button',
-                  children: t('proposal.undo', latestWrite.chapter_title || latestWrite.chapter_id)
+                  children: t('proposal.undo', latestWrite.target_title || latestWrite.chapter_title || latestWrite.chapter_id)
                 })
               })
             : null,

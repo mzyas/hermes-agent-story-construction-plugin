@@ -146,11 +146,12 @@ POST /projects/{project_id}/sessions                bind a Hermes session to the
 GET  /projects/{project_id}/sessions                list the project's bindings
 DELETE /projects/{project_id}/sessions/{stored_session_id}    remove a binding
 POST /projects/{project_id}/chapters/{chapter_id}/save        confirmed chapter save
-GET  /projects/{project_id}/proposals               the Agent's open chapter proposals, with their diff
+GET  /projects/{project_id}/proposals               the Agent's open proposals, with their diff
 POST /projects/{project_id}/proposals/{id}/approve  approve selected edits (or an edited text)
 POST /projects/{project_id}/proposals/{id}/revoke   withdraw an approval
 DELETE /projects/{project_id}/proposals/{id}        discard a proposal
-POST /projects/{project_id}/chapters/{chapter_id}/undo   restore the text from before the Agent's last write
+POST /projects/{project_id}/chapters/{id}/undo      restore the text from before the Agent's last write
+                                                    (body `target_type` names another kind of record)
 GET  /projects/{project_id}/writes                  the Agent's recent writes
 ```
 
@@ -416,56 +417,77 @@ the version immediately before the atomic Obsidian replacement. A conflict
 returns both the current chapter and generated draft for review; it never
 silently retargets or overwrites the newer file.
 
-## Chapter proposals (how the Agent writes)
+## Proposals (how the Agent writes)
 
-The Agent never writes a chapter on its own. It proposes, you approve, then it
-applies exactly what you approved.
+The Agent never writes on its own. It proposes, you approve, then it applies
+exactly what you approved. This covers **chapters, characters, world info
+entries and notes**; each proposal targets one of them (`target_type`:
+`chapter` by default, `character`, `world_entry`, `note`).
 
-1. **Propose** — `story.propose_edit` (changes to an existing chapter) or
-   `story.propose_chapter` (a new chapter at the end of a volume). A proposal
-   stores a list of edits; no Vault file is touched. Edits are `replace`
+1. **Propose** — `story.propose_edit` (changes to the text of an existing
+   record) or `story.propose_chapter` (a new chapter at the end of a volume, or,
+   with `target_type`, a new character, world entry or note). A proposal stores
+   a list of edits; no Vault file is touched. Edits are `replace`
    (`old_text` → `new_text`, empty to delete), `insert_after` / `insert_before`
    (next to `anchor_text`), `append` / `prepend`, or a `rewrite` of the whole
-   chapter (which must stand alone). Located text must appear exactly once and
-   match what `story.get_chapter` returned; if one edit cannot be placed the
-   whole proposal is rejected and the Agent is told why.
-2. **Body only** — `new_text` / `content` is only the story text. A wrapping
+   text (which must stand alone). Located text must appear once; if one edit
+   cannot be placed the whole proposal is rejected and the Agent is told why.
+   Matching is exact first. If nothing matches exactly it tolerates what models
+   routinely get wrong when copying: curly vs straight quotes, dash and space
+   variants, and trailing blanks. Full-width CJK punctuation is never folded to
+   half-width, and a text that still matches more than once is refused.
+2. **Finding the record** — `story.list_records` lists the characters, world
+   entries or notes (id, title, version, length; never the text) and
+   `story.get_record` reads one. A record can be named by its id or by its exact
+   title or name when that is unique; a name shared by several records is
+   refused and the candidates are listed. The Agent is told to check that a
+   record does not already exist before proposing a new one. Notes marked as
+   references are read-only: they cannot be proposed for change, and a note
+   that became a reference after you approved is not written.
+3. **New records** — only the text is proposed; the title or name stays as
+   given. A name already used by another record (a note only counts within its
+   category) is flagged in red in the review, and when written it gets a number
+   after it (`林远 (2)`) instead of replacing anything. `story.apply_edit`
+   reports the final title. A new note may name an existing category, but the
+   Agent cannot create categories, rename records or delete them.
+4. **Body only** — `new_text` / `content` is only the record's text. A wrapping
    code fence is removed, frontmatter is refused, and an introduction
    (“好的…”, “Here is…”), a closing remark (“希望…”, “Let me know…”) or a
-   repeated chapter heading is flagged in red in the review. Only the start and
-   end of a text are inspected, so ordinary prose is never second-guessed.
-3. **Review** — open proposals appear above the chapter editor. Each edit shows
+   repeated heading is flagged in red in the review. Only the start and end of
+   a text are inspected, so ordinary prose is never second-guessed.
+5. **Review** — open proposals appear above the chapter editor. Each edit shows
    the changed paragraph with the character-level difference highlighted, and a
    checkbox. You can approve only some edits, edit the resulting text by hand,
    withdraw an approval, or discard the proposal. Approving is refused while
-   you have an unsaved draft of the same chapter.
-4. **Approve** — the approval is bound to the exact edits you selected (or the
+   you have an unsaved draft of the same chapter (only chapters have an
+   editor, so only they can hold a draft).
+6. **Approve** — the approval is bound to the exact edits you selected (or the
    exact text you edited) and lasts **15 minutes**. Only the Desktop can create
    one; the Agent's tools cannot. After approving, the Desktop sends the
    session a fixed message asking it to call `story.apply_edit`; if the
    message cannot be delivered the panel says so and the approval stands.
-5. **Apply** — `story.apply_edit` takes only a `proposal_id`, so it cannot
+7. **Apply** — `story.apply_edit` takes only a `proposal_id`, so it cannot
    write anything else. It refuses a proposal that is not approved, expired,
    already written, discarded or replaced. Approved edits are applied to the
-   chapter as it is *now*: if you edited elsewhere in the meantime they still
+   record as it is *now*: if you edited elsewhere in the meantime they still
    apply, and if an approved edit no longer matches nothing is written. A hand
-   edited text is only written if the chapter is still at the version you
+   edited text is only written if the record is still at the version you
    edited.
-6. **Undo** — before every write the chapter text is saved to
-   `plugin-data/story-construction/history/` (the last 20 per chapter). “Undo
-   the Agent's last write” restores it, but only while the chapter is still
-   exactly as the Agent left it. A chapter the Agent created has no undo.
+8. **Undo** — before every write the record's text is saved to
+   `plugin-data/story-construction/history/` (the last 20 per record). “Undo
+   the Agent's last write” restores it, but only while the record is still
+   exactly as the Agent left it. A record the Agent created has no undo.
 
 Proposals and approvals live in `plugin-data/story-construction/proposals.json`
-(finished ones are kept for 7 days). Deleting a project closes its open
+(finished ones are kept for 7 days). Proposals saved before other record kinds
+existed are read as chapter proposals. Deleting a project closes its open
 proposals. The Desktop refreshes proposals every 5 seconds while the Agent is
-working and every 30 seconds otherwise. Only chapters can be proposed; notes,
-characters and world info are still read-only.
+working and every 30 seconds otherwise.
 
 ## Boundaries and non-goals
 
 - No arbitrary filesystem access from the model or Renderer.
-- No chapter write the person did not see and approve; the Agent only proposes.
+- No write to a chapter, character, world entry or note that the person did not see and approve; the Agent only proposes.
 - No cross-machine Vault synchronization in the first version.
 - Writing Profile bindings do not require a single-profile Gateway. Full multiplex integration remains to be verified; do not treat this declaration as a compatibility test result.
 - A project switch should start or bind a new Story session; a chapter switch is

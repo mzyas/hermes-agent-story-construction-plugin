@@ -1,4 +1,4 @@
-"""Durable chapter proposals, the approvals that unlock them, and chapter snapshots.
+"""Durable proposals, the approvals that unlock them, and snapshots of what they replaced.
 
 Proposals live in ``plugin-data`` next to the session bindings, never in the
 Vault. A proposal only becomes writable through an *approval* the Desktop
@@ -25,7 +25,7 @@ _SCHEMA_VERSION = 1
 APPROVAL_MINUTES = 15
 KEEP_FINISHED_DAYS = 7
 MAX_PENDING = 200
-SNAPSHOTS_PER_CHAPTER = 20
+SNAPSHOTS_PER_TARGET = 20
 OPEN_STATUSES = ("pending", "approved")
 FINISHED_STATUSES = ("applied", "discarded", "superseded")
 
@@ -69,15 +69,18 @@ class ProposalStore:
             return views
         return [row for row in views if row["status"] in (*OPEN_STATUSES, "expired")]
 
-    def latest_applied(self, *, project_id: str, chapter_id: str) -> dict[str, Any] | None:
+    def latest_applied(
+        self, *, project_id: str, target_id: str, target_type: str = "chapter"
+    ) -> dict[str, Any] | None:
         with self._lock:
             rows = [
                 row for row in self._load()
                 if row["project_id"] == project_id
-                and chapter_id in (row.get("chapter_id"), (row.get("applied") or {}).get("chapter_id"))
                 and row["status"] == "applied"
                 and row.get("applied")
                 and not row["applied"].get("undone_at")
+                and target_id in _written_ids(row)
+                and _target_type(row) == target_type
             ]
         rows.sort(key=lambda row: row["applied"]["at"])
         return self._view(rows[-1]) if rows else None
@@ -233,14 +236,34 @@ class ProposalStore:
         _write_json(self.path, {"version": _SCHEMA_VERSION, "proposals": rows}, "proposal")
 
 
+def _target_type(row: Mapping[str, Any]) -> str:
+    """Proposals saved before other targets existed have no type: they are chapters."""
+
+    return row.get("target_type") or "chapter"
+
+
+def _target_id(row: Mapping[str, Any]) -> str | None:
+    return row.get("target_id") or row.get("chapter_id")
+
+
+def _is_new(row: Mapping[str, Any]) -> bool:
+    return str(row.get("kind", "")).startswith("new_")
+
+
+def _written_ids(row: Mapping[str, Any]) -> tuple[str | None, ...]:
+    applied = row.get("applied") or {}
+    return (_target_id(row), applied.get("target_id"), applied.get("chapter_id"))
+
+
 def _same_target(left: Mapping[str, Any], right: Mapping[str, Any]) -> bool:
     return (
         left["project_id"] == right["project_id"]
         and left["profile"] == right["profile"]
         and left["connection_id"] == right["connection_id"]
         and left.get("kind") == right.get("kind")
-        and left.get("chapter_id") == right.get("chapter_id")
-        and (left.get("kind") != "new_chapter" or left.get("title") == right.get("title"))
+        and _target_type(left) == _target_type(right)
+        and _target_id(left) == _target_id(right)
+        and (not _is_new(left) or left.get("title") == right.get("title"))
     )
 
 
@@ -279,15 +302,15 @@ def _segment(value: str) -> str:
 
 
 class ChapterHistory:
-    """The chapter text as it was just before each write the Agent made."""
+    """A record's text as it was just before each write the Agent made."""
 
-    def __init__(self, root: Path, *, keep: int = SNAPSHOTS_PER_CHAPTER) -> None:
+    def __init__(self, root: Path, *, keep: int = SNAPSHOTS_PER_TARGET) -> None:
         self.root = Path(root)
         self.keep = keep
         self._lock = RLock()
 
-    def save(self, *, project_id: str, chapter_id: str, text: str, version: str, proposal_id: str) -> str:
-        folder = self._folder(project_id, chapter_id)
+    def save(self, *, project_id: str, target_id: str, text: str, version: str, proposal_id: str) -> str:
+        folder = self._folder(project_id, target_id)
         snapshot_id = f"{_iso(_now()).replace(':', '').replace('+', 'Z')}-{proposal_id}"
         with self._lock:
             _write_json(
@@ -301,12 +324,12 @@ class ChapterHistory:
                     stale.unlink()
         return snapshot_id
 
-    def load(self, *, project_id: str, chapter_id: str, snapshot_id: str) -> dict[str, Any] | None:
-        path = self._folder(project_id, chapter_id) / f"{_segment(snapshot_id)}.json"
+    def load(self, *, project_id: str, target_id: str, snapshot_id: str) -> dict[str, Any] | None:
+        path = self._folder(project_id, target_id) / f"{_segment(snapshot_id)}.json"
         try:
             return json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return None
 
-    def _folder(self, project_id: str, chapter_id: str) -> Path:
-        return self.root / _segment(project_id) / _segment(chapter_id)
+    def _folder(self, project_id: str, target_id: str) -> Path:
+        return self.root / _segment(project_id) / _segment(target_id)

@@ -50,25 +50,43 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "story.propose_edit": {
         "name": "story.propose_edit",
         "description": (
-            "Propose changes to the text of an existing chapter. Nothing is "
-            "written: the user reviews the proposal as a diff in the Story panel "
-            "and approves it. Read the chapter first with story.get_chapter and "
-            "pass its version as base_version. Each edit locates text that must "
-            "appear exactly once in the chapter, copied exactly from what "
-            "story.get_chapter returned; if it does not match, or matches more "
-            "than once, the whole proposal is rejected, so include enough "
-            "surrounding text. Every new_text and content must be only the story "
-            "text that belongs in the chapter: no greeting, no \"here is\", no "
+            "Propose changes to the text of an existing chapter, character, "
+            "world info entry or note (choose with target_type; default "
+            "chapter). Nothing is written: the user reviews the proposal as a "
+            "diff in the Story panel and approves it. Read the record first "
+            "(story.get_chapter for a chapter, story.get_record for the others) "
+            "and pass its version as base_version. Each edit locates text that "
+            "must appear once in the record, copied from what you read; if it "
+            "does not match, or matches more than once, the whole proposal is "
+            "rejected, so include enough surrounding text. Notes marked as "
+            "references are read-only. Every new_text and content must be only "
+            "the text that belongs in the record: no greeting, no \"here is\", no "
             "explanation, no closing remark, no code fence, no frontmatter, no "
-            "chapter heading. Put all conversation in your chat reply instead. "
-            "The project comes from this session's binding."
+            "heading that repeats the record's name. Put all conversation in "
+            "your chat reply instead. The project comes from this session's "
+            "binding."
         ),
         "parameters": _parameters(
             {
-                "chapter_id": {"type": "string", "description": "ID of the chapter to change."},
+                "target_type": {
+                    "type": "string",
+                    "enum": ["chapter", "character", "world_entry", "note"],
+                    "description": "What kind of record to change. Defaults to chapter.",
+                },
+                "target_id": {
+                    "type": "string",
+                    "description": (
+                        "ID of the record to change, or its exact title/name when the "
+                        "name is unique."
+                    ),
+                },
+                "chapter_id": {
+                    "type": "string",
+                    "description": "Chapter only; the same as target_id. Use target_id instead.",
+                },
                 "base_version": {
                     "type": "string",
-                    "description": "The version string story.get_chapter returned for this chapter.",
+                    "description": "The version string you read for this record.",
                 },
                 "edits": {
                     "type": "array",
@@ -91,39 +109,51 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                                     "replace: swap old_text for new_text (new_text may be empty to "
                                     "delete). insert_after / insert_before: add new_text next to "
                                     "anchor_text. append / prepend: add new_text as a new paragraph "
-                                    "at the end / start. rewrite: replace the whole chapter with content."
+                                    "at the end / start. rewrite: replace the whole record text with content."
                                 ),
                             },
                             "old_text": {"type": "string", "description": "replace only: text to swap out, appearing exactly once."},
                             "anchor_text": {"type": "string", "description": "insert_after / insert_before only: text to insert next to, appearing exactly once."},
-                            "new_text": {"type": "string", "description": "Story text to write, nothing else."},
-                            "content": {"type": "string", "description": "rewrite only: the whole new chapter text, nothing else."},
+                            "new_text": {"type": "string", "description": "The text to write, nothing else."},
+                            "content": {"type": "string", "description": "rewrite only: the whole new text, nothing else."},
                         },
                         "required": ["op"],
                         "additionalProperties": False,
                     },
                 },
             },
-            ["chapter_id", "base_version", "edits"],
+            ["base_version", "edits"],
         ),
     },
     "story.propose_chapter": {
         "name": "story.propose_chapter",
         "description": (
-            "Propose a new chapter at the end of a volume. Nothing is written: the "
-            "user reviews and approves it in the Story panel. content must be only "
-            "the chapter's story text: no greeting, no explanation, no closing "
-            "remark, no code fence, no frontmatter, no repeated title. Put all "
-            "conversation in your chat reply instead. The project comes from this "
-            "session's binding."
+            "Propose a new record: a chapter at the end of a volume (the default), "
+            "or with target_type a new character, world info entry or note. Check "
+            "first with story.list_records that it does not already exist, and "
+            "change an existing one with story.propose_edit instead. Nothing is "
+            "written: the user reviews and approves it in the Story panel. "
+            "content must be only the record's text: no greeting, no explanation, "
+            "no closing remark, no code fence, no frontmatter, no repeated title. "
+            "Put all conversation in your chat reply instead. The project comes "
+            "from this session's binding."
         ),
         "parameters": _parameters(
             {
-                "volume_id": {"type": "string", "description": "ID of the volume that will hold the chapter."},
-                "title": {"type": "string", "minLength": 1, "maxLength": 120, "description": "Chapter title."},
-                "content": {"type": "string", "minLength": 1, "description": "The chapter's story text, nothing else."},
+                "target_type": {
+                    "type": "string",
+                    "enum": ["chapter", "character", "world_entry", "note"],
+                    "description": "What kind of record to create. Defaults to chapter.",
+                },
+                "volume_id": {"type": "string", "description": "Chapter only: ID of the volume that will hold it."},
+                "category_id": {"type": "string", "description": "Note only, optional: ID of an existing note category."},
+                "title": {
+                    "type": "string", "minLength": 1, "maxLength": 120,
+                    "description": "Chapter or note title, character name, or world entry title.",
+                },
+                "content": {"type": "string", "minLength": 1, "description": "The record's text, nothing else."},
             },
-            ["volume_id", "title", "content"],
+            ["title", "content"],
         ),
     },
     "story.apply_edit": {
@@ -138,6 +168,46 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "parameters": _parameters(
             {"proposal_id": {"type": "string", "minLength": 1, "description": "The proposal_id returned by story.propose_edit or story.propose_chapter."}},
             ["proposal_id"],
+        ),
+    },
+    "story.list_records": {
+        "name": "story.list_records",
+        "description": (
+            "List the characters, world info entries or notes of the project this "
+            "session is bound to: ID, title/name, version and length only, not the "
+            "text (notes also show their category and whether they are references). "
+            "Use it to find what exists before proposing a new record, and to get "
+            "IDs. Read one with story.get_record."
+        ),
+        "parameters": _parameters(
+            {
+                "target_type": {
+                    "type": "string",
+                    "enum": ["character", "world_entry", "note"],
+                    "description": "Which records to list.",
+                },
+            },
+            ["target_type"],
+        ),
+    },
+    "story.get_record": {
+        "name": "story.get_record",
+        "description": (
+            "Read one character, world info entry or note of the project this "
+            "session is bound to, by ID or by its exact title/name when that is "
+            "unique. Returns its text and its version, which story.propose_edit "
+            "needs as base_version."
+        ),
+        "parameters": _parameters(
+            {
+                "target_type": {
+                    "type": "string",
+                    "enum": ["character", "world_entry", "note"],
+                    "description": "Which kind of record to read.",
+                },
+                "target_id": {"type": "string", "minLength": 1, "description": "The record's ID, or its exact title/name."},
+            },
+            ["target_type", "target_id"],
         ),
     },
     "story.get_project": {

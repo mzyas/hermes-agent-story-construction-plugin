@@ -105,7 +105,7 @@ def test_an_approved_proposal_writes_exactly_the_approved_edit(env) -> None:
     assert env.file_text.startswith("---\n") and "id: novel:chapter-1" in env.file_text
     stored = env.store.get(proposal_id)
     assert stored["status"] == "applied" and stored["applied"]["version_before"] == original.version
-    snapshot = env.history.load(project_id="novel", chapter_id=CHAPTER, snapshot_id=stored["applied"]["snapshot_id"])
+    snapshot = env.history.load(project_id="novel", target_id=CHAPTER, snapshot_id=stored["applied"]["snapshot_id"])
     assert snapshot["text"] == BODY and snapshot["version"] == original.version
 
 

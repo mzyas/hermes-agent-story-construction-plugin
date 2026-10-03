@@ -172,3 +172,52 @@ def test_deleting_a_project_closes_its_open_proposals(api) -> None:
 
     assert result["closed_proposals"] == 1
     assert api.service().store.get(proposal_id)["status"] == "discarded"
+
+
+# ------------------------------------------------- characters, entries and notes
+CHARACTER_EDIT = {"op": "replace", "old_text": "少年", "new_text": "青年"}
+
+
+def test_open_proposals_and_the_write_log_name_the_kind_of_record(api) -> None:
+    character = api.repo.create_character("novel", "林远", "少年，住在阁楼。")
+    service = api.service()
+    edit_id = service.propose_edit(
+        project_id="novel", session_id="s1", **SCOPE, target_type="character",
+        target_id=character.id, base_version=character.version, raw_edits=[CHARACTER_EDIT],
+    )["proposal_id"]
+    new_id = service.propose_new(
+        project_id="novel", session_id="s1", **SCOPE, target_type="note", title="灵感", content="钟声停了。",
+    )["proposal_id"]
+
+    rows = {row["id"]: row for row in api.module.list_proposals("novel", **SCOPE)["proposals"]}
+
+    assert rows[edit_id]["target_type"] == "character" and rows[edit_id]["target_title"] == "林远"
+    assert rows[edit_id]["current_version"] == character.version
+    assert rows[new_id]["target_type"] == "note" and rows[new_id]["kind"] == "new_record"
+
+    api.approve(edit_id)
+    service.apply(project_id="novel", proposal_id=edit_id, **SCOPE)
+    log = api.module.list_agent_writes("novel", **SCOPE)["writes"]
+    assert log[0]["target_type"] == "character" and log[0]["target_id"] == character.id
+
+
+def test_undo_follows_the_kind_of_record_named_in_the_body(api) -> None:
+    character = api.repo.create_character("novel", "林远", "少年，住在阁楼。")
+    service = api.service()
+    proposal_id = service.propose_edit(
+        project_id="novel", session_id="s1", **SCOPE, target_type="character",
+        target_id=character.id, base_version=character.version, raw_edits=[CHARACTER_EDIT],
+    )["proposal_id"]
+    api.approve(proposal_id)
+    service.apply(project_id="novel", proposal_id=proposal_id, **SCOPE)
+
+    # Read as a chapter id it matches nothing, so nothing is touched.
+    _assert_http_error(lambda: api.module.undo_agent_write("novel", character.id, dict(SCOPE)), 409, "nothing_to_undo")
+    assert "青年" in api.repo.get_character("novel", character.id).content
+
+    restored = api.module.undo_agent_write(
+        "novel", character.id, {**SCOPE, "target_type": "character"}
+    )["restored"]
+
+    assert restored["target_type"] == "character"
+    assert api.repo.get_character("novel", character.id).content == "少年，住在阁楼。"

@@ -44,7 +44,8 @@ const {
   proposalApprovalMessage,
   proposalErrorNote,
   proposalPollInterval,
-  storyDraftKey
+  storyDraftKey,
+  undoStoryAgentWrite
 } = await import(dataModule(rewriteDesktopImports(source)))
 
 function expand(node) {
@@ -307,4 +308,67 @@ test('discarding and withdrawing call their own endpoints', async () => {
     ['POST', '/projects/novel/proposals/abc123/revoke']
   ])
   assert.equal(closed, 1)
+})
+
+
+// ------------------------------------------------ characters, entries and notes
+const character = {
+  ...proposal,
+  chapter_id: undefined,
+  chapter_title: undefined,
+  target_type: 'character',
+  target_id: 'novel:character-1',
+  target_title: '林远'
+}
+
+test('the heading names the kind of record and its title', () => {
+  assert.match(textOf(review()), /proposal\.editRecord:proposal\.kind\.chapter,第一章/)
+  assert.match(textOf(review(character)), /proposal\.editRecord:proposal\.kind\.character,林远/)
+  const created = review({
+    ...character, kind: 'new_record', target_type: 'note', target_title: '灵感', title: '灵感', edits: [], previews: [], warnings: []
+  })
+  assert.match(textOf(created), /proposal\.newRecord:proposal\.kind\.note,灵感/)
+  const newChapter = review({ kind: 'new_chapter', edits: [], previews: [], warnings: [] })
+  assert.match(textOf(newChapter), /proposal\.newRecord:proposal\.kind\.chapter,第一章/)
+})
+
+test('a name already in use is an alert without a change number', () => {
+  const alerts = find(
+    review({ ...character, kind: 'new_record', edits: [], previews: [], warnings: [{ edit: 0, kind: 'name_in_use', text: 'novel:character-1' }] }),
+    node => node.props?.role === 'alert'
+  )
+
+  assert.equal(alerts.length, 1)
+  assert.match(textOf(alerts[0]), /proposal\.warnNameInUse/)
+  assert.doesNotMatch(textOf(alerts[0]), /changeN/)
+  assert.match(textOf(alerts[0]), /novel:character-1/)
+})
+
+test('only chapters can hold an unsaved draft that blocks an approval', async () => {
+  const { calls, dispose } = bindRest()
+  const key = storyDraftKey({
+    connectionId: 'local', profile: 'writer', sessionId: 'stored-1', projectId: 'novel', chapterId: 'novel:character-1'
+  })
+  try {
+    await button(review(character, { draftStore: { current: new Map([[key, 'unsaved words']]) } }), 'proposal.approve').props.onClick()
+  } finally {
+    dispose()
+  }
+
+  assert.equal(calls.length, 1)
+})
+
+test('undoing a write says which kind of record it was', async () => {
+  const { calls, dispose } = bindRest()
+  try {
+    await undoStoryAgentWrite('novel', 'novel:character-1', { profile: 'writer', connectionId: 'local', targetType: 'character' })
+    await undoStoryAgentWrite('novel', 'novel:chapter-1', { profile: 'writer', connectionId: 'local' })
+  } finally {
+    dispose()
+  }
+
+  assert.deepEqual(calls, [
+    ['/projects/novel/chapters/novel%3Acharacter-1/undo', { method: 'POST', body: { profile: 'writer', connection_id: 'local', target_type: 'character' } }],
+    ['/projects/novel/chapters/novel%3Achapter-1/undo', { method: 'POST', body: { profile: 'writer', connection_id: 'local' } }]
+  ])
 })

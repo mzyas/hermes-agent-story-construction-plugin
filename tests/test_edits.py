@@ -218,3 +218,59 @@ def test_edit_error_payload_carries_code_and_position() -> None:
 
     assert error.as_dict() == {"code": "edit_ambiguous", "message": "twice", "edit": 2, "matches": 2}
     assert Edit(op="append", new_text="x").as_dict() == {"op": "append", "new_text": "x"}
+
+
+# ----------------------------------------------------------- tolerant matching
+CURLY = "他说：“走吧”，然后离开了。\n\n她——没有回答。  \n\n天黑了。"
+
+
+def test_straight_quotes_find_curly_quoted_text() -> None:
+    result = _apply(
+        [{"op": "replace", "old_text": '"走吧"，然后', "new_text": "他转身，然后"}],
+        base=CURLY,
+    )
+
+    # Only the matched span changed; the text around it is untouched.
+    assert result.startswith("他说：他转身，然后离开了。")
+    assert result.endswith("天黑了。")
+
+
+def test_dash_and_trailing_blank_differences_are_tolerated() -> None:
+    dash = _apply([{"op": "replace", "old_text": "她--没有回答。", "new_text": "她点了头。"}], base=CURLY)
+    anchored = _apply(
+        [{"op": "insert_after", "anchor_text": "没有回答。", "new_text": "风停了。"}], base=CURLY
+    )
+
+    assert "她点了头。" in dash and "没有回答" not in dash
+    assert "没有回答。风停了。" in anchored
+
+
+def test_an_exact_match_is_preferred_over_a_tolerant_one() -> None:
+    base = '甲“x”乙\n\n甲"x"乙'
+
+    result = _apply([{"op": "replace", "old_text": '甲"x"乙', "new_text": "丙"}], base=base)
+
+    assert result == "甲“x”乙\n\n丙"
+
+
+def test_a_tolerant_match_that_hits_twice_is_still_ambiguous() -> None:
+    both = "甲“x”乙\n\n甲“x”乙"
+
+    with pytest.raises(EditError) as error:
+        _apply([{"op": "replace", "old_text": '甲"x"乙', "new_text": "丙"}], base=both)
+
+    assert error.value.code == "edit_ambiguous" and error.value.details["matches"] == 2
+
+
+def test_full_width_punctuation_is_not_folded_to_half_width() -> None:
+    with pytest.raises(EditError) as error:
+        _apply([{"op": "replace", "old_text": "天黑了.", "new_text": "天亮了。"}], base="天黑了。")
+
+    assert error.value.code == "edit_not_found"
+
+
+def test_a_needle_of_only_blanks_never_matches_by_folding() -> None:
+    with pytest.raises(EditError) as error:
+        _apply([{"op": "replace", "old_text": "　", "new_text": "x"}], base="甲乙")
+
+    assert error.value.code == "edit_not_found"

@@ -1,8 +1,9 @@
-"""Chapter proposals: the Agent proposes, the person approves, the Agent applies.
+"""Proposals: the Agent proposes, the person approves, the Agent applies.
 
-Three things keep the Agent from writing anything the person did not see:
+A proposal targets one record: a chapter, a character, a world info entry or a
+note. Three things keep the Agent from writing anything the person did not see:
 
-* ``propose_*`` only stores a proposal; no chapter file is touched.
+* ``propose_*`` only stores a proposal; no file is touched.
 * An approval can only be created through the Desktop methods below, which the
   Agent's tools never call.
 * ``apply`` takes just a proposal id. It writes what the approval covers (the
@@ -14,9 +15,11 @@ from __future__ import annotations
 
 import unicodedata
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any
 
 from .edits import (
+    BodyWarning,
     Edit,
     EditError,
     apply_edits,
@@ -32,6 +35,13 @@ from .proposal_store import ChapterHistory, ProposalStore
 from .repository import NotFoundError, RepositoryError, StoryRepository, VersionConflictError
 
 MAX_TITLE = 120
+TARGET_TYPES = ("chapter", "character", "world_entry", "note")
+_LABELS = {
+    "chapter": "chapter",
+    "character": "character",
+    "world_entry": "world entry",
+    "note": "note",
+}
 _STATUS_ERRORS = {
     "pending": ("not_approved", "the user has not approved this proposal yet"),
     "expired": ("approval_expired", "the approval ran out; ask the user to approve again"),
@@ -53,6 +63,17 @@ class ProposalError(RuntimeError):
         return {"code": self.code, "message": str(self), **self.details}
 
 
+@dataclass(frozen=True, slots=True)
+class _Doc:
+    """The part of any record a proposal needs: its text and where it stands."""
+
+    id: str
+    title: str
+    content: str
+    version: str
+    read_only: bool = False
+
+
 class StoryProposalService:
     def __init__(
         self, repository: StoryRepository, store: ProposalStore, history: ChapterHistory
@@ -69,34 +90,98 @@ class StoryProposalService:
         session_id: str,
         profile: str,
         connection_id: str,
-        chapter_id: str,
         base_version: str,
         raw_edits: object,
+        target_type: str = "chapter",
+        target_id: str | None = None,
+        chapter_id: str | None = None,
     ) -> dict[str, Any]:
-        chapter = self.repository.get_chapter(project_id, chapter_id)
-        if not isinstance(base_version, str) or base_version.strip() != chapter.version:
+        target_type = _target_type(target_type)
+        label = _LABELS[target_type]
+        doc = self._doc(
+            project_id, target_type, self.resolve_target(project_id, target_type, target_id or chapter_id)
+        )
+        if doc.read_only:
+            raise ProposalError(
+                "read_only", f"this {label} is a reference and cannot be changed by the Agent"
+            )
+        if not isinstance(base_version, str) or base_version.strip() != doc.version:
             raise ProposalError(
                 "version_changed",
-                "the chapter changed since it was read; read it again and propose against the new version",
-                current_version=chapter.version,
+                f"the {label} changed since it was read; read it again and propose against the new version",
+                current_version=doc.version,
             )
-        edits, warnings = check_edits(parse_edits(raw_edits), title=chapter.title)
-        base = normalize_newlines(chapter.content)
+        edits, warnings = check_edits(parse_edits(raw_edits), title=doc.title)
+        base = normalize_newlines(doc.content)
         result = apply_edits(base, edits)
         if result == base:
-            raise ProposalError("no_change", "these edits would not change the chapter")
+            raise ProposalError("no_change", f"these edits would not change the {label}")
         proposal = self.store.create({
             "project_id": project_id,
             "profile": profile,
             "connection_id": connection_id,
             "session_id": session_id,
             "kind": "edit",
-            "chapter_id": chapter.id,
-            "chapter_title": chapter.title,
-            "base_version": chapter.version,
+            **_identity(target_type, doc.id, doc.title),
+            "base_version": doc.version,
             "edits": [edit.as_dict() for edit in edits],
             "result_text": result,
             "previews": build_previews(base, edits),
+            "warnings": [warning.as_dict() for warning in warnings],
+        })
+        return _agent_summary(proposal)
+
+    def propose_new(
+        self,
+        *,
+        project_id: str,
+        session_id: str,
+        profile: str,
+        connection_id: str,
+        title: str,
+        content: str,
+        target_type: str = "chapter",
+        volume_id: str | None = None,
+        category_id: str | None = None,
+    ) -> dict[str, Any]:
+        target_type = _target_type(target_type)
+        clean_title = _title(title)
+        tree = self.repository.get_project(project_id)
+        extra: dict[str, Any] = {}
+        warnings: list[BodyWarning] = []
+        if target_type == "chapter":
+            if not volume_id:
+                raise ProposalError("invalid_request", "volume_id is required for a new chapter")
+            if volume_id not in {volume.id for volume in tree.volumes}:
+                raise NotFoundError(f"volume {volume_id!r} was not found")
+            extra["volume_id"] = volume_id
+        elif target_type == "note" and category_id:
+            if category_id not in {category.id for category in tree.categories}:
+                raise NotFoundError(f"note category {category_id!r} was not found")
+            extra["category_id"] = category_id
+        if not isinstance(content, str) or not content.strip():
+            raise ProposalError("empty_content", "content must not be empty")
+        body, found = clean_body(content, title=clean_title)
+        warnings.extend(found)
+        taken = _taken_titles(tree, target_type, category_id)
+        if clean_title.casefold() in taken:
+            # Several chapters may share a title; any other record should not.
+            if target_type != "chapter":
+                warnings.append(BodyWarning(edit=0, kind="name_in_use", text=taken[clean_title.casefold()]))
+        edits = (Edit(op="rewrite", content=body),)
+        proposal = self.store.create({
+            "project_id": project_id,
+            "profile": profile,
+            "connection_id": connection_id,
+            "session_id": session_id,
+            "kind": "new_chapter" if target_type == "chapter" else "new_record",
+            **_identity(target_type, None, clean_title),
+            **extra,
+            "title": clean_title,
+            "base_version": "",
+            "edits": [edit.as_dict() for edit in edits],
+            "result_text": body,
+            "previews": build_previews("", edits),
             "warnings": [warning.as_dict() for warning in warnings],
         })
         return _agent_summary(proposal)
@@ -112,31 +197,11 @@ class StoryProposalService:
         title: str,
         content: str,
     ) -> dict[str, Any]:
-        clean_title = _title(title)
-        tree = self.repository.get_project(project_id)
-        if volume_id not in {volume.id for volume in tree.volumes}:
-            raise NotFoundError(f"volume {volume_id!r} was not found")
-        if not isinstance(content, str) or not content.strip():
-            raise ProposalError("empty_content", "content must not be empty")
-        body, found = clean_body(content, title=clean_title)
-        edits = (Edit(op="rewrite", content=body),)
-        proposal = self.store.create({
-            "project_id": project_id,
-            "profile": profile,
-            "connection_id": connection_id,
-            "session_id": session_id,
-            "kind": "new_chapter",
-            "chapter_id": None,
-            "volume_id": volume_id,
-            "title": clean_title,
-            "chapter_title": clean_title,
-            "base_version": "",
-            "edits": [edit.as_dict() for edit in edits],
-            "result_text": body,
-            "previews": build_previews("", edits),
-            "warnings": [warning.as_dict() for warning in found],
-        })
-        return _agent_summary(proposal)
+        return self.propose_new(
+            project_id=project_id, session_id=session_id, profile=profile,
+            connection_id=connection_id, title=title, content=content,
+            target_type="chapter", volume_id=volume_id,
+        )
 
     def apply(self, *, project_id: str, proposal_id: str, profile: str, connection_id: str) -> dict[str, Any]:
         proposal = self._owned(project_id, proposal_id, profile, connection_id)
@@ -155,54 +220,57 @@ class StoryProposalService:
         else:
             raise ProposalError("approval_mismatch", "unknown approval")
 
-        if proposal["kind"] == "new_chapter":
+        target_type = _proposal_type(proposal)
+        label = _LABELS[target_type]
+        if _is_new(proposal):
             text = approval["text"] if mode == "text" else apply_edits("", selected)
-            chapter = self.repository.create_chapter(
-                project_id, proposal["volume_id"], proposal["title"], text
-            )
+            created = self._create(project_id, target_type, proposal, text)
             self.store.mark_applied(proposal_id, {
-                "chapter_id": chapter.id, "version_after": chapter.version, "snapshot_id": None,
+                **_written(target_type, created.id),
+                "version_after": created.version,
+                "snapshot_id": None,
             })
-            return {"status": "applied", "chapter_id": chapter.id, "version": chapter.version}
+            return {"status": "applied", "title": created.title, "version": created.version,
+                    **_written(target_type, created.id)}
 
-        chapter = self.repository.get_chapter(project_id, proposal["chapter_id"])
+        doc = self._doc(project_id, target_type, proposal["target_id"])
+        if doc.read_only:
+            raise ProposalError("read_only", f"this {label} is a reference and cannot be changed by the Agent")
         try:
             if mode == "edits":
-                result = apply_edits(chapter.content, selected)
+                result = apply_edits(doc.content, selected)
             else:
-                if chapter.version != approval["base_version"]:
+                if doc.version != approval["base_version"]:
                     raise ProposalError(
                         "version_changed",
-                        "the chapter changed after the user edited the text; ask them to approve again",
-                        current_version=chapter.version,
+                        f"the {label} changed after the user edited the text; ask them to approve again",
+                        current_version=doc.version,
                     )
                 result = normalize_newlines(approval["text"])
         except EditError as exc:
             raise _conflict(
-                "the chapter changed and an approved edit no longer matches; propose it again", exc
+                f"the {label} changed and an approved edit no longer matches; propose it again", exc
             ) from exc
         snapshot_id = self.history.save(
             project_id=project_id,
-            chapter_id=chapter.id,
-            text=chapter.content,
-            version=chapter.version,
+            target_id=doc.id,
+            text=doc.content,
+            version=doc.version,
             proposal_id=proposal_id,
         )
         try:
-            saved = self.repository.save_chapter(
-                project_id, chapter.id, result, expected_version=chapter.version
-            )
+            saved = self._save(project_id, target_type, doc.id, result, doc.version)
         except VersionConflictError as exc:
             raise ProposalError(
-                "version_changed", "the chapter changed while it was being saved", current_version=""
+                "version_changed", f"the {label} changed while it was being saved", current_version=""
             ) from exc
         self.store.mark_applied(proposal_id, {
-            "chapter_id": chapter.id,
-            "version_before": chapter.version,
+            **_written(target_type, doc.id),
+            "version_before": doc.version,
             "version_after": saved.version,
             "snapshot_id": snapshot_id,
         })
-        return {"status": "applied", "chapter_id": chapter.id, "version": saved.version}
+        return {"status": "applied", "version": saved.version, **_written(target_type, doc.id)}
 
     # ---------------------------------------------------------- the Desktop
     def list_open(self, *, project_id: str, profile: str, connection_id: str) -> list[dict[str, Any]]:
@@ -211,13 +279,13 @@ class StoryProposalService:
             project_id=project_id, profile=profile, connection_id=connection_id
         ):
             view = _desktop_view(row)
-            # The chapter's version right now, so the Desktop can tell a proposal
+            # The record's version right now, so the Desktop can tell a proposal
             # written against an older text and can approve a hand edit against it.
             view["current_version"] = None
             if row["kind"] == "edit":
                 try:
-                    view["current_version"] = self.repository.get_chapter(
-                        project_id, row["chapter_id"]
+                    view["current_version"] = self._doc(
+                        project_id, _proposal_type(row), row.get("target_id") or row["chapter_id"]
                     ).version
                 except (NotFoundError, RepositoryError):
                     pass
@@ -259,49 +327,110 @@ class StoryProposalService:
         stored = self.store.discard(proposal_id)
         return _desktop_view(stored)
 
-    def undo(self, *, project_id: str, chapter_id: str) -> dict[str, Any]:
-        applied = self.store.latest_applied(project_id=project_id, chapter_id=chapter_id)
+    def undo(
+        self,
+        *,
+        project_id: str,
+        target_id: str | None = None,
+        target_type: str = "chapter",
+        chapter_id: str | None = None,
+    ) -> dict[str, Any]:
+        target_type = _target_type(target_type)
+        label = _LABELS[target_type]
+        target_id = target_id or chapter_id or ""
+        applied = self.store.latest_applied(project_id=project_id, target_id=target_id, target_type=target_type)
         if applied is None:
-            raise ProposalError("nothing_to_undo", "there is no Agent write to undo for this chapter")
+            raise ProposalError("nothing_to_undo", f"there is no Agent write to undo for this {label}")
         info = applied["applied"]
         if not info.get("snapshot_id"):
             raise ProposalError(
                 "undo_unsupported",
-                "a chapter the Agent created cannot be undone here; delete it by hand if you do not want it",
+                f"a {label} the Agent created cannot be undone here; delete it by hand if you do not want it",
             )
-        chapter = self.repository.get_chapter(project_id, chapter_id)
-        if chapter.version != info["version_after"]:
+        doc = self._doc(project_id, target_type, target_id)
+        if doc.version != info["version_after"]:
             raise ProposalError(
                 "chapter_changed",
-                "the chapter was edited after the Agent's write, so it cannot be undone safely",
-                current_version=chapter.version,
+                f"the {label} was edited after the Agent's write, so it cannot be undone safely",
+                current_version=doc.version,
             )
         snapshot = self.history.load(
-            project_id=project_id, chapter_id=chapter_id, snapshot_id=info.get("snapshot_id") or ""
+            project_id=project_id, target_id=target_id, snapshot_id=info.get("snapshot_id") or ""
         )
         if snapshot is None:
             raise ProposalError("snapshot_missing", "the saved copy of the earlier text is gone")
         try:
-            restored = self.repository.save_chapter(
-                project_id, chapter_id, snapshot["text"], expected_version=chapter.version
-            )
+            restored = self._save(project_id, target_type, target_id, snapshot["text"], doc.version)
         except VersionConflictError as exc:
-            raise ProposalError("chapter_changed", "the chapter changed while it was being restored") from exc
+            raise ProposalError("chapter_changed", f"the {label} changed while it was being restored") from exc
         self.store.mark_undone(applied["id"])
-        return {"chapter_id": chapter_id, "version": restored.version}
+        return {"target_type": target_type, "target_id": target_id, "chapter_id": target_id if target_type == "chapter" else None, "version": restored.version}
 
     def writes(self, *, project_id: str) -> list[dict[str, Any]]:
-        return [
-            {
+        rows = []
+        for row in self.store.recent_applied(project_id=project_id):
+            target_type = _proposal_type(row)
+            applied = row["applied"]
+            target_id = applied.get("target_id") or applied.get("chapter_id")
+            rows.append({
                 "proposal_id": row["id"],
-                "chapter_id": row["applied"].get("chapter_id"),
+                "target_type": target_type,
+                "target_id": target_id,
+                "target_title": row.get("target_title") or row.get("chapter_title") or row.get("title"),
+                "chapter_id": applied.get("chapter_id"),
                 "chapter_title": row.get("chapter_title"),
-                "at": row["applied"]["at"],
-                "undone": bool(row["applied"].get("undone_at")),
+                "at": applied["at"],
+                "undone": bool(applied.get("undone_at")),
                 "kind": row["kind"],
-            }
-            for row in self.store.recent_applied(project_id=project_id)
-        ]
+            })
+        return rows
+
+    # ------------------------------------------------------------- targets
+    def resolve_target(self, project_id: str, target_type: str, ref: object) -> str:
+        return resolve_target(self.repository, project_id, target_type, ref)
+
+    def _doc(self, project_id: str, target_type: str, target_id: str) -> _Doc:
+        repo = self.repository
+        if target_type == "character":
+            row = repo.get_character(project_id, target_id)
+            return _Doc(row.id, row.name, row.content, row.version)
+        if target_type == "world_entry":
+            row = repo.get_world_entry(project_id, target_id)
+            return _Doc(row.id, row.title, row.content, row.version)
+        if target_type == "note":
+            row = repo.get_note(project_id, target_id)
+            return _Doc(row.id, row.title, row.content, row.version, read_only=row.reference)
+        row = repo.get_chapter(project_id, target_id)
+        return _Doc(row.id, row.title, row.content, row.version)
+
+    def _save(self, project_id: str, target_type: str, target_id: str, text: str, expected: str) -> _Doc:
+        repo = self.repository
+        if target_type == "character":
+            row = repo.save_character(project_id, target_id, text, expected_version=expected)
+            return _Doc(row.id, row.name, row.content, row.version)
+        if target_type == "world_entry":
+            row = repo.save_world_entry(project_id, target_id, text, expected_version=expected)
+            return _Doc(row.id, row.title, row.content, row.version)
+        if target_type == "note":
+            row = repo.save_note(project_id, target_id, text, expected_version=expected)
+            return _Doc(row.id, row.title, row.content, row.version, read_only=row.reference)
+        row = repo.save_chapter(project_id, target_id, text, expected_version=expected)
+        return _Doc(row.id, row.title, row.content, row.version)
+
+    def _create(self, project_id: str, target_type: str, proposal: dict[str, Any], text: str) -> _Doc:
+        repo = self.repository
+        title = proposal["title"]
+        if target_type == "character":
+            row = repo.create_character(project_id, title, text)
+            return _Doc(row.id, row.name, row.content, row.version)
+        if target_type == "world_entry":
+            row = repo.create_world_entry(project_id, title, text)
+            return _Doc(row.id, row.title, row.content, row.version)
+        if target_type == "note":
+            row = repo.create_note(project_id, title, text, proposal.get("category_id"))
+            return _Doc(row.id, row.title, row.content, row.version)
+        row = repo.create_chapter(project_id, proposal["volume_id"], title, text)
+        return _Doc(row.id, row.title, row.content, row.version)
 
     # ------------------------------------------------------------ internals
     def _owned(self, project_id: str, proposal_id: str, profile: str, connection_id: str) -> dict[str, Any]:
@@ -323,16 +452,17 @@ class StoryProposalService:
         if not chosen or any(not isinstance(i, int) or i < 0 or i >= len(edits) for i in chosen):
             raise ProposalError("invalid_selection", "select at least one of this proposal's edits")
         picked = [Edit(**edits[i]) for i in chosen]
-        if proposal["kind"] == "new_chapter":
+        label = _LABELS[_proposal_type(proposal)]
+        if _is_new(proposal):
             base = ""
         else:
-            base = self.repository.get_chapter(project_id, proposal["chapter_id"]).content
+            base = self._doc(project_id, _proposal_type(proposal), proposal["target_id"]).content
         try:
             result = apply_edits(base, picked)
         except EditError as exc:
-            raise _conflict("an edit no longer matches the chapter", exc) from exc
+            raise _conflict(f"an edit no longer matches the {label}", exc) from exc
         if result == normalize_newlines(base):
-            raise ProposalError("no_change", "the selected edits would not change the chapter")
+            raise ProposalError("no_change", f"the selected edits would not change the {label}")
         return {"mode": "edits", "selected": chosen, "digest": edits_digest(picked)}
 
     def _approve_text(
@@ -340,24 +470,86 @@ class StoryProposalService:
     ) -> dict[str, Any]:
         if not isinstance(text, str) or not text.strip():
             raise ProposalError("empty_content", "the text must not be empty")
+        label = _LABELS[_proposal_type(proposal)]
         try:
-            body, _warnings = clean_body(text, title=proposal.get("chapter_title"))
+            body, _warnings = clean_body(text, title=proposal.get("target_title") or proposal.get("chapter_title"))
         except EditError as exc:
             raise ProposalError(exc.code, str(exc)) from exc
-        if proposal["kind"] == "new_chapter":
+        if _is_new(proposal):
             version = ""
         else:
-            chapter = self.repository.get_chapter(project_id, proposal["chapter_id"])
-            if base_version != chapter.version:
+            doc = self._doc(project_id, _proposal_type(proposal), proposal["target_id"])
+            if base_version != doc.version:
                 raise ProposalError(
                     "version_changed",
-                    "the chapter changed since the text was edited",
-                    current_version=chapter.version,
+                    f"the {label} changed since the text was edited",
+                    current_version=doc.version,
                 )
-            if normalize_newlines(chapter.content) == normalize_newlines(body):
-                raise ProposalError("no_change", "the text is the same as the chapter")
-            version = chapter.version
+            if normalize_newlines(doc.content) == normalize_newlines(body):
+                raise ProposalError("no_change", f"the text is the same as the {label}")
+            version = doc.version
         return {"mode": "text", "text": body, "base_version": version, "digest": text_digest(body)}
+
+
+def resolve_target(repository: StoryRepository, project_id: str, target_type: str, ref: object) -> str:
+    """The id a name or id points at; a name shared by several records is refused."""
+
+    target_type = _target_type(target_type)
+    label = _LABELS[target_type]
+    text = ref.strip() if isinstance(ref, str) else ""
+    if not text:
+        raise ProposalError("invalid_request", f"the {label} id or name is required")
+    rows = _rows(repository.get_project(project_id), target_type)
+    if any(row_id == text for row_id, _title_text in rows):
+        return text
+    matches = [(row_id, name) for row_id, name in rows if name.casefold() == text.casefold()]
+    if len(matches) == 1:
+        return matches[0][0]
+    if matches:
+        raise ProposalError(
+            "ambiguous_target",
+            f"several {label}s are named {text!r}; use one of the ids",
+            candidates=[{"id": row_id, "title": name} for row_id, name in matches],
+        )
+    raise NotFoundError(f"{label} {text!r} was not found")
+
+
+def record_summaries(repository: StoryRepository, project_id: str, target_type: str) -> list[dict[str, Any]]:
+    """Id, title, version and length of every record of one kind; never the text."""
+
+    tree = repository.get_project(project_id)
+    if target_type == "character":
+        return [
+            {"id": row.id, "title": row.name, "version": row.version, "content_length": len(row.content)}
+            for row in tree.characters
+        ]
+    if target_type == "world_entry":
+        return [
+            {"id": row.id, "title": row.title, "version": row.version, "content_length": len(row.content)}
+            for row in tree.world_info_entries
+        ]
+    if target_type == "note":
+        return [
+            {
+                "id": row.id, "title": row.title, "version": row.version,
+                "content_length": len(row.content), "category_id": row.category_id,
+                "reference": row.reference,
+            }
+            for row in tree.notes
+        ]
+    raise ProposalError("invalid_target_type", "target_type must be one of character, world_entry, note")
+
+
+def read_record(repository: StoryRepository, project_id: str, target_type: str, ref: object) -> Any:
+    target_type = _target_type(target_type)
+    target_id = resolve_target(repository, project_id, target_type, ref)
+    if target_type == "character":
+        return repository.get_character(project_id, target_id)
+    if target_type == "world_entry":
+        return repository.get_world_entry(project_id, target_id)
+    if target_type == "note":
+        return repository.get_note(project_id, target_id)
+    raise ProposalError("invalid_target_type", "target_type must be one of character, world_entry, note")
 
 
 def _conflict(message: str, cause: EditError) -> ProposalError:
@@ -379,11 +571,70 @@ def _title(value: object) -> str:
     return title
 
 
+def _target_type(value: object) -> str:
+    if value is None or value == "":
+        return "chapter"
+    if value not in TARGET_TYPES:
+        raise ProposalError(
+            "invalid_target_type", f"target_type must be one of {', '.join(TARGET_TYPES)}"
+        )
+    return str(value)
+
+
+def _proposal_type(proposal: dict[str, Any]) -> str:
+    """Proposals saved before other targets existed have no type: they are chapters."""
+
+    return proposal.get("target_type") or "chapter"
+
+
+def _is_new(proposal: dict[str, Any]) -> bool:
+    return str(proposal.get("kind", "")).startswith("new_")
+
+
+def _identity(target_type: str, target_id: str | None, title: str) -> dict[str, Any]:
+    """The fields that say what a proposal is about. Chapters keep their older
+    ``chapter_*`` names too, which the Desktop already reads."""
+
+    fields: dict[str, Any] = {"target_type": target_type, "target_id": target_id, "target_title": title}
+    if target_type == "chapter":
+        fields.update({"chapter_id": target_id, "chapter_title": title})
+    return fields
+
+
+def _written(target_type: str, target_id: str) -> dict[str, Any]:
+    fields: dict[str, Any] = {"target_type": target_type, "target_id": target_id}
+    if target_type == "chapter":
+        fields["chapter_id"] = target_id
+    return fields
+
+
+def _rows(tree: Any, target_type: str) -> list[tuple[str, str]]:
+    if target_type == "character":
+        return [(row.id, row.name) for row in tree.characters]
+    if target_type == "world_entry":
+        return [(row.id, row.title) for row in tree.world_info_entries]
+    if target_type == "note":
+        return [(row.id, row.title) for row in tree.notes]
+    return [(row.id, row.title) for row in tree.chapters]
+
+
+def _taken_titles(tree: Any, target_type: str, category_id: str | None) -> dict[str, str]:
+    """Casefolded name -> id of the records a new one would sit beside."""
+
+    if target_type == "note":
+        rows = [(row.id, row.title) for row in tree.notes if row.category_id == (category_id or None)]
+    else:
+        rows = _rows(tree, target_type)
+    return {name.casefold(): row_id for row_id, name in rows}
+
+
 def _agent_summary(proposal: dict[str, Any]) -> dict[str, Any]:
     return {
         "proposal_id": proposal["id"],
         "status": proposal["status"],
         "kind": proposal["kind"],
+        "target_type": _proposal_type(proposal),
+        "target_id": proposal.get("target_id"),
         "chapter_id": proposal.get("chapter_id"),
         "edits": len(proposal["edits"]),
         "warnings": proposal["warnings"],
@@ -403,8 +654,12 @@ def _desktop_view(proposal: dict[str, Any] | None) -> dict[str, Any]:
         "id": proposal["id"],
         "status": proposal["status"],
         "kind": proposal["kind"],
+        "target_type": _proposal_type(proposal),
+        "target_id": proposal.get("target_id") or proposal.get("chapter_id"),
+        "target_title": proposal.get("target_title") or proposal.get("chapter_title") or proposal.get("title"),
         "chapter_id": proposal.get("chapter_id"),
         "volume_id": proposal.get("volume_id"),
+        "category_id": proposal.get("category_id"),
         "title": proposal.get("title"),
         "chapter_title": proposal.get("chapter_title"),
         "base_version": proposal["base_version"],

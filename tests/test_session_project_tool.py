@@ -86,3 +86,26 @@ def test_prompt_makes_the_agent_propose_wait_for_approval_and_keep_text_clean() 
     assert "never say it was saved" in rendered
     assert "no greeting" in rendered and "no code fence" in rendered
     assert "Never write files or save chapters yourself" in rendered
+
+
+def test_prompt_covers_every_kind_of_record_and_checks_before_creating() -> None:
+    rendered = render_story_agent_system_prompt()
+
+    for kind in ("chapter", "character", "world_entry", "note"):
+        assert kind in rendered
+    assert "story.get_record" in rendered and "story.list_records" in rendered
+    assert "does not already exist" in rendered  # list before creating a duplicate
+    assert "name_in_use" in rendered
+    assert "read-only" in rendered  # reference notes
+
+
+def test_prompt_keeps_the_agent_brief_and_from_acting_unasked() -> None:
+    rendered = render_story_agent_system_prompt()
+
+    assert "## Tone" in rendered and "no flattery" in rendered and "no emoji" in rendered
+    assert "A question is answered, not acted on" in rendered
+    assert "propose a change only when the user asks" in rendered.lower()
+
+
+def test_prompt_version_names_the_current_protocol() -> None:
+    assert render_story_agent_system_prompt().startswith("# StoryConstructionAgentPrompt v6")
