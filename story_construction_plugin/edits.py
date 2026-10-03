@@ -28,8 +28,14 @@ _FIELDS = {
 }
 # Both sides must be non-empty except the replacement of a replace, which may delete.
 _ALLOW_EMPTY = {("replace", "new_text")}
-# A char-level diff is quadratic; past this size the preview falls back to whole paragraphs.
+# A token-level diff is quadratic; past this size the preview falls back to whole paragraphs.
 _INLINE_LIMIT = 4_000_000
+# The inline difference is read by word, not by letter: a word that changed is
+# shown whole ("squinting" -> "peering"), not as interleaved letters. Chinese,
+# Japanese and Korean have no spaces between words, so each of their characters
+# stands alone.
+_CJK = r"\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\uf900-\ufaff"
+_TOKEN = re.compile(rf"\s+|[{_CJK}]|(?:(?![{_CJK}])\w)+|.", re.DOTALL)
 # Matching lines is quadratic in the number of lines that differ, so a rewrite of a
 # whole long chapter would block the Agent's tool call for a minute. Past this many
 # line pairs (after the unchanged head and tail are cut off) one region is shown.
@@ -371,14 +377,16 @@ def _inline(old: str, new: str) -> list[dict[str, str]]:
         return [{"op": "delete", "text": old}]
     if len(old) * len(new) > _INLINE_LIMIT:
         return [{"op": "delete", "text": old}, {"op": "insert", "text": new}]
-    matcher = difflib.SequenceMatcher(None, old, new, autojunk=False)
+    old_words = _TOKEN.findall(old)
+    new_words = _TOKEN.findall(new)
+    matcher = difflib.SequenceMatcher(None, old_words, new_words, autojunk=False)
     parts: list[dict[str, str]] = []
     for tag, a1, a2, b1, b2 in matcher.get_opcodes():
         if tag == "equal":
-            parts.append({"op": "equal", "text": old[a1:a2]})
+            parts.append({"op": "equal", "text": "".join(old_words[a1:a2])})
             continue
         if a2 > a1:
-            parts.append({"op": "delete", "text": old[a1:a2]})
+            parts.append({"op": "delete", "text": "".join(old_words[a1:a2])})
         if b2 > b1:
-            parts.append({"op": "insert", "text": new[b1:b2]})
+            parts.append({"op": "insert", "text": "".join(new_words[b1:b2])})
     return parts

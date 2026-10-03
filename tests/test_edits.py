@@ -197,6 +197,32 @@ def test_previews_show_the_changed_paragraph_and_the_inline_change() -> None:
     assert region["inline"][1]["text"] == "大" and region["inline"][2]["text"] == "急"
 
 
+def test_the_inline_change_of_english_text_is_by_word() -> None:
+    edits = parse_edits([{"op": "replace", "old_text": "squinting up at the grey morning",
+                          "new_text": "peering up at the pewter morning"}])
+
+    (preview,) = build_previews("She stood, squinting up at the grey morning.\n", edits)
+    inline = preview["regions"][0]["inline"]
+
+    assert [(part["op"], part["text"]) for part in inline if part["op"] != "equal"] == [
+        ("delete", "squinting"), ("insert", "peering"), ("delete", "grey"), ("insert", "pewter"),
+    ]
+    old = "".join(part["text"] for part in inline if part["op"] in ("equal", "delete"))
+    new = "".join(part["text"] for part in inline if part["op"] in ("equal", "insert"))
+    assert old == preview["regions"][0]["old"] and new == preview["regions"][0]["new"]
+
+
+def test_each_chinese_character_is_still_its_own_unit() -> None:
+    edits = parse_edits([{"op": "replace", "old_text": "雨下得很大", "new_text": "雨下得很急"}])
+
+    (preview,) = build_previews("雨下得很大。\n", edits)
+    inline = preview["regions"][0]["inline"]
+
+    assert [(part["op"], part["text"]) for part in inline if part["op"] != "equal"] == [
+        ("delete", "大"), ("insert", "急"),
+    ]
+
+
 def test_a_pure_insert_preview_has_no_old_text() -> None:
     edits = parse_edits([{"op": "append", "new_text": "天亮了。"}])
 
