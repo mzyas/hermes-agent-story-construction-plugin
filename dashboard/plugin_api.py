@@ -405,6 +405,42 @@ def get_chapter(
     return {"chapter": asdict(chapter)}
 
 
+_RECORD_TYPES = ("character", "world_entry", "note")
+
+
+@router.get("/projects/{project_id}/records/{target_type}/{record_id}")
+def get_record(
+    project_id: str,
+    target_type: str,
+    record_id: str,
+    session_id: str | None = None,
+    profile: str | None = None,
+    connection_id: str | None = None,
+) -> dict[str, Any]:
+    """One character, world entry or note, with its text (the tree omits it)."""
+
+    if target_type not in _RECORD_TYPES:
+        raise HTTPException(status_code=422, detail=f"target_type must be one of {', '.join(_RECORD_TYPES)}")
+    runtime, state = _require_runtime()
+    scope = _request_scope(runtime, session_id, profile, connection_id, project_id=project_id)
+    getter = {
+        "character": state.repository.get_character,
+        "world_entry": state.repository.get_world_entry,
+        "note": state.repository.get_note,
+    }[target_type]
+    try:
+        state.permissions.require_read(scope, project_id)
+        row = getter(project_id, record_id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=_permission_detail(exc)) from exc
+    except _component(runtime, "repository").NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    record = asdict(row)
+    record["target_type"] = target_type
+    record["title"] = record.get("title") or record.get("name") or ""
+    return {"record": record}
+
+
 @router.post("/sessions/bind")
 def bind_session(body: dict[str, Any]) -> dict[str, Any]:
     runtime, state = _require_runtime()

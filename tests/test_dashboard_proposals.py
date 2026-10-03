@@ -221,3 +221,41 @@ def test_undo_follows_the_kind_of_record_named_in_the_body(api) -> None:
 
     assert restored["target_type"] == "character"
     assert api.repo.get_character("novel", character.id).content == "少年，住在阁楼。"
+
+
+# ------------------------------------------------------------ reading one record
+BOUND = {**SCOPE, "session_id": "s1"}
+
+
+@pytest.fixture
+def bound(api):
+    api.module.bind_session({**BOUND, "project_id": "novel"})
+    return api
+
+
+def test_a_character_world_entry_or_note_can_be_read_with_its_text(bound) -> None:
+    api = bound
+    character = api.repo.create_character("novel", "林远", "少年，住在阁楼。")
+    entry = api.repo.create_world_entry("novel", "钟楼", "镇上最高的建筑。")
+    note = api.repo.create_note("novel", "灵感", "钟声停了。")
+
+    read_character = api.module.get_record("novel", "character", character.id, **BOUND)["record"]
+    read_entry = api.module.get_record("novel", "world_entry", entry.id, **BOUND)["record"]
+    read_note = api.module.get_record("novel", "note", note.id, **BOUND)["record"]
+
+    assert (read_character["title"], read_character["content"]) == ("林远", "少年，住在阁楼。")
+    assert read_character["target_type"] == "character" and read_character["version"] == character.version
+    assert (read_entry["title"], read_entry["content"]) == ("钟楼", "镇上最高的建筑。")
+    assert (read_note["title"], read_note["content"], read_note["reference"]) == ("灵感", "钟声停了。", False)
+
+
+def test_reading_a_record_checks_kind_scope_and_existence(bound) -> None:
+    api = bound
+    character = api.repo.create_character("novel", "林远", "少年。")
+
+    _assert_http_error(lambda: api.module.get_record("novel", "chapter", character.id, **BOUND), 422)
+    _assert_http_error(lambda: api.module.get_record("novel", "note", character.id, **BOUND), 404)
+    _assert_http_error(lambda: api.module.get_record("novel", "character", "novel:character-9", **BOUND), 404)
+    _assert_http_error(
+        lambda: api.module.get_record("novel", "character", character.id, session_id="s1", profile="other", connection_id="local"), 403
+    )

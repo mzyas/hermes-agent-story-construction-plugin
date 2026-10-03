@@ -47,6 +47,14 @@ const en = {
     nameRequired: 'Project name is required.',
     createFailed: 'Could not create project. Check the Story service and try again.'
   },
+  record: {
+    loading: 'Loading…',
+    unavailable: message => `Could not load this record: ${message}`,
+    reference: 'Reference note',
+    empty: 'This record has no text yet.',
+    readOnly: 'Read-only here. Ask the Agent in a session to propose changes.',
+    kind: { character: 'Character', world_entry: 'World entry', note: 'Note' }
+  },
   tree: {
     project: 'Project',
     worldInfo: 'WorldInfo',
@@ -258,6 +266,14 @@ const zh = {
     cancel: '取消',
     nameRequired: '请填写项目名称。',
     createFailed: '无法创建项目，请检查故事服务后重试。'
+  },
+  record: {
+    loading: '正在加载…',
+    unavailable: message => `无法加载此记录：${message}`,
+    reference: '参考笔记',
+    empty: '这条记录还没有内容。',
+    readOnly: '这里是只读的。想修改请在会话里让 Agent 提出修改。',
+    kind: { character: '角色', world_entry: '世界设定条目', note: '笔记' }
   },
   tree: {
     project: '项目',
@@ -483,7 +499,7 @@ export function buildProjectTree(payload, translate = translateEnglishStory) {
       {
         id: 'worldInfo',
         label: translate('tree.worldInfo'),
-        children: worldInfo ? [{ ...worldInfo, entries }] : []
+        children: worldInfo ? entries.map(entry => ({ ...entry, kind: 'world_entry' })) : []
       },
       { id: 'characters', label: translate('tree.characters'), children: characters },
       {
@@ -991,6 +1007,11 @@ export const removeStorySession = (projectId, storedSessionId, scope) =>
   call('/projects/' + encodeURIComponent(projectId) + '/sessions/' + encodeURIComponent(storedSessionId) + buildStoryScopeQuery(scope), { method: 'DELETE' })
 export const fetchChapter = (projectId, chapterId, scope) =>
   call('/projects/' + encodeURIComponent(projectId) + '/chapters/' + encodeURIComponent(chapterId) + buildStoryScopeQuery(scope))
+export const fetchRecord = (projectId, targetType, recordId, scope) =>
+  call(
+    '/projects/' + encodeURIComponent(projectId) + '/records/' + encodeURIComponent(targetType) + '/' +
+      encodeURIComponent(recordId) + buildStoryScopeQuery(scope)
+  )
 export const bindStorySession = body => call('/sessions/bind', { method: 'POST', body })
 export const saveChapter = (projectId, chapterId, body) =>
   call(`/projects/${encodeURIComponent(projectId)}/chapters/${encodeURIComponent(chapterId)}/save`, { method: 'POST', body })
@@ -1593,14 +1614,32 @@ export function displayName(item, t) {
   return item?.title || item?.name || item?.id || t('tree.untitled')
 }
 
-function ProjectBranch({ branch, onOpenChapter, t }) {
+// Which kind of readable record a sidebar row is (null for rows that open nothing).
+export function recordTypeOf(branchId, child) {
+  if (branchId === 'characters') return 'character'
+  if (branchId === 'worldInfo') return 'world_entry'
+  if (branchId === 'notes' && child?.kind === 'note') return 'note'
+  return null
+}
+
+function ProjectBranch({ branch, onOpenChapter, onOpenRecord, selectedRecord, t }) {
   const children = branch.children.map(child => {
     const isChapter = branch.id === 'chapters'
+    const recordType = recordTypeOf(branch.id, child)
+    const open = isChapter
+      ? () => onOpenChapter(child.id)
+      : recordType && onOpenRecord
+        ? () => onOpenRecord({ type: recordType, id: child.id })
+        : undefined
+    const selected = Boolean(recordType && selectedRecord?.type === recordType && selectedRecord?.id === child.id)
     return jsx(
       'button',
       {
-        className: 'block w-full truncate rounded px-2 py-1 text-left text-(--ui-text-secondary) hover:bg-(--chrome-action-hover)',
-        onClick: isChapter ? () => onOpenChapter(child.id) : undefined,
+        'aria-current': selected ? 'true' : undefined,
+        className:
+          'block w-full truncate rounded px-2 py-1 text-left hover:bg-(--chrome-action-hover) ' +
+          (selected ? 'bg-(--chrome-action-hover) font-medium' : 'text-(--ui-text-secondary)'),
+        onClick: open,
         type: 'button',
         children: displayName(child, t)
       },
@@ -1869,7 +1908,7 @@ function ChapterOutline({ outline, onOpenChapter, selectedChapterId, creating, c
   })
 }
 
-export function StorySidebar({ tree, tab = 'chapters', onTab, onOpenChapter, selectedChapterId, creating, createBusy = false, createError = null, onCreate, onSubmitCreate, onCancelCreate, t }) {
+export function StorySidebar({ tree, tab = 'chapters', onTab, onOpenChapter, onOpenRecord, selectedRecord, selectedChapterId, creating, createBusy = false, createError = null, onCreate, onSubmitCreate, onCancelCreate, t }) {
   if (!tree) {
     return jsx('div', { className: 'p-3 text-(--ui-text-tertiary)', children: t('tree.selectProject') })
   }
@@ -1897,7 +1936,7 @@ export function StorySidebar({ tree, tab = 'chapters', onTab, onOpenChapter, sel
         className: 'min-h-0 flex-1 overflow-auto',
         children:
           tab === 'notes'
-            ? noteBranches.map(branch => jsx(ProjectBranch, { branch, onOpenChapter, t }, branch.id))
+            ? noteBranches.map(branch => jsx(ProjectBranch, { branch, onOpenChapter, onOpenRecord, selectedRecord, t }, branch.id))
             : jsx(ChapterOutline, {
                 createBusy,
                 createError,
@@ -2336,6 +2375,47 @@ function ProposalArea({ projectId, profile, connectionId, draftStore, children }
         className: 'flex min-h-0 flex-1 flex-col',
         style: reviewing ? { display: 'none' } : undefined,
         children
+      })
+    ]
+  })
+}
+
+// A character, world entry or note, shown as text. Changes go through the Agent's proposals.
+function RecordViewer({ projectId, record, profile, connectionId, sessionId }) {
+  const t = usePluginI18n('story-construction')
+  const query = useQuery({
+    enabled: Boolean(projectId && record && sessionId && profile && connectionId),
+    queryKey: ['story-construction', 'record', profile, connectionId, sessionId, projectId, record?.type, record?.id],
+    queryFn: () => fetchRecord(projectId, record.type, record.id, { sessionId, profile, connectionId })
+  })
+  if (query.isLoading) {
+    return jsx('div', { className: 'p-4 text-(--ui-text-secondary)', children: t('record.loading') })
+  }
+  if (query.error) {
+    return jsx('div', { className: 'p-4 text-(--ui-text-secondary)', children: t('record.unavailable', query.error.message) })
+  }
+  const row = query.data?.record
+  if (!row || row.id !== record.id) return null
+  return jsxs('div', {
+    className: 'flex min-h-0 flex-1 flex-col',
+    children: [
+      jsxs('div', {
+        className: 'flex flex-wrap items-center gap-2 border-b border-(--ui-stroke-secondary) px-4 py-2',
+        children: [
+          jsx('span', { className: 'text-base font-medium', children: row.title || t('tree.untitled') }),
+          jsx('span', { className: 'text-xs text-(--ui-text-tertiary)', children: t('record.kind.' + row.target_type) }),
+          row.reference
+            ? jsx('span', { className: 'rounded border border-(--ui-stroke-secondary) px-1.5 text-xs', children: t('record.reference') })
+            : null
+        ]
+      }),
+      jsx('div', {
+        className: 'min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words px-4 py-3 leading-relaxed',
+        children: row.content || jsx('span', { className: 'text-(--ui-text-tertiary)', children: t('record.empty') })
+      }),
+      jsx('div', {
+        className: 'border-t border-(--ui-stroke-secondary) px-4 py-2 text-xs text-(--ui-text-tertiary)',
+        children: t('record.readOnly')
       })
     ]
   })
@@ -3933,6 +4013,7 @@ function ProjectWorkspace() {
   }))
   const selectedProjectId = selectedProjectForScope(projectSelection, { profile, connectionId })
   const [selectedChapterId, setSelectedChapterId] = useState(null)
+  const [selectedRecord, setSelectedRecord] = useState(null)
   const [sidebarTab, setSidebarTab] = useState('chapters')
   const [creatingRecord, setCreatingRecord] = useState(null)
   const [createState, setCreateState] = useState({ busy: false, error: null })
@@ -3961,6 +4042,7 @@ function ProjectWorkspace() {
   useEffect(() => {
     setScope(previous => resetWorkspaceScope(previous, { profile, connectionId, sessionId, projectId: selectedProjectId }))
     setSelectedChapterId(null)
+    setSelectedRecord(null)
   }, [profile, connectionId, sessionId, selectedProjectId])
 
   const treeQuery = useQuery({
@@ -4190,8 +4272,13 @@ function ProjectWorkspace() {
               creating: creatingRecord,
               onCancelCreate: cancelCreate,
               onCreate: startCreate,
-              onOpenChapter: setSelectedChapterId,
+              onOpenChapter: id => {
+                setSelectedChapterId(id)
+                setSelectedRecord(null)
+              },
+              onOpenRecord: setSelectedRecord,
               onSubmitCreate: submitCreate,
+              selectedRecord,
               onTab: setSidebarTab,
               selectedChapterId,
               t,
@@ -4207,15 +4294,32 @@ function ProjectWorkspace() {
       draftStore: draftsRef,
       profile,
       projectId: selectedProjectId,
-      children: jsx(ChapterEditor, {
-        chapterId: selectedChapterId,
-        connectionId,
-        draftStore: draftsRef,
-        onDraftState: handleDraftState,
-        profile,
-        projectId: selectedProjectId,
-        sessionId
-      })
+      // The chapter editor stays mounted (hidden) while a record is shown, so an
+      // unsaved draft and an in-flight save are never lost by looking at a character.
+      children: [
+        jsx('div', {
+          className: 'flex min-h-0 flex-1 flex-col',
+          style: selectedRecord ? { display: 'none' } : undefined,
+          children: jsx(ChapterEditor, {
+            chapterId: selectedChapterId,
+            connectionId,
+            draftStore: draftsRef,
+            onDraftState: handleDraftState,
+            profile,
+            projectId: selectedProjectId,
+            sessionId
+          })
+        }, 'chapter'),
+        selectedRecord
+          ? jsx(RecordViewer, {
+              connectionId,
+              profile,
+              projectId: selectedProjectId,
+              record: selectedRecord,
+              sessionId
+            }, 'record')
+          : null
+      ]
     })
   })
   // ProjectSessionsPanel is always mounted inside this region — collapse only

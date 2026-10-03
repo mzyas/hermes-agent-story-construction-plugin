@@ -40,7 +40,7 @@ function rewriteDesktopImports(source) {
 }
 
 const source = readFileSync(fileURLToPath(pluginUrl), 'utf8')
-const { buildChapterOutline, buildProjectTree, StorySidebar } = await import(
+const { buildChapterOutline, buildProjectTree, recordTypeOf, StorySidebar } = await import(
   dataModule(rewriteDesktopImports(source))
 )
 
@@ -146,4 +146,62 @@ test('the two tabs report which one was picked', () => {
 
 test('without a project tree it asks for a project', () => {
   assert.equal(textOf(expand(StorySidebar({ tree: null, t }))), 'tree.selectProject')
+})
+
+// ----------------------------------------------------- reading characters, entries, notes
+const recordPayload = {
+  ...payload,
+  world_info_entries: [{ id: 'we1', title: 'Clock tower' }],
+  categories: [{ id: 'cat1', name: 'Ideas' }],
+  notes: [{ id: 'n1', title: 'Spark', reference: false }]
+}
+
+function notesTabButtons(props = {}) {
+  const rendered = expand(StorySidebar({ tree: buildProjectTree(recordPayload, t), tab: 'notes', t, ...props }))
+  return find(rendered, node => node.type === 'button' && !node.props.role)
+}
+
+test('which rows open a record is decided by their branch and kind', () => {
+  assert.equal(recordTypeOf('characters', { id: 'c1' }), 'character')
+  assert.equal(recordTypeOf('worldInfo', { id: 'we1' }), 'world_entry')
+  assert.equal(recordTypeOf('notes', { id: 'n1', kind: 'note' }), 'note')
+  assert.equal(recordTypeOf('notes', { id: 'cat1', kind: 'category' }), null)
+  assert.equal(recordTypeOf('project', { id: 'p1' }), null)
+  assert.equal(recordTypeOf('chapters', { id: 'ch1' }), null)
+})
+
+test('world entries are listed one by one instead of one world-info container', () => {
+  const branch = buildProjectTree(recordPayload, t).branches.find(item => item.id === 'worldInfo')
+
+  assert.deepEqual(branch.children.map(child => child.id), ['we1'])
+  assert.equal(branch.children[0].kind, 'world_entry')
+})
+
+test('clicking a world entry, character or note asks to open that record', () => {
+  const opened = []
+  const buttons = notesTabButtons({ onOpenRecord: record => opened.push(record) })
+
+  assert.deepEqual(buttons.map(textOf), ['Clock tower', 'Hero', 'Ideas', 'Spark'])
+  for (const button of buttons) button.props.onClick?.()
+  assert.deepEqual(opened, [
+    { type: 'world_entry', id: 'we1' },
+    { type: 'character', id: 'c1' },
+    { type: 'note', id: 'n1' }
+  ])
+})
+
+test('a category row opens nothing and the open record is marked', () => {
+  const buttons = notesTabButtons({ onOpenRecord: () => undefined, selectedRecord: { type: 'character', id: 'c1' } })
+  const byText = Object.fromEntries(buttons.map(button => [textOf(button), button.props]))
+
+  assert.equal(byText.Ideas.onClick, undefined)
+  assert.equal(byText.Hero['aria-current'], 'true')
+  assert.equal(byText.Spark['aria-current'], undefined)
+  // The same id under another kind is a different record.
+  const other = notesTabButtons({ onOpenRecord: () => undefined, selectedRecord: { type: 'note', id: 'c1' } })
+  assert.equal(other.find(button => textOf(button) === 'Hero').props['aria-current'], undefined)
+})
+
+test('without a handler the rows stay inert rather than throwing', () => {
+  assert.doesNotThrow(() => notesTabButtons().forEach(button => button.props.onClick?.()))
 })

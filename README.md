@@ -146,6 +146,7 @@ POST /projects/{project_id}/sessions                bind a Hermes session to the
 GET  /projects/{project_id}/sessions                list the project's bindings
 DELETE /projects/{project_id}/sessions/{stored_session_id}    remove a binding
 POST /projects/{project_id}/chapters/{chapter_id}/save        confirmed chapter save
+GET  /projects/{project_id}/records/{character|world_entry|note}/{id}   one record with its text (read-only)
 GET  /projects/{project_id}/proposals               the Agent's open proposals, with their diff
 POST /projects/{project_id}/proposals/{id}/approve  approve selected edits (or an edited text)
 POST /projects/{project_id}/proposals/{id}/revoke   withdraw an approval
