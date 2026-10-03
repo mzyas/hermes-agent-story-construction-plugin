@@ -35,9 +35,9 @@ not something it has been tested for.
 
 ## Screenshots
 
-**Project workspace**: chapters and notes on the left, the chapter editor in the
-middle, the writing sessions on the right. *Undo the Agent's last write* sits
-beside Save.
+**Project workspace**: chapters, world info, characters and notes on the left,
+the open record in the middle (here a character card the Agent wrote), the
+writing sessions on the right. *Undo the Agent's last write* sits at the top.
 
 ![Project workspace](docs/image/workspace.png)
 
