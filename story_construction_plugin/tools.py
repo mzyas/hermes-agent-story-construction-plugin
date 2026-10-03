@@ -7,6 +7,7 @@ from dataclasses import asdict, is_dataclass
 from functools import partial
 from typing import Any, Callable, Mapping
 
+from .approval_gate import SessionGrants
 from .edits import EditError
 from .permissions import SessionScope, StoryPermissionGate, scope_from_tool_kwargs
 from .proposal_service import ProposalError, StoryProposalService, read_record, record_summaries
@@ -40,7 +41,9 @@ class StoryToolService:
         *,
         permissions_provider: Callable[[], StoryPermissionGate] | None = None,
         proposals_provider: Callable[[], StoryProposalService] | None = None,
+        grants: SessionGrants | None = None,
     ) -> None:
+        self.grants = grants
         self.repository = repository
         self.permissions = permissions
         self._permissions_provider = permissions_provider
@@ -145,6 +148,24 @@ class StoryToolService:
         raise ValueError(f"unknown story tool: {name}")
 
 
+    def _approve_in_chat(self, service: StoryProposalService, proposal_id: str, common: dict[str, Any]) -> None:
+        """Record the approval the person just gave in the chat.
+
+        The pre_tool_call hook leaves a one-time grant when it sends this call to
+        Hermes' approval prompt, and the call only reaches here if the person
+        accepted. Without a grant (the hook did not run) nothing is approved
+        here, so only an approval from the Story panel can let the write through.
+        """
+
+        if self.grants is None:
+            return
+        proposal = service.store.get(proposal_id)
+        if proposal is None or proposal["status"] not in ("pending", "expired"):
+            return
+        if not self.grants.consume(proposal_id):
+            return
+        service.approve(proposal_id=proposal_id, via="chat", **common)
+
     def _proposal_tool(
         self, name: str, project_id: str, payload: dict[str, Any], scope: SessionScope
     ) -> Any:
@@ -157,7 +178,9 @@ class StoryToolService:
             "connection_id": scope.connection_id,
         }
         if name == APPLY_EDIT_TOOL:
-            return service.apply(proposal_id=_required(payload, "proposal_id"), **common)
+            proposal_id = _required(payload, "proposal_id")
+            self._approve_in_chat(service, proposal_id, common)
+            return service.apply(proposal_id=proposal_id, **common)
         common["session_id"] = scope.session_id
         if name == PROPOSE_NEW_TOOL:
             return service.propose_new(

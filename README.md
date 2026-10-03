@@ -462,14 +462,25 @@ entries and notes**; each proposal targets one of them (`target_type`:
    withdraw an approval, or discard the proposal. Approving is refused while
    you have an unsaved draft of the same chapter (only chapters have an
    editor, so only they can hold a draft).
-6. **Approve** — the approval is bound to the exact edits you selected (or the
-   exact text you edited) and lasts **15 minutes**. Only the Desktop can create
-   one; the Agent's tools cannot. After approving, the Desktop sends the
-   session a fixed message asking it to call `story.apply_edit`; if the
-   message cannot be delivered the panel says so and the approval stands.
+6. **Approve** — two ways, both bound to exactly what you approved and valid
+   for **15 minutes**. Only you can create one; the Agent's tools cannot.
+   *In the chat* (the usual way): right after proposing, the Agent calls
+   `story.apply_edit`, and Hermes asks you to approve it in the conversation, the
+   same prompt as any other tool, showing the record and what changes. Declining
+   writes nothing. *In the Story panel*: approve some of the edits or edit the
+   text by hand; the Desktop then sends the session a fixed message asking it to
+   call `story.apply_edit`, and no second prompt appears. If that message cannot
+   be delivered the panel says so and the approval stands.
+   **Risky changes** (emptying a record, or removing about 800 characters, or 30%
+   of a record of 100 or more) are marked “high risk” in the prompt and get a
+   prompt rule of their own, so choosing *always allow* on a prompt never
+   skips their review. Hermes' own settings still apply: if approvals are turned
+   off there, nothing is asked.
 7. **Apply** — `story.apply_edit` takes only a `proposal_id`, so it cannot
    write anything else. It refuses a proposal that is not approved, expired,
-   already written, discarded or replaced. Approved edits are applied to the
+   already written, discarded or replaced, and it does not rely on the prompt
+   having run: without the one-time grant the prompt hook leaves, only a panel
+   approval lets it write. Approved edits are applied to the
    record as it is *now*: if you edited elsewhere in the meantime they still
    apply, and if an approved edit no longer matches nothing is written. A hand
    edited text is only written if the record is still at the version you

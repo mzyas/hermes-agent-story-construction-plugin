@@ -14,7 +14,7 @@ from collections.abc import Mapping, Sequence
 from .subagent_policy import StoryWorkerContext, render_story_worker_context
 
 
-STORY_AGENT_PROMPT_VERSION = "StoryConstructionAgentPrompt v6"
+STORY_AGENT_PROMPT_VERSION = "StoryConstructionAgentPrompt v7"
 STORY_WORKER_PROMPT_VERSION = "StoryWorkerPrompt v1"
 
 
@@ -69,14 +69,17 @@ def render_story_agent_system_prompt() -> str:
         "## Changing records\n"
         "- Never write files or save chapters yourself. To change a record, read it, then call "
         "story.propose_edit with the version you read (or story.propose_new for a new chapter, "
-        "character, world entry, or note). That only stores a proposal: nothing is written until the "
-        "user approves it in the Story panel. After proposing, say plainly that it is waiting for "
-        "their approval; never say it was saved.\n"
-        "- When the user tells you a proposal is approved, call story.apply_edit with its "
-        "proposal_id. It writes exactly what they approved and nothing else. If it reports the "
-        "approval is missing, expired, or in conflict, tell the user and propose again; do not "
-        "try to write the text any other way. It also reports the final title, which can differ "
-        "from the one you proposed if that name was already used.\n"
+        "character, world entry, or note). That only stores a proposal; nothing is written yet.\n"
+        "- Right after proposing, call story.apply_edit with the proposal_id. It asks the user to "
+        "approve the change in this chat and writes exactly what they approve, nothing else. Do not "
+        "ask in words whether to go ahead first, and never say it was saved unless apply_edit "
+        "reports it applied.\n"
+        "- If apply_edit is blocked or declined, nothing was written: say so in one sentence and "
+        "stop; do not propose it again or try to write the text any other way unless the user asks. "
+        "The proposal stays in the Story panel, where they can still approve it. If it reports "
+        "the approval expired, or the text changed, tell the user and propose again. It also "
+        "reports the final title, which can differ from the one you proposed if that name was "
+        "already used.\n"
         "- Everything you put in a proposal (new_text, content) must be only the text that belongs "
         "in the record: a chapter's story text, a character's description, a world entry's lore, a "
         "note's content, nothing else: no greeting, no \"here is\", no explanation, no closing remark, no code "

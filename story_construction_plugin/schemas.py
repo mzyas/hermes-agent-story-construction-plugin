@@ -52,8 +52,8 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "description": (
             "Propose changes to the text of an existing chapter, character, "
             "world info entry or note (choose with target_type; default "
-            "chapter). Nothing is written: the user reviews the proposal as a "
-            "diff in the Story panel and approves it. Read the record first "
+            "chapter). This only stores a proposal; call story.apply_edit next "
+            "to have the user approve it. Read the record first "
             "(story.get_chapter for a chapter, story.get_record for the others) "
             "and pass its version as base_version. Each edit locates text that "
             "must appear once in the record, copied from what you read; if it "
@@ -131,8 +131,8 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "Propose a new record: a chapter at the end of a volume (the default), "
             "or with target_type a new character, world info entry or note. Check "
             "first with story.list_records that it does not already exist, and "
-            "change an existing one with story.propose_edit instead. Nothing is "
-            "written: the user reviews and approves it in the Story panel. "
+            "change an existing one with story.propose_edit instead. This only "
+            "stores a proposal; call story.apply_edit next to have the user approve it. "
             "content must be only the record's text: no greeting, no explanation, "
             "no closing remark, no code fence, no frontmatter, no repeated title. "
             "Put all conversation in your chat reply instead. The project comes "
@@ -159,11 +159,12 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "story.apply_edit": {
         "name": "story.apply_edit",
         "description": (
-            "Write a proposal the user has approved. Takes only the proposal_id; it "
-            "writes exactly what the user approved, within 15 minutes of the "
-            "approval, and nothing else. Call it only after the user tells you the "
-            "proposal is approved. If it says the proposal is not approved, expired "
-            "or in conflict, tell the user instead of retrying with other content."
+            "Write a proposal. Takes only the proposal_id. The user is asked to "
+            "approve the change in this chat (or has already approved it in the "
+            "Story panel); it writes exactly what they approve and nothing else. "
+            "If the call is blocked or declined, nothing was written: tell the user "
+            "and do not retry. If it says the proposal expired or is in conflict, "
+            "tell the user instead of retrying with other content."
         ),
         "parameters": _parameters(
             {"proposal_id": {"type": "string", "minLength": 1, "description": "The proposal_id returned by story.propose_edit or story.propose_new."}},

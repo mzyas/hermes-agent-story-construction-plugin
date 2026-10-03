@@ -8,6 +8,7 @@ from threading import RLock
 from typing import Any, Callable
 
 from . import runtime as _runtime
+from .approval_gate import SessionGrants, make_apply_hook
 from .permissions import StoryPermissionGate
 from .repository import StoryRepository
 from .runtime import StoryRuntimeState
@@ -111,6 +112,8 @@ class LiveStoryRuntime:
         self._ctx = ctx
         self._plugin_root = plugin_root
         self._lock = RLock()
+        # Shared by the approval hook and the tools, which run in one process.
+        self.grants = SessionGrants()
         self._ready: dict[
             tuple[object, ...], tuple[StoryRuntimeState, StoryToolService]
         ] = {}
@@ -138,6 +141,17 @@ class LiveStoryRuntime:
             return service.handle(name, args, **kwargs)
 
         return handle
+
+    def resolve_bound_proposals(self, session_id: str) -> tuple[Any, Any] | None:
+        """The proposal service and binding of a Story session, or None for any other."""
+
+        state, service = self._resolve()
+        if service is None or not session_id:
+            return None
+        bound = _runtime.permission_snapshot(state).bound_scope(session_id)
+        if bound is None:
+            return None
+        return _runtime.proposal_service_for(state), bound
 
     def render_system_prompt(self, session_info: Mapping[str, object]) -> str:
         state = self.current()
@@ -174,6 +188,7 @@ class LiveStoryRuntime:
             state.permissions,
             permissions_provider=lambda: _runtime.permission_snapshot(state),
             proposals_provider=lambda: _runtime.proposal_service_for(state),
+            grants=self.grants,
         )
         with self._lock:
             if len(self._ready) >= 8:
@@ -201,6 +216,10 @@ def register_story_backend(ctx) -> LiveStoryRuntime:
     live = LiveStoryRuntime(ctx, _plugin_root())
     live.current()  # publish the initial state for diagnostics
     register_live_story_tools(ctx, live)
+    hook_registrar = getattr(ctx, "register_hook", None)
+    if callable(hook_registrar):
+        # Sends story.apply_edit to Hermes' own approval prompt (see approval_gate).
+        hook_registrar("pre_tool_call", make_apply_hook(live.resolve_bound_proposals, live.grants))
     return live
 
 

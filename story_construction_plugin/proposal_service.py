@@ -18,6 +18,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from .approval_gate import Risk, assess_risk
 from .edits import (
     BodyWarning,
     Edit,
@@ -305,6 +306,7 @@ class StoryProposalService:
         selected: Sequence[int] | None = None,
         text: str | None = None,
         base_version: str | None = None,
+        via: str | None = None,
     ) -> dict[str, Any]:
         proposal = self._owned(project_id, proposal_id, profile, connection_id)
         # An expired approval can be given again.
@@ -315,10 +317,22 @@ class StoryProposalService:
             approval = self._approve_text(proposal, project_id, text, base_version)
         else:
             approval = self._approve_edits(proposal, project_id, selected)
+        if via:
+            approval = {**approval, "via": via}
         stored = self.store.approve(proposal_id, approval)
         if stored is None:
             raise NotFoundError(f"proposal {proposal_id!r} was not found")
         return _desktop_view(stored)
+
+    def assess(self, *, project_id: str, proposal: dict[str, Any]) -> Risk:
+        """How risky applying this proposal is, against the record as it is now."""
+
+        base = ""
+        if proposal["kind"] == "edit":
+            base = normalize_newlines(
+                self._doc(project_id, _proposal_type(proposal), proposal["target_id"]).content
+            )
+        return assess_risk(proposal, base)
 
     def revoke(self, *, project_id: str, proposal_id: str, profile: str, connection_id: str) -> dict[str, Any]:
         self._owned(project_id, proposal_id, profile, connection_id)
@@ -650,9 +664,9 @@ def _agent_summary(proposal: dict[str, Any]) -> dict[str, Any]:
         "edits": len(proposal["edits"]),
         "warnings": proposal["warnings"],
         "next": (
-            "Nothing is written yet. Tell the user to review this proposal in the Story "
-            "panel and approve it. After they say it is approved, call story.apply_edit "
-            "with this proposal_id."
+            "Nothing is written yet. Call story.apply_edit with this proposal_id: it asks "
+            "the user to approve the change in this chat and writes it only if they do. "
+            "If it is declined, nothing is written."
         ),
     }
 
