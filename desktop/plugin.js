@@ -108,18 +108,10 @@ const en = {
     deleteRecord: (kind, title) => `Delete ${kind}: ${title}`,
     renameHint: 'Only the name changes. The text stays as it is.',
     deleteHint: 'The record is moved to the Vault trash folder, not erased. You can undo it from here afterwards.',
-    approveAction: 'Approve',
-    chatFallbackHint: 'You can also approve this in the chat. If that prompt times out, approve it here and the Agent will be asked to write it.',
+    chatHint: 'Approve this in the chat. If the prompt timed out, ask the Agent to propose it again.',
     kind: { chapter: 'chapter', character: 'character', world_entry: 'world entry', note: 'note' },
     close: 'Close',
-    approve: 'Approve selected changes',
-    approveText: 'Approve this text',
-    revoke: 'Withdraw approval',
     discard: 'Discard',
-    editResult: 'Edit the result',
-    backToChanges: 'Back to the changes',
-    editHint: 'Edit the whole resulting text. Only this text can be written, and only when the Agent applies it.',
-    editLabel: 'Resulting text',
     changeN: (number, op) => `Change ${number} · ${op}`,
     line: number => `line ${number}`,
     warnLeading: 'Looks like an introduction, not story text',
@@ -127,15 +119,10 @@ const en = {
     warnTitle: 'Repeats the chapter title',
     warnFence: 'A code fence around the text was removed',
     warnNameInUse: 'This name is already used; it will get a number after it when written',
-    approvalMessage: id => `Proposal ${id} is approved (valid for 15 minutes). Please call story.apply_edit to write it.`,
-    approvedSent: 'Approved, and the Agent was asked to write it.',
-    approvedNotSent: 'Approved. Tell the Agent in the chat to apply the proposal.',
-    saveDraftFirst: 'Save or discard your unsaved changes to this chapter first.',
     conflictAt: number => `Change ${number} no longer matches the text.`,
     conflict: 'The text changed and these changes no longer match it.',
     versionChanged: 'The text changed since you opened this. Reopen the proposal.',
     frontmatter: 'Remove the --- header block: only story text is allowed.',
-    nothingSelected: 'Select at least one change.',
     failed: 'Could not complete that. Try again.',
     undo: title => `Undo the Agent's last write (${title})`,
     undone: 'Restored the text from before the Agent wrote.',
@@ -335,18 +322,10 @@ const zh = {
     deleteRecord: (kind, title) => `删除${kind}：${title}`,
     renameHint: '只改名字，正文不变。',
     deleteHint: '这条记录会被移到资料库的回收目录，不会被彻底删除，之后可以在这里撤销。',
-    approveAction: '批准',
-    chatFallbackHint: '也可以在聊天里直接批准。如果聊天里的提示超时了，在这里批准即可，并会请助手写入。',
+    chatHint: '请在聊天里批准。如果提示已超时，请让助手重新提议。',
     kind: { chapter: '章节', character: '角色', world_entry: '世界设定条目', note: '笔记' },
     close: '关闭',
-    approve: '批准所选修改',
-    approveText: '批准这段文字',
-    revoke: '撤销批准',
     discard: '放弃',
-    editResult: '编辑结果',
-    backToChanges: '返回逐处选择',
-    editHint: '直接编辑修改后的全文。只有这段文字会被写入，并且要等智能体执行后才会写入。',
-    editLabel: '修改后的全文',
     changeN: (number, op) => `第 ${number} 处 · ${op}`,
     line: number => `第 ${number} 行`,
     warnLeading: '看起来是开场白，不是正文',
@@ -354,15 +333,10 @@ const zh = {
     warnTitle: '重复了章节标题',
     warnFence: '已去掉文字外面的代码围栏',
     warnNameInUse: '这个名字已被使用，写入时会在后面加序号',
-    approvalMessage: id => `提案 ${id} 已批准（15 分钟内有效），请调用 story.apply_edit 写入这份提案。`,
-    approvedSent: '已批准，并已通知智能体写入。',
-    approvedNotSent: '已批准。请在聊天里告诉智能体执行这份提案。',
-    saveDraftFirst: '请先保存或放弃这一章未保存的修改。',
     conflictAt: number => `第 ${number} 处修改找不到对应的原文。`,
     conflict: '内容已被修改，这些修改和它对不上了。',
     versionChanged: '内容在你打开之后又变了，请重新打开这份提案。',
     frontmatter: '请去掉开头的 --- 头信息块：这里只能是正文。',
-    nothingSelected: '请至少选择一处修改。',
     failed: '操作没有完成，请重试。',
     undo: title => `撤销智能体最近一次写入（${title}）`,
     undone: '已恢复到智能体写入之前的文字。',
@@ -997,21 +971,6 @@ export const linkStoryWorkspace = (projectId, { profile, connectionId, hermesPro
   })
 export const fetchProjectProposals = (projectId, scope) =>
   call('/projects/' + encodeURIComponent(projectId) + '/proposals' + buildStoryScopeQuery(scope))
-export const approveStoryProposal = (projectId, proposalId, { profile, connectionId, selected, text, baseVersion }) =>
-  call('/projects/' + encodeURIComponent(projectId) + '/proposals/' + encodeURIComponent(proposalId) + '/approve', {
-    method: 'POST',
-    body: {
-      profile,
-      connection_id: connectionId,
-      ...(Array.isArray(selected) ? { selected } : {}),
-      ...(typeof text === 'string' ? { text, base_version: baseVersion || '' } : {})
-    }
-  })
-export const revokeStoryProposal = (projectId, proposalId, { profile, connectionId }) =>
-  call('/projects/' + encodeURIComponent(projectId) + '/proposals/' + encodeURIComponent(proposalId) + '/revoke', {
-    method: 'POST',
-    body: { profile, connection_id: connectionId }
-  })
 export const discardStoryProposal = (projectId, proposalId, scope) =>
   call(
     '/projects/' + encodeURIComponent(projectId) + '/proposals/' + encodeURIComponent(proposalId) + buildStoryScopeQuery(scope),
@@ -2001,42 +1960,6 @@ export function approvalMinutesLeft(proposal, now = Date.now()) {
   return Math.max(0, Math.ceil((expires - now) / 60_000))
 }
 
-// Fixed wording, so the message the Agent receives is never free-form text.
-export function proposalApprovalMessage(proposal, t) {
-  return t('proposal.approvalMessage', proposal.id)
-}
-
-// Tells the Agent's session that a proposal was approved so it can apply it.
-// Returns {sent:false} instead of throwing: the approval itself already stands.
-export async function notifyAgentOfApproval({
-  proposal,
-  profile,
-  connectionId,
-  text,
-  profileRoutes = host.profileRoutes,
-  requestProfile = host.requestProfile
-} = {}) {
-  const sessionId = typeof proposal?.session_id === 'string' ? proposal.session_id.trim() : ''
-  if (!sessionId || typeof requestProfile !== 'function' || !text) return { sent: false }
-  try {
-    const route = await resolveStoryProfileRoute({ profile, connectionId, profileRoutes })
-    if (!route) return { sent: false }
-    const params = { profile: route.targetProfile || profile }
-    const active = await requestProfile(route, 'session.active_list', params).catch(() => null)
-    const rows = Array.isArray(active?.sessions) ? active.sessions : []
-    let runtimeId = rows.find(row => row?.id === sessionId || row?.session_key === sessionId)?.id
-    if (!runtimeId) {
-      const resumed = await requestProfile(route, 'session.resume', { ...params, session_id: sessionId, omit_messages: true })
-      runtimeId = resumed?.session_id
-    }
-    if (!runtimeId) return { sent: false }
-    await requestProfile(route, 'prompt.submit', { session_id: runtimeId, text })
-    return { sent: true }
-  } catch {
-    return { sent: false }
-  }
-}
-
 // Whitelisted wording for a failed proposal request; never the raw server text.
 export function proposalErrorNote(error) {
   const detail = safeStatusFromError(error) || {}
@@ -2049,8 +1972,6 @@ export function proposalErrorNote(error) {
       return { key: 'proposal.versionChanged', args: [] }
     case 'frontmatter_not_allowed':
       return { key: 'proposal.frontmatter', args: [] }
-    case 'invalid_selection':
-      return { key: 'proposal.nothingSelected', args: [] }
     case 'chapter_changed':
       return { key: 'proposal.undoChanged', args: [] }
     default:
@@ -2078,10 +1999,7 @@ const PROPOSAL_WARNING_KEYS = {
   name_in_use: 'proposal.warnNameInUse'
 }
 
-export function ProposalReview({ proposal, projectId, profile, connectionId, draftStore, onClose, onChanged, t }) {
-  const initial = Array.isArray(proposal.approval?.selected) ? proposal.approval.selected : proposal.edits.map((_, index) => index)
-  const [selected, setSelected] = useState(Object.fromEntries(initial.map(index => [index, true])))
-  const [editedText, setEditedText] = useState(null)
+export function ProposalReview({ proposal, projectId, profile, connectionId, onClose, onChanged, t }) {
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState(null)
   const scope = { profile, connectionId }
@@ -2105,47 +2023,6 @@ export function ProposalReview({ proposal, projectId, profile, connectionId, dra
       setBusy(false)
     }
   }
-
-  const approve = () =>
-    run(async () => {
-      const chosen = Object.keys(selected).filter(key => selected[key]).map(Number).sort((a, b) => a - b)
-      if (!isAction && editedText === null && !chosen.length) {
-        setNote({ key: 'proposal.nothingSelected', args: [] })
-        return
-      }
-      // A write over an unsaved draft of the same chapter would hide the Agent's change.
-      // Only chapters have an editor, so only they can hold a draft.
-      const unsaved = proposal.kind === 'edit' && targetType === 'chapter' && draftStore?.current && retainedStoryDraftExists(draftStore.current, parts =>
-        parts[0] === draftSlot(connectionId) && parts[1] === draftSlot(profile) &&
-        parts[3] === draftSlot(projectId) && parts[4] === draftSlot(proposal.chapter_id)
-      )
-      if (unsaved) {
-        setNote({ key: 'proposal.saveDraftFirst', args: [] })
-        return
-      }
-      await approveStoryProposal(
-        projectId,
-        proposal.id,
-        isAction
-          ? scope
-          : editedText !== null
-            ? { ...scope, text: editedText, baseVersion: proposal.current_version || '' }
-            : { ...scope, selected: chosen }
-      )
-      await onChanged()
-      const sent = await notifyAgentOfApproval({
-        proposal,
-        ...scope,
-        text: proposalApprovalMessage(proposal, t)
-      })
-      setNote({ key: sent.sent ? 'proposal.approvedSent' : 'proposal.approvedNotSent', args: [] })
-    })
-
-  const revoke = () =>
-    run(async () => {
-      await revokeStoryProposal(projectId, proposal.id, scope)
-      await onChanged()
-    })
 
   const discard = () =>
     run(async () => {
@@ -2198,24 +2075,15 @@ export function ProposalReview({ proposal, projectId, profile, connectionId, dra
             className: 'rounded border border-(--ui-stroke-secondary) p-3 text-sm' + (proposal.kind === 'delete' ? ' hermes-story-danger' : ''),
             children: t(proposal.kind === 'delete' ? 'proposal.deleteHint' : 'proposal.renameHint')
           })
-        : editedText === null
-        ? jsx('div', {
+        : jsx('div', {
             className: 'flex flex-col gap-3',
             children: proposal.previews.map(preview =>
               jsxs('div', {
                 className: 'flex flex-col gap-2 rounded border border-(--ui-stroke-secondary) p-2',
                 children: [
-                  jsxs('label', {
-                    className: 'flex items-center gap-2 text-xs text-(--ui-text-secondary)',
-                    children: [
-                      jsx('input', {
-                        checked: Boolean(selected[preview.edit]),
-                        disabled: busy,
-                        onChange: () => setSelected(previous => ({ ...previous, [preview.edit]: !previous[preview.edit] })),
-                        type: 'checkbox'
-                      }),
-                      t('proposal.changeN', preview.edit + 1, t('proposal.op.' + preview.op))
-                    ]
+                  jsx('div', {
+                    className: 'text-xs text-(--ui-text-secondary)',
+                    children: t('proposal.changeN', preview.edit + 1, t('proposal.op.' + preview.op))
                   }),
                   ...preview.regions.map((region, index) =>
                     jsxs('div', {
@@ -2229,50 +2097,18 @@ export function ProposalReview({ proposal, projectId, profile, connectionId, dra
                 ]
               }, preview.edit)
             )
-          })
-        : jsxs('label', {
-            className: 'flex flex-col gap-1 text-xs text-(--ui-text-secondary)',
-            children: [
-              t('proposal.editLabel'),
-              jsx('div', { className: 'text-(--ui-text-tertiary)', children: t('proposal.editHint') }),
-              jsx('textarea', {
-                className: 'min-h-64 w-full rounded border border-(--ui-stroke-secondary) bg-transparent p-2 text-sm',
-                disabled: busy,
-                onChange: event => setEditedText(event.target.value),
-                value: editedText
-              })
-            ]
           }),
       note ? jsx('div', { className: 'text-xs text-(--ui-text-secondary)', role: 'status', children: t(note.key, ...note.args) }) : null,
-      approved ? null : jsx('div', { className: 'text-xs text-(--ui-text-tertiary)', children: t('proposal.chatFallbackHint') }),
-      jsxs('div', {
+      jsx('div', { className: 'text-xs text-(--ui-text-tertiary)', children: t('proposal.chatHint') }),
+      jsx('div', {
         className: 'flex flex-wrap gap-2',
-        children: [
-          jsx('button', {
-            className: 'hermes-story-btn-primary rounded bg-(--ui-accent) px-3 py-1 text-xs disabled:opacity-50',
-            disabled: busy,
-            onClick: approve,
-            type: 'button',
-            children: isAction ? t('proposal.approveAction') : editedText !== null ? t('proposal.approveText') : t('proposal.approve')
-          }),
-          isAction ? null : jsx('button', {
-            className: buttonClass,
-            disabled: busy,
-            onClick: () => setEditedText(previous => (previous === null ? proposal.result_text : null)),
-            type: 'button',
-            children: editedText === null ? t('proposal.editResult') : t('proposal.backToChanges')
-          }),
-          approved
-            ? jsx('button', { className: buttonClass, disabled: busy, onClick: revoke, type: 'button', children: t('proposal.revoke') })
-            : null,
-          jsx('button', {
-            className: buttonClass + ' hermes-story-danger',
-            disabled: busy,
-            onClick: discard,
-            type: 'button',
-            children: t('proposal.discard')
-          })
-        ]
+        children: jsx('button', {
+          className: buttonClass + ' hermes-story-danger',
+          disabled: busy,
+          onClick: discard,
+          type: 'button',
+          children: t('proposal.discard')
+        })
       })
     ]
   })
@@ -2280,7 +2116,7 @@ export function ProposalReview({ proposal, projectId, profile, connectionId, dra
 
 // Shows what the Agent has proposed and lets the person review it. The chapter
 // editor stays mounted underneath, hidden, so an unsaved draft is never lost.
-function ProposalArea({ projectId, profile, connectionId, draftStore, undoInStrip = true, children }) {
+function ProposalArea({ projectId, profile, connectionId, undoInStrip = true, children }) {
   const t = usePluginI18n('story-construction')
   const busy = useValue(host.state.busy)
   const queryClient = typeof storySdk.useQueryClient === 'function' ? storySdk.useQueryClient() : null
@@ -2411,7 +2247,6 @@ function ProposalArea({ projectId, profile, connectionId, draftStore, undoInStri
       reviewing
         ? jsx(ProposalReview, {
             connectionId,
-            draftStore,
             onChanged: refresh,
             onClose: () => setReviewId(null),
             profile,
@@ -4347,7 +4182,6 @@ function ProjectWorkspace() {
     className: 'hermes-story-editor',
     children: jsx(ProposalArea, {
       connectionId,
-      draftStore: draftsRef,
       profile,
       projectId: selectedProjectId,
       // Undo sits beside Save in the chapter header; with no chapter on screen it stays in the strip.

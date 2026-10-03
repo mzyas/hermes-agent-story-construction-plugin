@@ -6,8 +6,8 @@ the plugin adds a project workspace to Hermes Desktop and gives the agent tools
 to read your world, characters and chapters.
 
 **The agent proposes, you decide.** It never edits your story on its own. Every
-change arrives as a proposal you review as a diff and approve, in the chat with
-Hermes' own approval prompt or in the Story panel. Only what you approved is
+change arrives as a proposal you can read as a diff in the Story panel, and you
+approve it in the chat with Hermes' own approval prompt. Only what you approved is
 written, and **Undo** restores the text from before the agent's last write.
 Your own draft of a chapter is saved only when you confirm Save.
 
@@ -548,22 +548,17 @@ entries and notes**; each proposal targets one of them (`target_type`:
    repeated heading is flagged in red in the review. Only the start and end of
    a text are inspected, so ordinary prose is never second-guessed.
 5. **Review** — open proposals appear above the chapter editor. Each edit shows
-   the changed paragraph with the character-level difference highlighted, and a
-   checkbox. You can approve only some edits, edit the resulting text by hand,
-   withdraw an approval, or discard the proposal. Approving is refused while
-   you have an unsaved draft of the same chapter (only chapters have an
-   editor, so only they can hold a draft).
-6. **Approve** — two ways, both bound to exactly what you approved and valid
-   for **15 minutes**. Only you can create one; the Agent's tools cannot.
-   *In the chat* (the usual way): right after proposing, the Agent calls
+   the changed paragraph with the character-level difference highlighted. The
+   panel is for reading: you can close it or discard the proposal, but not
+   approve it.
+6. **Approve** — in the chat, bound to exactly what you approved. Only you can
+   approve; the Agent's tools cannot. Right after proposing, the Agent calls
    `story.apply_edit`, and Hermes asks you to approve it in the conversation, the
    same prompt as any other tool, showing the record and what changes. Declining
    writes nothing. If nobody answers, the prompt times out and nothing is written
-   either; the proposal stays open, so approve it in the Story panel instead (the
-   fallback below) or ask the Agent to propose it again. *In the Story panel*: approve some of the edits or edit the
-   text by hand; the Desktop then sends the session a fixed message asking it to
-   call `story.apply_edit`, and no second prompt appears. If that message cannot
-   be delivered the panel says so and the approval stands.
+   either; ask the Agent to propose it again. (The Dashboard API still has
+   `approve` and `revoke` endpoints for a panel approval, but the Desktop no
+   longer offers them.)
    **Risky changes** (emptying a record, or removing about 800 characters, or 30%
    of a record of 100 or more) are marked “high risk” in the prompt and get a
    prompt rule of their own, so choosing *always allow* on a prompt never
@@ -572,12 +567,11 @@ entries and notes**; each proposal targets one of them (`target_type`:
 7. **Apply** — `story.apply_edit` takes only a `proposal_id`, so it cannot
    write anything else. It refuses a proposal that is not approved, expired,
    already written, discarded or replaced, and it does not rely on the prompt
-   having run: without the one-time grant the prompt hook leaves, only a panel
-   approval lets it write. Approved edits are applied to the
-   record as it is *now*: if you edited elsewhere in the meantime they still
-   apply, and if an approved edit no longer matches nothing is written. A hand
-   edited text is only written if the record is still at the version you
-   edited.
+   having run: without the one-time grant the prompt hook leaves, an approval
+   made through the Dashboard API is the only other way it writes. Approved
+   edits are applied to the record as it is *now*: if you edited elsewhere in
+   the meantime they still apply, and if an approved edit no longer matches
+   nothing is written.
 8. **Undo** — before every write the record's text is saved to
    `plugin-data/story-construction/history/` (the last 20 per record). “Undo
    the Agent's last write” restores it, but only while the record is still

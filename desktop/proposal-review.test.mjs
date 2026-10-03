@@ -40,11 +40,8 @@ const {
   ProposalReview,
   approvalMinutesLeft,
   bindWorkspaceApi,
-  notifyAgentOfApproval,
-  proposalApprovalMessage,
   proposalErrorNote,
   proposalPollInterval,
-  storyDraftKey,
   undoStoryAgentWrite
 } = await import(dataModule(rewriteDesktopImports(source)))
 
@@ -113,7 +110,6 @@ function review(overrides = {}, props = {}) {
     projectId: 'novel',
     profile: 'writer',
     connectionId: 'local',
-    draftStore: { current: new Map() },
     onClose: () => undefined,
     onChanged: async () => undefined,
     t,
@@ -135,79 +131,20 @@ test('the minutes left on an approval round up and never go negative', () => {
   assert.equal(approvalMinutesLeft({}, now), 0)
 })
 
-test('the approval message is fixed wording that names the proposal', () => {
-  assert.equal(proposalApprovalMessage({ id: 'abc123' }, t), 'proposal.approvalMessage:abc123')
-})
-
 test('server errors become whitelisted wording and never raw text', () => {
   const http = detail => new Error(`HTTP 409: ${JSON.stringify({ detail })}`)
   assert.deepEqual(proposalErrorNote(http({ code: 'conflict', edit: 1 })), { key: 'proposal.conflictAt', args: [2] })
   assert.deepEqual(proposalErrorNote(http({ code: 'conflict' })), { key: 'proposal.conflict', args: [] })
   assert.equal(proposalErrorNote(http({ code: 'version_changed' })).key, 'proposal.versionChanged')
   assert.equal(proposalErrorNote(http({ code: 'frontmatter_not_allowed' })).key, 'proposal.frontmatter')
-  assert.equal(proposalErrorNote(http({ code: 'invalid_selection' })).key, 'proposal.nothingSelected')
   assert.equal(proposalErrorNote(http({ code: 'chapter_changed' })).key, 'proposal.undoChanged')
   assert.deepEqual(proposalErrorNote(new Error('C:\\secret\\path exploded')), { key: 'proposal.failed', args: [] })
 })
 
-function notifyHarness({ active = { sessions: [] }, resumeFails = false, submitFails = false } = {}) {
-  const calls = []
-  return {
-    calls,
-    options: {
-      proposal,
-      profile: 'writer',
-      connectionId: 'local',
-      text: 'approved',
-      profileRoutes: async () => [route],
-      requestProfile: async (_route, method, params) => {
-        calls.push([method, params])
-        if (method === 'session.active_list') return active
-        if (method === 'session.resume') {
-          if (resumeFails) throw new Error('gone')
-          return { session_id: 'runtime-9' }
-        }
-        if (method === 'prompt.submit' && submitFails) throw new Error('busy')
-        return {}
-      }
-    }
-  }
-}
-
-test('the Agent is told through its live session when there is one', async () => {
-  const { calls, options } = notifyHarness({
-    active: { sessions: [{ id: 'rt-1', session_key: 'other' }, { id: 'rt-2', session_key: 'stored-1' }] }
-  })
-
-  assert.deepEqual(await notifyAgentOfApproval(options), { sent: true })
-  assert.deepEqual(calls.at(-1), ['prompt.submit', { session_id: 'rt-2', text: 'approved' }])
-  assert.equal(calls.some(call => call[0] === 'session.resume'), false)
-})
-
-test('a session that is not live is resumed first', async () => {
-  const { calls, options } = notifyHarness()
-
-  assert.deepEqual(await notifyAgentOfApproval(options), { sent: true })
-  assert.deepEqual(calls.map(call => call[0]), ['session.active_list', 'session.resume', 'prompt.submit'])
-  assert.equal(calls.at(-1)[1].session_id, 'runtime-9')
-})
-
-test('a message that cannot be delivered is reported, not thrown', async () => {
-  assert.deepEqual(await notifyAgentOfApproval(notifyHarness({ resumeFails: true }).options), { sent: false })
-  assert.deepEqual(
-    await notifyAgentOfApproval(notifyHarness({ active: { sessions: [{ id: 'rt-2', session_key: 'stored-1' }] }, submitFails: true }).options),
-    { sent: false }
-  )
-  assert.deepEqual(await notifyAgentOfApproval({ ...notifyHarness().options, text: '' }), { sent: false })
-  assert.deepEqual(await notifyAgentOfApproval({ ...notifyHarness().options, proposal: { id: 'x' } }), { sent: false })
-})
-
-test('every edit is a card with its diff and a checkbox', () => {
+test('every edit is a card with its diff and no checkbox', () => {
   const tree = review()
 
-  const checkboxes = find(tree, node => node.type === 'input' && node.props.type === 'checkbox')
-  assert.equal(checkboxes.length, 2)
-  assert.ok(checkboxes.every(node => node.props.checked === true))
+  assert.equal(find(tree, node => node.type === 'input').length, 0)
   const deleted = find(tree, node => node.props?.className === 'hermes-story-diff-del')
   const inserted = find(tree, node => node.props?.className === 'hermes-story-diff-ins')
   assert.deepEqual(deleted.map(textOf), ['大'])
@@ -224,15 +161,17 @@ test('guidance warnings are shown to the person as alerts', () => {
   assert.match(textOf(alerts[0]), /希望你喜欢。/)
 })
 
-test('an approved proposal shows the time left and a way to withdraw', () => {
+test('the review only shows the change: no way to approve, edit or withdraw it here', () => {
   const soon = new Date(Date.now() + 5 * 60_000).toISOString()
-  const tree = review({ status: 'approved', approval: { mode: 'edits', selected: [1], expires_at: soon } })
+  for (const tree of [review(), review({ status: 'approved', approval: { mode: 'edits', selected: [1], expires_at: soon } })]) {
+    const labels = find(tree, node => node.type === 'button').map(textOf)
+    assert.deepEqual(labels, ['proposal.close', 'proposal.discard'])
+    assert.equal(find(tree, node => node.type === 'textarea').length, 0)
+  }
+})
 
-  assert.match(textOf(tree), /proposal\.approvedLeft:[45]/)
-  assert.ok(find(tree, node => node.type === 'button' && textOf(node) === 'proposal.revoke').length === 1)
-  const boxes = find(tree, node => node.type === 'input' && node.props.type === 'checkbox')
-  assert.deepEqual(boxes.map(node => node.props.checked), [false, true])
-  assert.equal(find(review(), node => node.type === 'button' && textOf(node) === 'proposal.revoke').length, 0)
+test('a waiting proposal points to the chat for approval', () => {
+  assert.match(textOf(review()), /proposal\.chatHint/)
 })
 
 function bindRest() {
@@ -248,77 +187,19 @@ function button(tree, label) {
   return find(tree, node => node.type === 'button' && textOf(node) === label)[0]
 }
 
-test('approving sends the selected edits for this project and scope, then refreshes', async () => {
-  const { calls, dispose } = bindRest()
-  let refreshed = 0
-  try {
-    await button(review({}, { onChanged: async () => { refreshed += 1 } }), 'proposal.approve').props.onClick()
-  } finally {
-    dispose()
-  }
-
-  assert.deepEqual(calls, [[
-    '/projects/novel/proposals/abc123/approve',
-    { method: 'POST', body: { profile: 'writer', connection_id: 'local', selected: [0, 1] } }
-  ]])
-  assert.equal(refreshed, 1)
-})
-
-test('an unsaved draft of the same chapter stops the approval', async () => {
-  const { calls, dispose } = bindRest()
-  const key = storyDraftKey({
-    connectionId: 'local', profile: 'writer', sessionId: 'stored-1', projectId: 'novel', chapterId: 'novel:chapter-1'
-  })
-  try {
-    await button(review({}, { draftStore: { current: new Map([[key, 'unsaved words']]) } }), 'proposal.approve').props.onClick()
-  } finally {
-    dispose()
-  }
-
-  assert.deepEqual(calls, [])
-})
-
-test('a draft of another chapter does not stop the approval', async () => {
-  const { calls, dispose } = bindRest()
-  const key = storyDraftKey({
-    connectionId: 'local', profile: 'writer', sessionId: 'stored-1', projectId: 'novel', chapterId: 'novel:chapter-2'
-  })
-  try {
-    await button(review({}, { draftStore: { current: new Map([[key, 'unsaved words']]) } }), 'proposal.approve').props.onClick()
-  } finally {
-    dispose()
-  }
-
-  assert.equal(calls.length, 1)
-})
-
-test('discarding and withdrawing call their own endpoints', async () => {
+test('discarding calls its endpoint and closes the review', async () => {
   const { calls, dispose } = bindRest()
   let closed = 0
   try {
     await button(review({}, { onClose: () => { closed += 1 } }), 'proposal.discard').props.onClick()
-    const soon = new Date(Date.now() + 60_000).toISOString()
-    await button(review({ status: 'approved', approval: { mode: 'edits', selected: [0], expires_at: soon } }), 'proposal.revoke').props.onClick()
   } finally {
     dispose()
   }
 
   assert.deepEqual(calls.map(call => [call[1].method, call[0]]), [
-    ['DELETE', '/projects/novel/proposals/abc123?profile=writer&connection_id=local'],
-    ['POST', '/projects/novel/proposals/abc123/revoke']
+    ['DELETE', '/projects/novel/proposals/abc123?profile=writer&connection_id=local']
   ])
   assert.equal(closed, 1)
-})
-
-
-test('a waiting proposal says it can also be approved in the chat, and an approved one does not', () => {
-  const soon = new Date(Date.now() + 60_000).toISOString()
-
-  assert.match(textOf(review()), /proposal\.chatFallbackHint/)
-  assert.doesNotMatch(
-    textOf(review({ status: 'approved', approval: { mode: 'edits', selected: [0], expires_at: soon } })),
-    /proposal\.chatFallbackHint/
-  )
 })
 
 
@@ -353,20 +234,6 @@ test('a name already in use is an alert without a change number', () => {
   assert.match(textOf(alerts[0]), /proposal\.warnNameInUse/)
   assert.doesNotMatch(textOf(alerts[0]), /changeN/)
   assert.match(textOf(alerts[0]), /novel:character-1/)
-})
-
-test('only chapters can hold an unsaved draft that blocks an approval', async () => {
-  const { calls, dispose } = bindRest()
-  const key = storyDraftKey({
-    connectionId: 'local', profile: 'writer', sessionId: 'stored-1', projectId: 'novel', chapterId: 'novel:character-1'
-  })
-  try {
-    await button(review(character, { draftStore: { current: new Map([[key, 'unsaved words']]) } }), 'proposal.approve').props.onClick()
-  } finally {
-    dispose()
-  }
-
-  assert.equal(calls.length, 1)
 })
 
 test('undoing a write says which kind of record it was', async () => {
@@ -407,31 +274,6 @@ test('a rename or a deletion is headed by what it does, with no changes to pick'
   assert.match(textOf(renamed), /proposal\.renameHint/)
   assert.match(textOf(deleted), /proposal\.deleteHint/)
   assert.equal(find(deleted, node => String(node.props?.className || '').includes('hermes-story-danger') && textOf(node) === 'proposal.deleteHint').length, 1)
-})
-
-test('an action cannot be edited by hand and its button just says approve', () => {
-  const tree = review(renaming)
-
-  assert.ok(button(tree, 'proposal.approveAction'))
-  assert.equal(button(tree, 'proposal.editResult'), undefined)
-  assert.equal(button(tree, 'proposal.approve'), undefined)
-  assert.ok(button(tree, 'proposal.discard'))
-})
-
-test('approving a rename or a deletion sends no selection and no text', async () => {
-  for (const action of [renaming, deleting]) {
-    const { calls, dispose } = bindRest()
-    try {
-      await button(review(action), 'proposal.approveAction').props.onClick()
-    } finally {
-      dispose()
-    }
-
-    assert.deepEqual(calls, [[
-      '/projects/novel/proposals/abc123/approve',
-      { method: 'POST', body: { profile: 'writer', connection_id: 'local' } }
-    ]])
-  }
 })
 
 test('an action on a record that changed since is marked as stale', () => {
