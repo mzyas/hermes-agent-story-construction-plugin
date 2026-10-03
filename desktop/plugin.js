@@ -147,6 +147,7 @@ const en = {
     noSessions: 'No writing sessions for this project',
     newWritingSession: 'New writing session',
     continueSession: 'Continue',
+    openBeside: 'Open beside this page',
     retryFirstTask: 'Retry first task',
     removeStaleBinding: 'Remove stale binding',
     currentSession: 'Current session',
@@ -356,6 +357,7 @@ const zh = {
     noSessions: '此项目还没有写作会话',
     newWritingSession: '新建写作会话',
     continueSession: '继续',
+    openBeside: '并排打开最近会话',
     retryFirstTask: '重试首次任务',
     removeStaleBinding: '移除失效绑定',
     currentSession: '当前会话',
@@ -626,6 +628,27 @@ export function projectSessionRows(data) {
   return rows.sort((left, right) => String(right.updated_at || '').localeCompare(String(left.updated_at || '')))
 }
 
+// Projects whose bound session was already put beside the page in this app run.
+// A tile the person closes afterwards stays closed until they ask for it again.
+const sideBySideOpened = new Set()
+
+export function sideBySideKey({ profile, connectionId, projectId } = {}) {
+  return [profile, connectionId, projectId].map(value => value || '').join(':')
+}
+
+// Which bound session, if any, should open beside the project page on entry.
+// None when it already did, when a bound session is on screen, or while the
+// panel is busy creating/opening one.
+export function sideBySideTarget({ rows, focusedBound, key, busy = false, opened = sideBySideOpened } = {}) {
+  if (busy || focusedBound || !key || opened.has(key)) return null
+  const list = Array.isArray(rows) ? rows : []
+  return list.find(row => row?.stored_session_id) || null
+}
+
+export function markSideBySideOpened(key, opened = sideBySideOpened) {
+  if (key) opened.add(key)
+}
+
 export function resetWorkspaceScope(previous, next) {
   const oldScope = [previous?.profile, previous?.connectionId, previous?.sessionId, previous?.projectId].map(value => value || '').join(':')
   const newScope = [next?.profile, next?.connectionId, next?.sessionId, next?.projectId].map(value => value || '').join(':')
@@ -720,12 +743,16 @@ function currentStoryConnectionId() {
   }
 }
 
-export function storySessionOpenOptions(route, profile, connectionId = currentStoryConnectionId()) {
+// A Story session opens as a tab beside the project page. 'in-place' would load
+// it into the main area, which is where this page lives, and push the page out.
+export const STORY_SIDE_INTENT = 'tab'
+
+export function storySessionOpenOptions(route, profile, connectionId = currentStoryConnectionId(), intent = 'in-place') {
   // Passing a route makes Hermes force the sidebar to "All profiles", and a
   // bare profile does the same unless keepAllProfilesScope is false. For the
   // connection the user is already on, open by profile and keep the sidebar
   // scoped to it. Only another connection needs the route to be reachable.
-  const base = { intent: 'in-place', awaitHydration: true, expectHistory: true, forceResume: true }
+  const base = { intent, awaitHydration: true, expectHistory: true, forceResume: true }
   const routeConnectionId = typeof route?.connectionId === 'string' ? route.connectionId.trim() : ''
   const activeConnectionId = typeof connectionId === 'string' ? connectionId.trim() : ''
   if (!route || (routeConnectionId && routeConnectionId === activeConnectionId)) {
@@ -754,14 +781,15 @@ export async function switchStorySession({
   profile,
   connectionId,
   profileRoutes = host.profileRoutes,
-  openSession = host.openSession
+  openSession = host.openSession,
+  intent = 'in-place'
 } = {}) {
   const normalizedSessionId = typeof sessionId === 'string' ? sessionId.trim() : ''
   const normalizedProfile = typeof profile === 'string' ? profile.trim() : ''
   if (!normalizedSessionId || !normalizedProfile) throw new Error('a session and Hermes profile are required')
   if (typeof openSession !== 'function') throw new Error('this Hermes Desktop version cannot open saved sessions')
   const route = await resolveStoryProfileRoute({ profile: normalizedProfile, connectionId, profileRoutes })
-  return openSession(normalizedSessionId, storySessionOpenOptions(route, normalizedProfile))
+  return openSession(normalizedSessionId, storySessionOpenOptions(route, normalizedProfile, undefined, intent))
 }
 
 function call(path, options) {
@@ -985,7 +1013,8 @@ export async function continueStoryProjectSession({
   profile,
   connectionId,
   profileRoutes = host.profileRoutes,
-  openSession = host.openSession
+  openSession = host.openSession,
+  intent = 'in-place'
 } = {}) {
   const storedSessionId = requiredSessionId(binding?.stored_session_id, 'stored session')
   try {
@@ -994,7 +1023,8 @@ export async function continueStoryProjectSession({
       profile,
       connectionId,
       profileRoutes,
-      openSession
+      openSession,
+      intent
     })
   } catch (error) {
     if (!isSessionGoneError(error)) throw error
@@ -1264,7 +1294,8 @@ export async function createStoryWritingSession({
   bindSession = bindStorySession,
   openSession = host.openSession,
   ensureWorkspace = ensureStoryProjectWorkspace,
-  onStage = () => undefined
+  onStage = () => undefined,
+  intent = 'in-place'
 } = {}) {
   let route
   try {
@@ -1342,7 +1373,7 @@ export async function createStoryWritingSession({
     // history yet, so the open must not wait for any.
     onStage?.('opening')
     try {
-      await openSession(storedId, { ...storySessionOpenOptions(route, profile), expectHistory: false })
+      await openSession(storedId, { ...storySessionOpenOptions(route, profile, undefined, intent), expectHistory: false })
     } catch (error) {
       throw workflowError('opening', error)
     }
@@ -1357,7 +1388,8 @@ export async function retryStoryKickoff({
   recovery,
   requestProfile = host.requestProfile,
   bindSession = bindStorySession,
-  openSession = host.openSession
+  openSession = host.openSession,
+  intent = 'in-place'
 } = {}) {
   if (!recovery?.route || !recovery?.storedId || !recovery?.runtimeId || !recovery?.text) {
     throw workflowError('submitting', new Error('story kickoff recovery data is incomplete'))
@@ -1371,7 +1403,7 @@ export async function retryStoryKickoff({
   }
 
   try {
-    await openSession(recovery.storedId, storySessionOpenOptions(recovery.route, recovery.profile))
+    await openSession(recovery.storedId, storySessionOpenOptions(recovery.route, recovery.profile, undefined, intent))
   } catch (error) {
     throw workflowError('opening', error)
   }
@@ -3014,6 +3046,19 @@ function ProjectSessionsPanel({ profile, connectionId, project, sessionId }) {
   const nameOf = id => storySessionName(id, { titles, bindings: sessions }) || t('agent.untitledSession')
   const focusedBound = Boolean(sessionId && sessions.some(row => row.stored_session_id === sessionId))
   const selectedCount = Object.keys(selectedIds).length
+  const sideKey = sideBySideKey({ profile, connectionId, projectId: project?.id })
+
+  // Entering a project puts its latest bound session beside the page, once.
+  // Failures stay quiet: the Continue buttons below report them when asked.
+  useEffect(() => {
+    if (!sessionsQuery.isSuccess || !project?.id) return
+    const target = sideBySideTarget({ rows: sessions, focusedBound, key: sideKey, busy: creatingSession })
+    if (!target) return
+    markSideBySideOpened(sideKey)
+    void continueStoryProjectSession({ binding: target, profile, connectionId, intent: STORY_SIDE_INTENT }).catch(
+      () => undefined
+    )
+  }, [sessionsQuery.isSuccess, sideKey, sessions.length, focusedBound, creatingSession])
 
   useEffect(() => {
     setBindingState(null)
@@ -3098,9 +3143,11 @@ function ProjectSessionsPanel({ profile, connectionId, project, sessionId }) {
       profile,
       connectionId,
       onStage: setStage,
-      openSession: openAfterRefetch
+      openSession: openAfterRefetch,
+      intent: STORY_SIDE_INTENT
     })
       .then(result => {
+        markSideBySideOpened(sideKey)
         setStage('ready')
         if (result?.workspaceIssue) {
           setSessionState({
@@ -3123,7 +3170,7 @@ function ProjectSessionsPanel({ profile, connectionId, project, sessionId }) {
     if (creatingSession || !kickoffRecovery) return
     setCreatingSession(true)
     setStage('submitting')
-    void retryStoryKickoff({ recovery: kickoffRecovery, openSession: openAfterRefetch })
+    void retryStoryKickoff({ recovery: kickoffRecovery, openSession: openAfterRefetch, intent: STORY_SIDE_INTENT })
       .then(() => {
         setKickoffRecovery(null)
         setStage('ready')
@@ -3139,13 +3186,14 @@ function ProjectSessionsPanel({ profile, connectionId, project, sessionId }) {
     if (creatingSession) return
     setCreatingSession(true)
     setStage('opening')
-    void continueStoryProjectSession({ binding, profile, connectionId })
+    void continueStoryProjectSession({ binding, profile, connectionId, intent: STORY_SIDE_INTENT })
       .then(result => {
         if (result.status === 'stale') {
           setStaleSessionIds(previous => ({ ...previous, [result.storedSessionId]: true }))
           setSessionState({ key: 'agent.staleBinding', args: [] })
           return
         }
+        markSideBySideOpened(sideKey)
         setStage('ready')
       })
       .catch(error => setSessionState({ key: 'agent.continueFailed', args: [error.message] }))
@@ -3207,6 +3255,15 @@ function ProjectSessionsPanel({ profile, connectionId, project, sessionId }) {
         className: 'break-words text-(--ui-text-secondary)',
         children: `${busy ? t('agent.working') : t('agent.idle')} · ${sessionId ? nameOf(sessionId) : t('agent.noFocusedSession')}`
       }),
+      sessions.length
+        ? jsx('button', {
+            className: 'rounded border border-(--ui-stroke-secondary) px-2 py-1 text-left hover:bg-(--chrome-action-hover) disabled:opacity-50',
+            disabled: creatingSession,
+            onClick: () => continueSession(sessions[0]),
+            type: 'button',
+            children: t('agent.openBeside')
+          })
+        : null,
       jsx('div', { className: 'font-medium', children: t('agent.sessions') }),
       jsx('button', {
         className: 'hermes-story-btn-primary rounded bg-(--ui-accent) px-2 py-1 text-left disabled:opacity-50',

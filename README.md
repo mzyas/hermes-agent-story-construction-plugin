@@ -263,7 +263,7 @@ Create project → initialize Obsidian skeleton → create and bind Hermes sessi
 Project creation does not require a focused chat. The backend initializes the
 Obsidian project, world, first volume, and first chapter; “New writing session”
 then creates a Hermes session that follows the locked Profile configuration,
-binds it on the backend, and opens it as an empty main chat. No first task is
+binds it on the backend, and opens it as an empty chat tab beside the project page. No first task is
 sent. The Agent judges from the user's own words whether they want story work
 or just a chat; for story work it calls `story.get_session_project`, which
 returns the project bound to that session (the model cannot name another
@@ -281,6 +281,15 @@ selected on top. Every deletion asks for confirmation first. The default is
 ticking “Also permanently delete the session itself” calls Hermes
 `session.delete` and then removes the binding. The session currently open
 cannot be permanently deleted, because Hermes refuses it.
+
+Sessions open beside the project page, not in place of it. “New writing
+session”, “Continue” and “Open beside this page” open the bound session as a
+Hermes tab (`intent: 'tab'`), so the page keeps the main area and the chat sits
+next to it. Entering a project also opens its most recent bound session this
+way, once per project per app run; a tab you close stays closed until you ask
+for it again. Clicking an unrelated session in the Hermes sidebar still loads
+it into the main area and replaces the page, because the plugin cannot
+intercept that; click the Story entry to bring the page back.
 
 ### Hermes projects and workspace folders
 
