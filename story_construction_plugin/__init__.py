@@ -8,7 +8,7 @@ from threading import RLock
 from typing import Any, Callable
 
 from . import runtime as _runtime
-from .approval_gate import SessionGrants, make_apply_hook
+from .approval_gate import SessionGrants, make_apply_hook, make_outcome_hook
 from .permissions import StoryPermissionGate
 from .prompt_templates import STORY_PROMPT_MAX_CHARS
 from .repository import StoryRepository
@@ -226,6 +226,8 @@ def register_story_backend(ctx) -> LiveStoryRuntime:
     if callable(hook_registrar):
         # Sends story.apply_edit to Hermes' own approval prompt (see approval_gate).
         hook_registrar("pre_tool_call", make_apply_hook(live.resolve_bound_proposals, live.grants))
+        # Notes when that prompt timed out or was declined, so the panel can say so.
+        hook_registrar("post_tool_call", make_outcome_hook(live.resolve_bound_proposals, live.grants))
     return live
 
 

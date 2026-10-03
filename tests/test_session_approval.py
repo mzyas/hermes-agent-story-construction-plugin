@@ -261,6 +261,72 @@ def test_a_failing_hook_returns_nothing_instead_of_raising(env) -> None:
     assert hook(tool_name="story.apply_edit", args={"proposal_id": "x"}, session_id="s1") is None
 
 
+# -------------------------------------------------- how the prompt ended
+TIMED_OUT = "BLOCKED: Action timed out without user response. The user has NOT consented to this action."
+DENIED = "BLOCKED: User denied this potentially dangerous action (matched 'x'). Do NOT retry."
+
+
+def _outcome(chat: Chat, proposal_id: str, result: str, *, status: str = "blocked", tool: str = "story.apply_edit",
+             session_id: str = "s1") -> None:
+    hook = gate.make_outcome_hook(
+        lambda sid: (chat.env.service, _scope()) if sid == "s1" else None, chat.grants
+    )
+    hook(tool_name=tool, args={"proposal_id": proposal_id}, result=result, status=status, session_id=session_id)
+
+
+def test_a_prompt_nobody_answered_marks_the_proposal_expired_but_keeps_it(chat, env) -> None:
+    proposal_id = env.propose("character", [REPLACE])["proposal_id"]
+    chat.ask(proposal_id)
+
+    _outcome(chat, proposal_id, TIMED_OUT)
+
+    assert env.store.get(proposal_id)["status"] == "expired"
+    assert chat.grants.consume(proposal_id) is False
+    assert env.doc("character").content == "少年，住在阁楼。"
+
+
+def test_an_expired_proposal_can_be_asked_again_and_then_written(chat, env) -> None:
+    proposal_id = env.propose("character", [REPLACE])["proposal_id"]
+    chat.ask(proposal_id)
+    _outcome(chat, proposal_id, TIMED_OUT)
+
+    assert chat.ask(proposal_id)["action"] == "approve"
+    result = chat.apply(proposal_id)
+
+    assert result["ok"] is True and env.store.get(proposal_id)["status"] == "applied"
+    assert env.doc("character").content == "青年，住在阁楼。"
+
+
+def test_a_declined_prompt_closes_the_proposal(chat, env) -> None:
+    proposal_id = env.propose("character", [REPLACE])["proposal_id"]
+    chat.ask(proposal_id)
+
+    _outcome(chat, proposal_id, DENIED)
+
+    assert env.store.get(proposal_id)["status"] == "discarded"
+
+
+def test_other_calls_and_other_outcomes_change_nothing(chat, env) -> None:
+    proposal_id = env.propose("character", [REPLACE])["proposal_id"]
+
+    _outcome(chat, proposal_id, TIMED_OUT, status="ok")
+    _outcome(chat, proposal_id, TIMED_OUT, tool="story.get_record")
+    _outcome(chat, proposal_id, TIMED_OUT, session_id="someone-else")
+    _outcome(chat, proposal_id, "BLOCKED: Failed to send approval request to user. Do NOT retry.")
+
+    assert env.store.get(proposal_id)["status"] == "pending"
+
+
+def test_a_failing_outcome_hook_does_not_raise() -> None:
+    def broken(_session_id):
+        raise RuntimeError("binding file unreadable")
+
+    hook = gate.make_outcome_hook(broken, gate.SessionGrants())
+
+    assert hook(tool_name="story.apply_edit", args={"proposal_id": "x"}, result=TIMED_OUT, status="blocked",
+                session_id="s1") is None
+
+
 # ------------------------------------------------------------ the tool's side
 def test_without_the_hook_the_tool_refuses_to_write(chat, env) -> None:
     proposal_id = env.propose("character", [REPLACE])["proposal_id"]
@@ -350,7 +416,7 @@ def test_the_plugin_registers_the_approval_hook_with_its_tools() -> None:
     ctx = Ctx()
     register_story_backend(ctx)
 
-    assert ctx.hooks == ["pre_tool_call"]
+    assert ctx.hooks == ["pre_tool_call", "post_tool_call"]
 
 
 def test_a_host_without_hooks_still_registers_the_tools() -> None:

@@ -144,11 +144,24 @@ class ProposalStore:
 
         def change(row: dict[str, Any]) -> None:
             row["status"] = "approved"
+            row.pop("lapsed", None)
             row["approval"] = {
                 **approval,
                 "approved_at": _iso(now),
                 "expires_at": _iso(now + timedelta(minutes=APPROVAL_MINUTES)),
             }
+
+        return self.mutate(proposal_id, change)
+
+    def lapse(self, proposal_id: str) -> dict[str, Any] | None:
+        """Mark a waiting proposal whose approval prompt went unanswered.
+
+        It stays open and can be approved later; it just reads as ``expired``.
+        """
+
+        def change(row: dict[str, Any]) -> None:
+            if row["status"] == "pending":
+                row["lapsed"] = True
 
         return self.mutate(proposal_id, change)
 
@@ -212,6 +225,8 @@ class ProposalStore:
         view = json.loads(json.dumps(row))
         approval = view.get("approval")
         if view["status"] == "approved" and approval and approval["expires_at"] <= _iso(self._now()):
+            view["status"] = "expired"
+        elif view["status"] == "pending" and view.get("lapsed"):
             view["status"] = "expired"
         return view
 

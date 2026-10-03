@@ -219,6 +219,59 @@ def make_apply_hook(
     return hook
 
 
+def make_outcome_hook(
+    resolve: Callable[[str], tuple[Any, Any] | None], grants: SessionGrants
+) -> Callable[..., None]:
+    """The ``post_tool_call`` hook that records how the approval prompt ended.
+
+    Hermes reports a ``story.apply_edit`` it refused as ``blocked``. A prompt that
+    nobody answered leaves the proposal open but marked ``expired``; one the person
+    declined closes it. Anything unexpected does nothing.
+    """
+
+    def hook(
+        *, tool_name: str = "", args: Mapping[str, Any] | None = None, result: Any = None,
+        status: str = "", session_id: str = "", **_ignored: Any,
+    ) -> None:
+        if tool_name != APPLY_TOOL or status != "blocked":
+            return
+        try:
+            _record_outcome(resolve, grants, args or {}, str(result or ""), session_id)
+        except Exception:
+            return
+
+    return hook
+
+
+def _record_outcome(
+    resolve: Callable[[str], tuple[Any, Any] | None],
+    grants: SessionGrants,
+    args: Mapping[str, Any],
+    result: str,
+    session_id: str,
+) -> None:
+    proposal_id = str(args.get("proposal_id") or "").strip()
+    resolved = resolve(session_id) if proposal_id and session_id else None
+    if resolved is None:
+        return
+    service, scope = resolved
+    grants.revoke(proposal_id)
+    proposal = service.store.get(proposal_id)
+    if (
+        proposal is None
+        or proposal["project_id"] != scope.project_id
+        or proposal["profile"] != scope.profile
+        or proposal["connection_id"] != scope.connection_id
+        or proposal["status"] not in ("pending", "expired")
+    ):
+        return
+    text = result.lower()
+    if "timed out" in text:
+        service.store.lapse(proposal_id)
+    elif "denied" in text:
+        service.store.discard(proposal_id)
+
+
 def _directive(
     resolve: Callable[[str], tuple[Any, Any] | None],
     grants: SessionGrants,

@@ -555,8 +555,10 @@ entries and notes**; each proposal targets one of them (`target_type`:
    approve; the Agent's tools cannot. Right after proposing, the Agent calls
    `story.apply_edit`, and Hermes asks you to approve it in the conversation, the
    same prompt as any other tool, showing the record and what changes. Declining
-   writes nothing. If nobody answers, the prompt times out and nothing is written
-   either; ask the Agent to propose it again. (The Dashboard API still has
+   writes nothing, and the proposal is closed. If nobody answers, the prompt
+   times out and nothing is written either; the proposal stays in the panel
+   marked as expired, and asking the Agent to apply it again raises a fresh
+   prompt. (The Dashboard API still has
    `approve` and `revoke` endpoints for a panel approval, but the Desktop no
    longer offers them.)
    **Risky changes** (emptying a record, or removing about 800 characters, or 30%
