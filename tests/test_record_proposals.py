@@ -464,7 +464,7 @@ def test_the_tools_propose_and_apply_a_character_change(env) -> None:
 
 def test_the_tools_propose_a_new_record_and_report_its_final_name(env) -> None:
     tools = _tools(env)
-    proposed = _tool(tools, "story.propose_chapter", {
+    proposed = _tool(tools, "story.propose_new", {
         "target_type": "character", "title": "林远", "content": "另一个林远。",
     })
     assert proposed["ok"] is True and proposed["data"]["warnings"][0]["kind"] == "name_in_use"
@@ -484,10 +484,78 @@ def test_the_older_chapter_argument_names_still_work(env) -> None:
     legacy = _tool(tools, "story.propose_edit", {
         "chapter_id": chapter.id, "base_version": chapter.version, "edits": [REPLACE],
     })
-    new_chapter = _tool(tools, "story.propose_chapter", {
+    new_chapter = _tool(tools, "story.propose_new", {
         "volume_id": "novel:volume-1", "title": "第二章", "content": "正文。",
     })
 
     assert legacy["ok"] is True and legacy["data"]["target_type"] == "chapter"
     assert new_chapter["ok"] is True and new_chapter["data"]["kind"] == "new_chapter"
     assert _tool(tools, "story.propose_edit", {"base_version": "x", "edits": [REPLACE]})["error"]["code"] == "invalid_request"
+
+
+# ------------------------------------------------------------------ hardening
+def test_a_world_entry_needs_the_projects_world_info_and_the_proposal_says_so(env) -> None:
+    env.repository.create_project("Bare", slug="bare")
+    project_file = env.vault / "bare" / "project.md"
+    lines = project_file.read_text(encoding="utf-8").splitlines(keepends=True)
+    project_file.write_text("".join(line for line in lines if not line.startswith("world_info_id")), encoding="utf-8")
+    env.repository._invalidate_records()
+
+    with pytest.raises(ProposalError) as error:
+        env.service.propose_new(
+            project_id="bare", session_id="s1", **SCOPE,
+            target_type="world_entry", title="河流", content="宽而浅。",
+        )
+
+    assert error.value.code == "no_world_info"
+    assert env.store.list_for_project(project_id="bare", **SCOPE) == []
+
+
+def test_the_write_log_shows_the_title_a_new_record_really_got(env) -> None:
+    summary = env.propose_new("character", "林远", "另一个林远。")
+    env.approve(summary["proposal_id"])
+    env.apply(summary["proposal_id"])
+
+    entry = env.service.writes(project_id="novel")[0]
+
+    assert entry["target_title"] == "林远 (2)" and entry["target_type"] == "character"
+
+
+def test_snapshots_of_a_character_are_not_filed_under_a_bare_id(env) -> None:
+    proposal_id = env.propose("character", [REPLACE])["proposal_id"]
+    env.approve(proposal_id)
+    env.apply(proposal_id)
+    snapshot_id = env.store.get(proposal_id)["applied"]["snapshot_id"]
+
+    kept = env.history.load(project_id="novel", target_id=f"character.{env.character.id}", snapshot_id=snapshot_id)
+    bare = env.history.load(project_id="novel", target_id=env.character.id, snapshot_id=snapshot_id)
+
+    assert kept is not None and kept["text"] == "少年，住在阁楼。"
+    assert bare is None
+
+
+def test_two_kinds_of_record_with_the_same_id_keep_separate_snapshots(env) -> None:
+    (env.vault / "novel" / "characters" / "character-077.md").write_text(
+        "---\ntype: character\nid: novel:shared-1\nproject_id: novel\nname: 同号角色\n---\n\n少年甲。\n", encoding="utf-8"
+    )
+    (env.vault / "novel" / "notes" / "note-077.md").write_text(
+        "---\ntype: note\nid: novel:shared-1\nproject_id: novel\ntitle: 同号笔记\n---\n\n少年乙。\n", encoding="utf-8"
+    )
+    env.repository._invalidate_records()
+    for target_type, record in (
+        ("character", env.repository.get_character("novel", "novel:shared-1")),
+        ("note", env.repository.get_note("novel", "novel:shared-1")),
+    ):
+        proposal_id = env.service.propose_edit(
+            project_id="novel", session_id="s1", **SCOPE, target_type=target_type,
+            target_id=record.id, base_version=record.version, raw_edits=[REPLACE],
+        )["proposal_id"]
+        env.approve(proposal_id)
+        env.apply(proposal_id)
+
+    character = env.service.undo(project_id="novel", target_id="novel:shared-1", target_type="character")
+    assert env.repository.get_character("novel", "novel:shared-1").content == "少年甲。"
+    assert "青年" in env.repository.get_note("novel", "novel:shared-1").content
+    note = env.service.undo(project_id="novel", target_id="novel:shared-1", target_type="note")
+    assert env.repository.get_note("novel", "novel:shared-1").content == "少年乙。"
+    assert character["target_type"] == "character" and note["target_type"] == "note"

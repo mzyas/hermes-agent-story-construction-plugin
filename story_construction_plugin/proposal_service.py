@@ -155,6 +155,8 @@ class StoryProposalService:
             if volume_id not in {volume.id for volume in tree.volumes}:
                 raise NotFoundError(f"volume {volume_id!r} was not found")
             extra["volume_id"] = volume_id
+        elif target_type == "world_entry" and tree.world_info is None:
+            raise ProposalError("no_world_info", "this project has no world info to add an entry to")
         elif target_type == "note" and category_id:
             if category_id not in {category.id for category in tree.categories}:
                 raise NotFoundError(f"note category {category_id!r} was not found")
@@ -227,6 +229,7 @@ class StoryProposalService:
             created = self._create(project_id, target_type, proposal, text)
             self.store.mark_applied(proposal_id, {
                 **_written(target_type, created.id),
+                "title": created.title,
                 "version_after": created.version,
                 "snapshot_id": None,
             })
@@ -253,7 +256,7 @@ class StoryProposalService:
             ) from exc
         snapshot_id = self.history.save(
             project_id=project_id,
-            target_id=doc.id,
+            target_id=_history_key(target_type, doc.id),
             text=doc.content,
             version=doc.version,
             proposal_id=proposal_id,
@@ -355,7 +358,9 @@ class StoryProposalService:
                 current_version=doc.version,
             )
         snapshot = self.history.load(
-            project_id=project_id, target_id=target_id, snapshot_id=info.get("snapshot_id") or ""
+            project_id=project_id,
+            target_id=_history_key(target_type, target_id),
+            snapshot_id=info.get("snapshot_id") or "",
         )
         if snapshot is None:
             raise ProposalError("snapshot_missing", "the saved copy of the earlier text is gone")
@@ -376,7 +381,7 @@ class StoryProposalService:
                 "proposal_id": row["id"],
                 "target_type": target_type,
                 "target_id": target_id,
-                "target_title": row.get("target_title") or row.get("chapter_title") or row.get("title"),
+                "target_title": applied.get("title") or row.get("target_title") or row.get("chapter_title") or row.get("title"),
                 "chapter_id": applied.get("chapter_id"),
                 "chapter_title": row.get("chapter_title"),
                 "at": applied["at"],
@@ -599,6 +604,12 @@ def _identity(target_type: str, target_id: str | None, title: str) -> dict[str, 
     if target_type == "chapter":
         fields.update({"chapter_id": target_id, "chapter_title": title})
     return fields
+
+
+def _history_key(target_type: str, target_id: str) -> str:
+    """Chapters keep the bare id their snapshots were always saved under."""
+
+    return target_id if target_type == "chapter" else f"{target_type}.{target_id}"
 
 
 def _written(target_type: str, target_id: str) -> dict[str, Any]:

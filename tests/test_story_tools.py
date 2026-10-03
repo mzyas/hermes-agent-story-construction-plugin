@@ -160,7 +160,7 @@ def test_registration_exposes_the_story_toolset() -> None:
     assert names == {
         "story.get_session_project",
         "story.propose_edit",
-        "story.propose_chapter",
+        "story.propose_new",
         "story.apply_edit",
         "story.list_records",
         "story.get_record",

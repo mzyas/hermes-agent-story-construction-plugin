@@ -17,14 +17,14 @@ from .session_store import SessionBindingStoreError
 
 SESSION_PROJECT_TOOL = "story.get_session_project"
 PROPOSE_EDIT_TOOL = "story.propose_edit"
-PROPOSE_CHAPTER_TOOL = "story.propose_chapter"
+PROPOSE_NEW_TOOL = "story.propose_new"
 APPLY_EDIT_TOOL = "story.apply_edit"
 LIST_RECORDS_TOOL = "story.list_records"
 GET_RECORD_TOOL = "story.get_record"
 # The project of these tools comes from the session's binding, never from the model.
 SESSION_RESOLVED_TOOLS = frozenset(
     {
-        SESSION_PROJECT_TOOL, PROPOSE_EDIT_TOOL, PROPOSE_CHAPTER_TOOL, APPLY_EDIT_TOOL,
+        SESSION_PROJECT_TOOL, PROPOSE_EDIT_TOOL, PROPOSE_NEW_TOOL, APPLY_EDIT_TOOL,
         LIST_RECORDS_TOOL, GET_RECORD_TOOL,
     }
 )
@@ -102,7 +102,7 @@ class StoryToolService:
     def _dispatch(
         self, name: str, project_id: str, payload: dict[str, Any], scope: SessionScope
     ) -> Any:
-        if name in (PROPOSE_EDIT_TOOL, PROPOSE_CHAPTER_TOOL, APPLY_EDIT_TOOL):
+        if name in (PROPOSE_EDIT_TOOL, PROPOSE_NEW_TOOL, APPLY_EDIT_TOOL):
             return self._proposal_tool(name, project_id, payload, scope)
         if name == LIST_RECORDS_TOOL:
             return record_summaries(self.repository, project_id, _required(payload, "target_type"))
@@ -159,7 +159,7 @@ class StoryToolService:
         if name == APPLY_EDIT_TOOL:
             return service.apply(proposal_id=_required(payload, "proposal_id"), **common)
         common["session_id"] = scope.session_id
-        if name == PROPOSE_CHAPTER_TOOL:
+        if name == PROPOSE_NEW_TOOL:
             return service.propose_new(
                 target_type=payload.get("target_type") or "chapter",
                 volume_id=str(payload.get("volume_id") or "").strip() or None,

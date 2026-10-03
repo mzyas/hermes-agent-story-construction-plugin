@@ -125,8 +125,8 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             ["base_version", "edits"],
         ),
     },
-    "story.propose_chapter": {
-        "name": "story.propose_chapter",
+    "story.propose_new": {
+        "name": "story.propose_new",
         "description": (
             "Propose a new record: a chapter at the end of a volume (the default), "
             "or with target_type a new character, world info entry or note. Check "
@@ -166,7 +166,7 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "or in conflict, tell the user instead of retrying with other content."
         ),
         "parameters": _parameters(
-            {"proposal_id": {"type": "string", "minLength": 1, "description": "The proposal_id returned by story.propose_edit or story.propose_chapter."}},
+            {"proposal_id": {"type": "string", "minLength": 1, "description": "The proposal_id returned by story.propose_edit or story.propose_new."}},
             ["proposal_id"],
         ),
     },

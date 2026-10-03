@@ -68,7 +68,7 @@ def render_story_agent_system_prompt() -> str:
         "that name.\n\n"
         "## Changing records\n"
         "- Never write files or save chapters yourself. To change a record, read it, then call "
-        "story.propose_edit with the version you read (or story.propose_chapter for a new chapter, "
+        "story.propose_edit with the version you read (or story.propose_new for a new chapter, "
         "character, world entry, or note). That only stores a proposal: nothing is written until the "
         "user approves it in the Story panel. After proposing, say plainly that it is waiting for "
         "their approval; never say it was saved.\n"

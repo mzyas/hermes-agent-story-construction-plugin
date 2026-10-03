@@ -6,7 +6,7 @@ kind: backend
 provides_tools:
   - story.get_session_project
   - story.propose_edit
-  - story.propose_chapter
+  - story.propose_new
   - story.apply_edit
   - story.list_records
   - story.get_record

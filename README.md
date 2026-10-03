@@ -425,7 +425,7 @@ entries and notes**; each proposal targets one of them (`target_type`:
 `chapter` by default, `character`, `world_entry`, `note`).
 
 1. **Propose** — `story.propose_edit` (changes to the text of an existing
-   record) or `story.propose_chapter` (a new chapter at the end of a volume, or,
+   record) or `story.propose_new` (a new chapter at the end of a volume, or,
    with `target_type`, a new character, world entry or note). A proposal stores
    a list of edits; no Vault file is touched. Edits are `replace`
    (`old_text` → `new_text`, empty to delete), `insert_after` / `insert_before`
