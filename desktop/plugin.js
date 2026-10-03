@@ -628,8 +628,9 @@ export function projectSessionRows(data) {
   return rows.sort((left, right) => String(right.updated_at || '').localeCompare(String(left.updated_at || '')))
 }
 
-// Projects whose bound session was already put beside the page in this app run.
-// A tile the person closes afterwards stays closed until they ask for it again.
+// Projects whose bound session was already put beside the page during the
+// current visit. A tile the person closes stays closed until they leave the
+// project and come back, or ask for it again.
 const sideBySideOpened = new Set()
 
 export function sideBySideKey({ profile, connectionId, projectId } = {}) {
@@ -647,6 +648,10 @@ export function sideBySideTarget({ rows, focusedBound, key, busy = false, opened
 
 export function markSideBySideOpened(key, opened = sideBySideOpened) {
   if (key) opened.add(key)
+}
+
+export function forgetSideBySideOpened(key, opened = sideBySideOpened) {
+  opened.delete(key)
 }
 
 export function resetWorkspaceScope(previous, next) {
@@ -752,7 +757,9 @@ export function storySessionOpenOptions(route, profile, connectionId = currentSt
   // bare profile does the same unless keepAllProfilesScope is false. For the
   // connection the user is already on, open by profile and keep the sidebar
   // scoped to it. Only another connection needs the route to be reachable.
-  const base = { intent, awaitHydration: true, expectHistory: true, forceResume: true }
+  // A tab beside the page may be a session nobody has written in yet; there is
+  // no history to wait for, and waiting would only time out.
+  const base = { intent, awaitHydration: true, expectHistory: intent === 'in-place', forceResume: true }
   const routeConnectionId = typeof route?.connectionId === 'string' ? route.connectionId.trim() : ''
   const activeConnectionId = typeof connectionId === 'string' ? connectionId.trim() : ''
   if (!route || (routeConnectionId && routeConnectionId === activeConnectionId)) {
@@ -3059,6 +3066,9 @@ function ProjectSessionsPanel({ profile, connectionId, project, sessionId }) {
       () => undefined
     )
   }, [sessionsQuery.isSuccess, sideKey, sessions.length, focusedBound, creatingSession])
+
+  // Leaving the project ends the visit, so coming back opens the tab again.
+  useEffect(() => () => forgetSideBySideOpened(sideKey), [sideKey])
 
   useEffect(() => {
     setBindingState(null)

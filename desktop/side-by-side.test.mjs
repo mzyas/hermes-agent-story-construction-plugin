@@ -49,7 +49,8 @@ const {
   retryStoryKickoff,
   sideBySideKey,
   sideBySideTarget,
-  markSideBySideOpened
+  markSideBySideOpened,
+  forgetSideBySideOpened
 } = await import(dataModule(rewriteDesktopImports(source)))
 
 const localRoute = { connectionId: 'local', mode: 'local', profile: 'writer', targetProfile: 'writer' }
@@ -59,6 +60,11 @@ test('Story sessions open as a tab beside the page, not in the main area', () =>
   assert.equal(STORY_SIDE_INTENT, 'tab')
   assert.equal(storySessionOpenOptions(localRoute, 'writer', 'local').intent, 'in-place')
   assert.equal(storySessionOpenOptions(localRoute, 'writer', 'local', STORY_SIDE_INTENT).intent, 'tab')
+})
+
+test('a tab beside the page does not wait for history, an in-place open does', () => {
+  assert.equal(storySessionOpenOptions(localRoute, 'writer', 'local').expectHistory, true)
+  assert.equal(storySessionOpenOptions(localRoute, 'writer', 'local', STORY_SIDE_INTENT).expectHistory, false)
 })
 
 test('switching and continuing pass the requested intent and default to in-place', async () => {
@@ -143,6 +149,17 @@ test('the latest bound session opens beside the page once per project', () => {
   markSideBySideOpened(key, opened)
   assert.equal(sideBySideTarget({ rows, focusedBound: false, key, opened }), null)
   assert.equal(sideBySideTarget({ rows, focusedBound: false, key: 'writer:local:other', opened }).stored_session_id, 'new')
+})
+
+test('leaving a project lets the next visit open the session again', () => {
+  const rows = [{ stored_session_id: 'a' }]
+  const opened = new Set()
+  const key = 'writer:local:novel'
+
+  markSideBySideOpened(key, opened)
+  forgetSideBySideOpened(key, opened)
+
+  assert.equal(sideBySideTarget({ rows, focusedBound: false, key, opened }).stored_session_id, 'a')
 })
 
 test('nothing opens when a bound session is on screen, while busy, or with no sessions', () => {

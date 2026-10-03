@@ -286,8 +286,8 @@ Sessions open beside the project page, not in place of it. “New writing
 session”, “Continue” and “Open beside this page” open the bound session as a
 Hermes tab (`intent: 'tab'`), so the page keeps the main area and the chat sits
 next to it. Entering a project also opens its most recent bound session this
-way, once per project per app run; a tab you close stays closed until you ask
-for it again. Clicking an unrelated session in the Hermes sidebar still loads
+way, once per visit; a tab you close stays closed until you leave the project
+and come back, or ask for it again. Clicking an unrelated session in the Hermes sidebar still loads
 it into the main area and replaces the page, because the plugin cannot
 intercept that; click the Story entry to bring the page back.
 
