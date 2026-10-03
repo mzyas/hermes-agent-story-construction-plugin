@@ -86,13 +86,12 @@ const en = {
     loading: 'Loading chapter…',
     unavailable: error => `Chapter unavailable: ${error}`,
     version: version => `Version ${version || 'unknown'} · Draft edits stay local until confirmed.`,
-    confirmOverwrite: 'I confirm this chapter overwrite.',
     confirmLeave: 'You have an unsaved chapter draft. Leave without saving?',
     saving: 'Saving…',
     saved: 'Saved; chapter version refreshed.',
     saveUnavailable: error => `Save unavailable: ${error}`,
     saveFailed: error => `Save failed: ${error}`,
-    saveConfirmed: 'Save confirmed draft'
+    saveConfirmed: 'Save'
   },
   proposal: {
     strip: count => `The Agent has ${count} change(s) waiting`,
@@ -312,13 +311,12 @@ const zh = {
     loading: '正在加载章节…',
     unavailable: error => `章节不可用：${error}`,
     version: version => `版本 ${version || '未知'} · 确认前的草稿修改只保存在本地。`,
-    confirmOverwrite: '我确认覆盖此章节。',
     confirmLeave: '有未保存的章节草稿，确定离开而不保存吗？',
     saving: '正在保存…',
     saved: '已保存；章节版本已刷新。',
     saveUnavailable: error => `无法保存：${error}`,
     saveFailed: error => `保存失败：${error}`,
-    saveConfirmed: '保存已确认的草稿'
+    saveConfirmed: '保存'
   },
   proposal: {
     strip: count => `智能体有 ${count} 条修改待处理`,
@@ -2276,7 +2274,7 @@ export function ProposalReview({ proposal, projectId, profile, connectionId, dra
 
 // Shows what the Agent has proposed and lets the person review it. The chapter
 // editor stays mounted underneath, hidden, so an unsaved draft is never lost.
-function ProposalArea({ projectId, profile, connectionId, draftStore, children }) {
+function ProposalArea({ projectId, profile, connectionId, draftStore, undoInStrip = true, children }) {
   const t = usePluginI18n('story-construction')
   const busy = useValue(host.state.busy)
   const queryClient = typeof storySdk.useQueryClient === 'function' ? storySdk.useQueryClient() : null
@@ -2364,7 +2362,17 @@ function ProposalArea({ projectId, profile, connectionId, draftStore, children }
         ? t('proposal.expired')
         : t('proposal.pending')
 
-  const strip = proposals.length || latestWrite || undoNote
+  const undoButton = latestWrite
+    ? jsx('button', {
+        className: 'rounded border border-(--ui-stroke-secondary) px-2 py-0.5 text-xs hover:bg-(--chrome-action-hover) disabled:opacity-50',
+        disabled: undoing,
+        onClick: undo,
+        type: 'button',
+        children: t('proposal.undo', latestWrite.target_title || latestWrite.chapter_title || latestWrite.chapter_id)
+      })
+    : null
+
+  const strip = proposals.length || (latestWrite && undoInStrip) || undoNote
     ? jsxs('div', {
         className: 'flex flex-col gap-1 border-b border-(--ui-stroke-secondary) px-3 py-2 text-xs',
         children: [
@@ -2384,17 +2392,7 @@ function ProposalArea({ projectId, profile, connectionId, draftStore, children }
                 ]
               })
             : null,
-          latestWrite
-            ? jsx('div', {
-                children: jsx('button', {
-                  className: 'rounded border border-(--ui-stroke-secondary) px-2 py-0.5 hover:bg-(--chrome-action-hover) disabled:opacity-50',
-                  disabled: undoing,
-                  onClick: undo,
-                  type: 'button',
-                  children: t('proposal.undo', latestWrite.target_title || latestWrite.chapter_title || latestWrite.chapter_id)
-                })
-              })
-            : null,
+          undoInStrip && undoButton ? jsx('div', { children: undoButton }) : null,
           undoNote ? jsx('div', { className: 'text-(--ui-text-secondary)', role: 'status', children: t(undoNote.key, ...undoNote.args) }) : null
         ]
       })
@@ -2419,7 +2417,7 @@ function ProposalArea({ projectId, profile, connectionId, draftStore, children }
       jsx('div', {
         className: 'flex min-h-0 flex-1 flex-col',
         style: reviewing ? { display: 'none' } : undefined,
-        children
+        children: typeof children === 'function' ? children(undoButton) : children
       })
     ]
   })
@@ -2466,7 +2464,7 @@ function RecordViewer({ projectId, record, profile, connectionId, sessionId }) {
   })
 }
 
-function ChapterEditor({ projectId, chapterId, profile, connectionId, sessionId, draftStore, onDraftState }) {
+function ChapterEditor({ projectId, chapterId, profile, connectionId, sessionId, draftStore, onDraftState, leadAction = null }) {
   const t = usePluginI18n('story-construction')
   const chapterQuery = useQuery({
     enabled: Boolean(projectId && chapterId && sessionId && profile && connectionId),
@@ -2476,7 +2474,6 @@ function ChapterEditor({ projectId, chapterId, profile, connectionId, sessionId,
   const chapter = chapterQuery.data?.chapter || chapterQuery.data || null
   const [draft, setDraft] = useState('')
   const [baseline, setBaseline] = useState('')
-  const [confirmed, setConfirmed] = useState(false)
   const [saveState, setSaveState] = useState(null)
   const [saving, setSaving] = useState(false)
   const scope = [profile, connectionId, sessionId, projectId, chapterId].map(value => value || '').join(':')
@@ -2498,7 +2495,6 @@ function ChapterEditor({ projectId, chapterId, profile, connectionId, sessionId,
     draftRevisionRef.current = 0
     setDraft('')
     setBaseline('')
-    setConfirmed(false)
     setSaveState(null)
     setSaving(false)
     // Scope change reports only the saving flag for the NEW key: a retained
@@ -2532,7 +2528,6 @@ function ChapterEditor({ projectId, chapterId, profile, connectionId, sessionId,
     const nextDraft = retained !== undefined ? retained : content
     setDraft(nextDraft)
     setBaseline(content)
-    setConfirmed(false)
     setSaveState(null)
     onDraftState?.({ key: draftKey, draft: nextDraft, baseline: content, saving: false })
   }, [scope, chapter?.id, chapter?.version])
@@ -2557,7 +2552,7 @@ function ChapterEditor({ projectId, chapterId, profile, connectionId, sessionId,
 
   const save = () => {
     if (saveGateRef.current.isPending(scope)) return
-    if (!canConfirmSave({ draft, confirmed })) return
+    if (!canConfirmSave({ draft, confirmed: true })) return
     let request
     try {
       request = buildSaveRequest({
@@ -2586,7 +2581,6 @@ function ChapterEditor({ projectId, chapterId, profile, connectionId, sessionId,
       onSaved: persisted => {
         saveGateRef.current.reset()
         setSaving(false)
-        setConfirmed(false)
         setSaveState({ key: 'chapter.saved', args: [] })
         // Save success rebaselines to the content the post-save refresh
         // CONFIRMED persisted — server normalization included — and recomputes
@@ -2615,12 +2609,28 @@ function ChapterEditor({ projectId, chapterId, profile, connectionId, sessionId,
     className: 'flex min-h-0 min-w-0 flex-1 flex-col gap-2 p-4',
     children: [
       jsx('div', {
-        className: 'flex items-center justify-between gap-2',
-        children: jsx('h2', {
-          className: 'min-w-0 flex-1 truncate text-base font-medium',
-          title: chapter.title || chapter.id,
-          children: chapter.title || chapter.id
-        })
+        className: 'flex items-center gap-2',
+        children: [
+          jsx('h2', {
+            className: 'min-w-0 flex-1 truncate text-base font-medium',
+            title: chapter.title || chapter.id,
+            children: chapter.title || chapter.id
+          }),
+          saveState
+            ? jsx('span', {
+                className: 'shrink-0 text-xs text-(--ui-text-tertiary)',
+                children: t(saveState.key, ...saveState.args)
+              })
+            : null,
+          leadAction,
+          jsx('button', {
+            className: 'shrink-0 rounded border border-(--ui-stroke-secondary) px-3 py-0.5 text-xs hover:bg-(--chrome-action-hover) disabled:opacity-50',
+            disabled: saving || draft === baseline || !canConfirmSave({ draft, confirmed: true }) || !sessionId,
+            onClick: save,
+            type: 'button',
+            children: t('chapter.saveConfirmed')
+          })
+        ]
       }),
       jsx('p', { className: 'break-words text-xs text-(--ui-text-tertiary)', children: t('chapter.version', chapter.version) }),
       jsx('textarea', {
@@ -2634,31 +2644,6 @@ function ChapterEditor({ projectId, chapterId, profile, connectionId, sessionId,
         },
         spellCheck: false
       }),
-      jsxs('div', {
-        className: 'flex flex-wrap items-center gap-2',
-        children: [
-          jsx('label', {
-            className: 'flex items-center gap-2 text-xs text-(--ui-text-secondary)',
-            children: [
-              jsx('input', { type: 'checkbox', checked: confirmed, onChange: event => setConfirmed(event.target.checked) }),
-              t('chapter.confirmOverwrite')
-            ]
-          }),
-          jsx('button', {
-            className: 'rounded border border-(--ui-stroke-secondary) px-3 py-1 text-xs hover:bg-(--chrome-action-hover) disabled:opacity-50',
-            disabled: saving || !canConfirmSave({ draft, confirmed }) || !sessionId,
-            onClick: save,
-            type: 'button',
-            children: t('chapter.saveConfirmed')
-          }),
-          saveState
-            ? jsx('span', {
-                className: 'text-xs text-(--ui-text-tertiary)',
-                children: t(saveState.key, ...saveState.args)
-              })
-            : null
-        ]
-      })
     ]
   })
 }
@@ -4358,9 +4343,11 @@ function ProjectWorkspace() {
       draftStore: draftsRef,
       profile,
       projectId: selectedProjectId,
+      // Undo sits beside Save in the chapter header; with no chapter on screen it stays in the strip.
+      undoInStrip: Boolean(selectedRecord || !selectedChapterId),
       // The chapter editor stays mounted (hidden) while a record is shown, so an
       // unsaved draft and an in-flight save are never lost by looking at a character.
-      children: [
+      children: undoButton => [
         jsx('div', {
           className: 'flex min-h-0 flex-1 flex-col',
           style: selectedRecord ? { display: 'none' } : undefined,
@@ -4368,6 +4355,7 @@ function ProjectWorkspace() {
             chapterId: selectedChapterId,
             connectionId,
             draftStore: draftsRef,
+            leadAction: undoButton,
             onDraftState: handleDraftState,
             profile,
             projectId: selectedProjectId,
