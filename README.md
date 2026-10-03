@@ -1,4 +1,87 @@
-# Hermes Story Construction Plugin
+# Story Construction for Hermes
+
+Write long-form fiction with a Hermes agent that keeps your canon straight.
+Your story lives in an [Obsidian](https://obsidian.md) vault as plain Markdown;
+the plugin adds a project workspace to Hermes Desktop and gives the agent tools
+to read your world, characters and chapters.
+
+**The agent proposes, you decide.** It never edits your story on its own. Every
+change arrives as a proposal you review as a diff and approve, in the chat with
+Hermes' own approval prompt or in the Story panel. Only what you approved is
+written, and **Undo** restores the text from before the agent's last write.
+Your own draft of a chapter is saved only when you confirm Save.
+
+## Vault format
+
+Your story is stored as plain Markdown files with YAML frontmatter, in a folder
+layout this plugin defines (projects, world info, characters, notes, volumes and
+chapters; see "Project Markdown contract" below). The [Obsidian](https://obsidian.md)
+app is **not required**: the plugin reads and writes the files itself, so any
+folder works as the vault. Obsidian is simply a good way to browse and edit the
+same files, and the plugin follows Obsidian-style Markdown. Projects are
+created from inside the plugin; importing an existing vault of your own notes is
+not something it has been tested for.
+
+## What you get
+
+- **Project-first workspace** in the Desktop sidebar: create and pick story
+  projects, see only that project's writing sessions, open chapters in an editor.
+- **Canon-aware agent**: it can look up world info, characters, volumes and
+  chapters, and search your notes and reference notes before it writes.
+- **Reviewable edits**: new records, edits, renames and deletes all go through
+  proposals with a diff preview.
+- **Plain files**: everything is Markdown in your vault, so you keep full
+  ownership and can use Obsidian alongside it.
+
+<!-- Screenshots: planned for the next release (docs/images/). -->
+
+## Quick start
+
+Requires Hermes `>=0.21.5` and Hermes Desktop.
+
+```text
+hermes plugins install mzyas/hermes-agent-story-construction-plugin --enable
+```
+
+The plugin is at the repository root. Once it is listed in the Hermes plugin
+catalog, `hermes plugins install story-construction` will work as well.
+
+Then enable the Desktop half in **Capabilities → Plugins**, open **Story** in the
+sidebar, choose your Obsidian vault and writing Profile, and create a project.
+If your writing Profile is not `default`, install into both; see "Install and
+configure" below. Install and run exactly one backend (Windows or WSL, not both).
+
+## Acknowledgements
+
+- [OpenFic](https://github.com/syrizelink/OpenFic) - inspiration for the
+  project-library-first workflow. No code or assets were copied.
+- [SillyTavern](https://github.com/SillyTavern/SillyTavern) and
+  [oh-story-claudecode](https://github.com/worldwonderer/oh-story-claudecode) -
+  also acknowledged by OpenFic, whose approach informed this plugin.
+
+## Privacy and behavior disclosure
+
+The plugin makes no calls to third-party services, runs no shell commands or
+background processes, stores no credentials and sends no telemetry. What it does
+touch on disk:
+
+- **Your Obsidian vault**: reads project records; writes only what you approve
+  or confirm, and "deleted" records move to `<Vault>/.story-trash/`, never erased.
+- **Hermes home** (`plugin-data/story-construction/`): session bindings,
+  proposals and undo history.
+- **Hermes `config.yaml`**: the setup step writes only this plugin's own
+  settings keys (selected Profile, vault path).
+- **A workspace folder per project** (`<terminal.cwd>/story/<project id>/` or
+  `<Profile home>/story-workspaces/<project id>/`) so sessions group under a
+  Hermes project.
+- **Local Dashboard API** under `/api/plugins/story-construction/`, used only
+  by the Desktop half.
+
+License: Apache License 2.0.
+
+---
+
+# Technical reference
 
 This unified plugin provides the backend and native Desktop halves of the story
 construction workspace. The Desktop half contributes a project-first page in
@@ -9,18 +92,17 @@ writes the Vault.
 
 ## Install and configure
 
-The plugin installs as a Git repository subdirectory into two places: the
+The plugin installs from this repository into two places: the
 default home hosts the Dashboard API half, and each writing Profile hosts its
-Agent half. Both installs are full copies of the same subdirectory, because each
+Agent half. Both installs are full copies of the same repository, because each
 half needs the `story_construction_plugin/` package: the Dashboard API loads it
 from the default home as its backend library, and the Gateway loads it from the
 Profile to register the Story tools. If the writing Profile is `default`, one
-install serves both halves. The Git installer must support subdirectory
-installs.
+install serves both halves.
 
 ```text
-hermes -p default plugins install <owner>/hermes-agent-story-construction-plugin/story-construction-plugin --enable
-hermes -p writer plugins install <owner>/hermes-agent-story-construction-plugin/story-construction-plugin --enable
+hermes -p default plugins install mzyas/hermes-agent-story-construction-plugin --enable
+hermes -p writer plugins install mzyas/hermes-agent-story-construction-plugin --enable
 ```
 
 The two copies must be identical. Selecting or resolving a writing Profile is
@@ -51,7 +133,7 @@ Update both copies every time, then restart the Dashboard:
 4. Start a new chat session so it is built with the updated tools.
 
 `hermes plugins update` exists in the Hermes CLI, but it has not been run against
-a subdirectory install of this plugin; if it fails or reports nothing to update,
+an install of this plugin; if it fails or reports nothing to update,
 reinstall with the install command instead.
 
 Updating only one copy makes the next status call return `version_mismatch`
@@ -119,7 +201,7 @@ Verification status:
   `translate_vault_text(value, os_name)` in `tests/test_paths.py` (drive letter
   case, trailing slashes, `E:` alone, `/mnt/ee` and `/mnt/wsl` not read as
   drives, spaces and non-ASCII, `E:foo`, backslashes in a POSIX path left alone),
-  and the full suite (226 passed, 1 skipped) on Windows, including the code-drift
+  and the full suite (538 passed, 1 skipped) on Windows, including the code-drift
   check between the two installed copies (setup and per-request paths, missing
   and unreadable packages, digest caching) and a `/mnt/<drive>/...` Vault path
   stored in config being accepted by `resolve_story_target` and the runtime.
