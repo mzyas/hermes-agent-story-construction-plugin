@@ -33,7 +33,23 @@ not something it has been tested for.
 - **Plain files**: everything is Markdown in your vault, so you keep full
   ownership and can use Obsidian alongside it.
 
-<!-- Screenshots: planned for the next release (docs/images/). -->
+## Screenshots
+
+**Project workspace**: chapters and notes on the left, the chapter editor in the
+middle, the writing sessions on the right. *Undo the Agent's last write* sits
+beside Save.
+
+![Project workspace](docs/image/workspace.png)
+
+**The Agent proposes, you approve in the chat**: Hermes' own approval prompt
+shows the record and what changes.
+
+![Approval prompt in the chat](docs/image/chat-approval.png)
+
+**Read the diff**: the Story panel shows each proposed change with the
+differences highlighted. Approval itself happens in the chat.
+
+![Proposal diff in the Story panel](docs/image/proposal-diff.png)
 
 ## Quick start
 
