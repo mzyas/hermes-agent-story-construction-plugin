@@ -558,7 +558,9 @@ entries and notes**; each proposal targets one of them (`target_type`:
    *In the chat* (the usual way): right after proposing, the Agent calls
    `story.apply_edit`, and Hermes asks you to approve it in the conversation, the
    same prompt as any other tool, showing the record and what changes. Declining
-   writes nothing. *In the Story panel*: approve some of the edits or edit the
+   writes nothing. If nobody answers, the prompt times out and nothing is written
+   either; the proposal stays open, so approve it in the Story panel instead (the
+   fallback below) or ask the Agent to propose it again. *In the Story panel*: approve some of the edits or edit the
    text by hand; the Desktop then sends the session a fixed message asking it to
    call `story.apply_edit`, and no second prompt appears. If that message cannot
    be delivered the panel says so and the approval stands.

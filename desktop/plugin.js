@@ -109,6 +109,7 @@ const en = {
     renameHint: 'Only the name changes. The text stays as it is.',
     deleteHint: 'The record is moved to the Vault trash folder, not erased. You can undo it from here afterwards.',
     approveAction: 'Approve',
+    chatFallbackHint: 'You can also approve this in the chat. If that prompt times out, approve it here and the Agent will be asked to write it.',
     kind: { chapter: 'chapter', character: 'character', world_entry: 'world entry', note: 'note' },
     close: 'Close',
     approve: 'Approve selected changes',
@@ -335,6 +336,7 @@ const zh = {
     renameHint: '只改名字，正文不变。',
     deleteHint: '这条记录会被移到资料库的回收目录，不会被彻底删除，之后可以在这里撤销。',
     approveAction: '批准',
+    chatFallbackHint: '也可以在聊天里直接批准。如果聊天里的提示超时了，在这里批准即可，并会请助手写入。',
     kind: { chapter: '章节', character: '角色', world_entry: '世界设定条目', note: '笔记' },
     close: '关闭',
     approve: '批准所选修改',
@@ -2242,6 +2244,7 @@ export function ProposalReview({ proposal, projectId, profile, connectionId, dra
             ]
           }),
       note ? jsx('div', { className: 'text-xs text-(--ui-text-secondary)', role: 'status', children: t(note.key, ...note.args) }) : null,
+      approved ? null : jsx('div', { className: 'text-xs text-(--ui-text-tertiary)', children: t('proposal.chatFallbackHint') }),
       jsxs('div', {
         className: 'flex flex-wrap gap-2',
         children: [

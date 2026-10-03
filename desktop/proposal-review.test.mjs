@@ -311,6 +311,17 @@ test('discarding and withdrawing call their own endpoints', async () => {
 })
 
 
+test('a waiting proposal says it can also be approved in the chat, and an approved one does not', () => {
+  const soon = new Date(Date.now() + 60_000).toISOString()
+
+  assert.match(textOf(review()), /proposal\.chatFallbackHint/)
+  assert.doesNotMatch(
+    textOf(review({ status: 'approved', approval: { mode: 'edits', selected: [0], expires_at: soon } })),
+    /proposal\.chatFallbackHint/
+  )
+})
+
+
 // ------------------------------------------------ characters, entries and notes
 const character = {
   ...proposal,
