@@ -159,6 +159,24 @@ def test_the_prompt_is_in_english_for_an_english_record(env) -> None:
     assert message.splitlines()[0] == "New note: Idea" and "+ A bell stops." in message
 
 
+def test_default_chinese_titles_do_not_turn_an_english_prompt_chinese(env) -> None:
+    proposal = {
+        "kind": "edit", "target_type": "chapter", "target_title": "第一章",
+        "result_text": "The lamp burned all night.",
+    }
+
+    message = gate.approval_message(proposal, gate.NORMAL)
+
+    assert message.splitlines()[0] == "Edit chapter: 第一章"
+    assert message.splitlines()[-1] == "The full diff is in the Story panel."
+
+
+def test_a_rename_with_no_text_follows_the_language_of_the_titles(env) -> None:
+    proposal = {"kind": "rename", "target_type": "chapter", "target_title": "第一章", "new_title": "雨夜"}
+
+    assert gate.approval_message(proposal, gate.NORMAL).splitlines()[0] == "重命名章节「第一章」→「雨夜」"
+
+
 def test_a_risky_prompt_leads_with_the_warning_and_a_long_diff_is_cut(env) -> None:
     regions = [{"old": f"旧{i}", "new": f"新{i}", "inline": []} for i in range(10)]
     proposal = {

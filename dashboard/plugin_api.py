@@ -85,10 +85,11 @@ def create_project(body: dict[str, Any]) -> dict[str, Any]:
     _required_body(body, "connection_id")
     name = _required_body(body, "name")
     slug = _optional_body(body, "slug")
+    locale = _optional_body(body, "locale")
     try:
         state.permissions.require_profile(profile)
         with _selected_target_guard(state):
-            tree = state.repository.create_project(name, slug=slug)
+            tree = state.repository.create_project(name, slug=slug, locale=locale)
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=_permission_detail(exc)) from exc
     except _component(runtime, "repository").ProjectAlreadyExistsError as exc:

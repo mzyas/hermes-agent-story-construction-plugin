@@ -11,6 +11,8 @@ const en = {
   },
   workspace: {
     title: 'Story Construction',
+    // Sent with a new project so its starter titles match the UI language.
+    localeCode: 'en',
     scope: (connectionId, profile) => `(${connectionId}, ${profile})`,
     loadingProjects: 'Loading projects…',
     projectsUnavailable: 'Could not load projects. Check the Story service and try again.',
@@ -236,6 +238,7 @@ const zh = {
   },
   workspace: {
     title: '故事构建',
+    localeCode: 'zh',
     scope: (connectionId, profile) => `(${connectionId}, ${profile})`,
     loadingProjects: '正在加载项目…',
     projectsUnavailable: '无法加载项目，请检查故事服务后重试。',
@@ -2706,7 +2709,8 @@ function NewProjectDialog({ profile, connectionId, ready, onCreated, onClose, ge
     void createStoryProject({
       ...normalized,
       profile,
-      connection_id: connectionId
+      connection_id: connectionId,
+      locale: t('workspace.localeCode')
     })
       .then(async created => {
         const projectId = requiredSessionId(created?.tree?.project?.id, 'created project')

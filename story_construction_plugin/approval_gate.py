@@ -121,7 +121,11 @@ def approval_message(proposal: Mapping[str, Any], risk: Risk) -> str:
     title = str(proposal.get("target_title") or proposal.get("chapter_title") or proposal.get("title") or "")
     result = str(proposal.get("result_text") or "")
     new_title = str(proposal.get("new_title") or "")
-    zh = bool(_CJK.search(title + result + new_title))
+    # The prompt follows the language of the text being written. Titles alone do
+    # not decide it: a project's default titles ("第一章") must not turn the prompt
+    # Chinese for an English story. Only a change with no text (rename, delete)
+    # falls back to the titles.
+    zh = bool(_CJK.search(result if result.strip() else title + new_title))
     kind = str(proposal.get("target_type") or "chapter")
     action = str(proposal.get("kind") or "")
     is_new = action.startswith("new_")

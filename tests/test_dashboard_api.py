@@ -46,7 +46,7 @@ class FakeRepository:
         self.trashed: list[str] = []
         self._created_projects: dict[str, object] = {}
 
-    def create_project(self, name, *, slug=None):
+    def create_project(self, name, *, slug=None, locale=None):
         repository = self._repository_module
         project_id = repository.normalize_project_slug(name, slug)
         if project_id == self.project.id or project_id in self._created_projects:
@@ -1103,10 +1103,10 @@ def test_switch_cannot_commit_while_create_holds_guard(prepared_homes, monkeypat
     release = threading.Event()
     create_project = repository.create_project
 
-    def slow_create(name, *, slug=None):
+    def slow_create(name, *, slug=None, locale=None):
         inside.set()
         assert release.wait(timeout=10)
-        return create_project(name, slug=slug)
+        return create_project(name, slug=slug, locale=locale)
 
     repository.create_project = slow_create
     monkeypatch.setattr(

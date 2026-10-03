@@ -51,6 +51,14 @@ class _Document:
 TRASH_DIRECTORY = ".story-trash"
 
 
+# Titles of the records a new project starts with, by the language of the UI
+# that created it. Anything that does not say "zh" gets English.
+_DEFAULT_TITLES = {
+    "en": {"world": "World Info", "volume": "Volume 1", "chapter": "Chapter 1"},
+    "zh": {"world": "世界设定", "volume": "第一卷", "chapter": "第一章"},
+}
+
+
 class ObsidianProjectRepository:
     """Read and write stable-id Markdown records below one configured Vault."""
 
@@ -63,12 +71,15 @@ class ObsidianProjectRepository:
         self._create_lock = threading.Lock()
         self._records_cache: tuple[tuple[Any, ...], dict[str, tuple[Any, ...]]] | None = None
 
-    def create_project(self, name: str, *, slug: str | None = None) -> ProjectTree:
+    def create_project(
+        self, name: str, *, slug: str | None = None, locale: str | None = None,
+    ) -> ProjectTree:
         project_slug = normalize_project_slug(name, slug)
         final_root = (self.vault_root / project_slug).resolve()
         if self.vault_root not in final_root.parents or final_root.exists():
             raise ProjectAlreadyExistsError(f"project {project_slug!r} already exists")
 
+        titles = _DEFAULT_TITLES["zh" if str(locale or "").lower().startswith("zh") else "en"]
         project_id = project_slug
         world_id = f"{project_id}:world"
         volume_id = f"{project_id}:volume-1"
@@ -96,16 +107,16 @@ class ObsidianProjectRepository:
                 "world_info_id": world_id,
             })
             _write_story_document(staging_root / "world" / "world.md", {
-                "type": "world_info", "id": world_id, "name": "世界设定",
+                "type": "world_info", "id": world_id, "name": titles["world"],
                 "project_id": project_id,
             })
             _write_story_document(staging_root / "volumes" / "volume-001.md", {
                 "type": "volume", "id": volume_id, "project_id": project_id,
-                "title": "第一卷",
+                "title": titles["volume"],
             })
             _write_story_document(staging_root / "chapters" / "chapter-001.md", {
                 "type": "chapter", "id": chapter_id, "project_id": project_id,
-                "volume_id": volume_id, "title": "第一章",
+                "volume_id": volume_id, "title": titles["chapter"],
             })
             tree = ObsidianProjectRepository(staging_parent).get_project(project_id)
             try:

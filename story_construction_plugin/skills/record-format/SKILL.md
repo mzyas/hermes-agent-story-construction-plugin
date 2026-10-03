@@ -22,7 +22,9 @@ Read this before writing the text of a proposal: `new_text` and `content` in
 
 ## Match what is already there
 
-- Write in the language of the project and keep the layout, headings and voice
+- Write in the language the person is writing in and the project's existing
+  text uses. A new project's default titles ("第一章", "Chapter 1") say nothing
+  about the language of the story. Keep the layout, headings and voice
   of the existing records of the same kind. When unsure, read one first
   (`story.get_record`, or `story.get_chapter`).
 - A chapter is story prose only. A character, a world entry or a note is the

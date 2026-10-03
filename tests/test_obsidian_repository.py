@@ -62,8 +62,8 @@ def test_create_project_initializes_readable_minimum_tree(tmp_path: Path) -> Non
     assert tree.project.name == "星海纪事"
     assert tree.world_info is not None
     assert tree.world_info.project_id == tree.project.id
-    assert [row.title for row in tree.volumes] == ["第一卷"]
-    assert [row.title for row in tree.chapters] == ["第一章"]
+    assert [row.title for row in tree.volumes] == ["Volume 1"]
+    assert [row.title for row in tree.chapters] == ["Chapter 1"]
     assert tree.chapters[0].content == ""
     assert (tmp_path / "星海-纪事" / "project.md").is_file()
     assert (tmp_path / "星海-纪事" / "world" / "world.md").is_file()
@@ -73,6 +73,20 @@ def test_create_project_initializes_readable_minimum_tree(tmp_path: Path) -> Non
     chapter_path = tmp_path / "星海-纪事" / "chapters" / "chapter-001.md"
     assert chapter_path.is_file()
     assert not chapter_path.read_bytes().startswith(b"\xef\xbb\xbf")
+
+
+def test_a_project_starts_with_titles_in_the_language_it_was_created_in(tmp_path: Path) -> None:
+    repository = ObsidianProjectRepository(tmp_path)
+
+    chinese = repository.create_project("星海", slug="xinghai", locale="zh-CN")
+    english = repository.create_project("Sea", locale="en")
+    unspecified = repository.create_project("Plain")
+
+    assert [row.title for row in chinese.volumes] == ["第一卷"]
+    assert [row.title for row in chinese.chapters] == ["第一章"]
+    assert chinese.world_info is not None and chinese.world_info.name == "世界设定"
+    assert [row.title for row in english.chapters] == ["Chapter 1"]
+    assert [row.title for row in unspecified.chapters] == ["Chapter 1"]
 
 
 def test_create_project_rejects_existing_project_id_before_publish(tmp_path: Path) -> None:
@@ -167,7 +181,7 @@ def test_concurrent_same_slug_leaves_one_complete_project(tmp_path: Path) -> Non
         results = list(pool.map(lambda _: create(), range(2)))
 
     assert sorted(results) == ["exists", "novel"]
-    assert repository.get_project("novel").chapters[0].title == "第一章"
+    assert repository.get_project("novel").chapters[0].title == "Chapter 1"
     assert list(tmp_path.glob(".story-create-*")) == []
 
 
@@ -204,7 +218,7 @@ def test_concurrent_create_ignores_unpublished_staging_tree(
             release_loser.set()
         loser_result = loser.result(timeout=5)
 
-    assert winner_result == "第一章"
+    assert winner_result == "Chapter 1"
     assert loser_result == "exists"
 
 
