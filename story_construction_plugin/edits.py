@@ -381,7 +381,7 @@ def _inline(old: str, new: str) -> list[dict[str, str]]:
     new_words = _TOKEN.findall(new)
     matcher = difflib.SequenceMatcher(None, old_words, new_words, autojunk=False)
     parts: list[dict[str, str]] = []
-    for tag, a1, a2, b1, b2 in matcher.get_opcodes():
+    for tag, a1, a2, b1, b2 in _merge_across_blanks(matcher.get_opcodes(), old_words):
         if tag == "equal":
             parts.append({"op": "equal", "text": "".join(old_words[a1:a2])})
             continue
@@ -390,3 +390,27 @@ def _inline(old: str, new: str) -> list[dict[str, str]]:
         if b2 > b1:
             parts.append({"op": "insert", "text": "".join(new_words[b1:b2])})
     return parts
+
+
+def _merge_across_blanks(
+    spans: list[tuple[str, int, int, int, int]], old_words: list[str]
+) -> list[tuple[str, int, int, int, int]]:
+    """Join changes that only a blank sits between, so a phrase reads as one change.
+
+    Without this a rewritten phrase alternates old and new words, because the
+    spaces between them match each other.
+    """
+
+    merged: list[tuple[str, int, int, int, int]] = []
+    for index, span in enumerate(spans):
+        tag, a1, a2, b1, b2 = span
+        last = merged[-1] if merged else None
+        if tag == "equal" and last and last[0] != "equal" and 0 < index < len(spans) - 1:
+            blank = all(word.isspace() for word in old_words[a1:a2])
+            if blank and spans[index + 1][0] != "equal":
+                tag = "replace"
+        if tag != "equal" and last and last[0] != "equal":
+            merged[-1] = ("replace", last[1], a2, last[3], b2)
+        else:
+            merged.append((tag, a1, a2, b1, b2))
+    return merged

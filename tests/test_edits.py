@@ -212,6 +212,21 @@ def test_the_inline_change_of_english_text_is_by_word() -> None:
     assert old == preview["regions"][0]["old"] and new == preview["regions"][0]["new"]
 
 
+def test_a_rewritten_phrase_is_one_change_not_alternating_words() -> None:
+    edits = parse_edits([{
+        "op": "replace", "old_text": "soaked to the bone. He was shielding",
+        "new_text": "rain streaming from his hair and sleeves. He was holding",
+    }])
+
+    (preview,) = build_previews("On the step stood a young man, soaked to the bone. He was shielding a bundle.\n", edits)
+    inline = preview["regions"][0]["inline"]
+
+    assert [(part["op"], part["text"]) for part in inline if part["op"] != "equal"] == [
+        ("delete", "soaked to the bone"), ("insert", "rain streaming from his hair and sleeves"),
+        ("delete", "shielding"), ("insert", "holding"),
+    ]
+
+
 def test_each_chinese_character_is_still_its_own_unit() -> None:
     edits = parse_edits([{"op": "replace", "old_text": "雨下得很大", "new_text": "雨下得很急"}])
 
