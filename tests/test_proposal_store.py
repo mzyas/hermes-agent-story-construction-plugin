@@ -142,6 +142,29 @@ def test_forgetting_a_project_closes_its_open_proposals(store) -> None:
     assert store.get(other["id"])["status"] == "pending"
 
 
+def test_forgetting_a_project_also_clears_its_write_log(store) -> None:
+    written = store.create(_proposal())
+    store.mark_applied(written["id"], {"version_after": "v2"})
+    other = store.create(_proposal(project_id="other"))
+    store.mark_applied(other["id"], {"version_after": "v2"})
+
+    store.forget_project("novel")
+
+    assert store.recent_applied(project_id="novel") == []
+    assert [row["id"] for row in store.recent_applied(project_id="other")] == [other["id"]]
+
+
+def test_forgetting_a_project_removes_its_snapshots_only(tmp_path: Path) -> None:
+    history = ChapterHistory(tmp_path / "history")
+    gone = history.save(project_id="novel", target_id="novel:chapter-1", text="old", version="v1", proposal_id="p1")
+    kept = history.save(project_id="other", target_id="other:chapter-1", text="keep", version="v1", proposal_id="p2")
+
+    history.forget_project("novel")
+
+    assert history.load(project_id="novel", target_id="novel:chapter-1", snapshot_id=gone) is None
+    assert history.load(project_id="other", target_id="other:chapter-1", snapshot_id=kept)["text"] == "keep"
+
+
 def test_finished_proposals_are_pruned_after_a_week(store, clock) -> None:
     old = store.create(_proposal())
     store.discard(old["id"])

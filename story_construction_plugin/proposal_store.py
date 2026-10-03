@@ -11,6 +11,7 @@ import json
 import os
 import re
 import secrets
+import shutil
 from collections.abc import Callable, Mapping
 from contextlib import suppress
 from datetime import datetime, timedelta, timezone
@@ -177,19 +178,29 @@ class ProposalStore:
         return self.mutate(proposal_id, change)
 
     def forget_project(self, project_id: str) -> int:
-        """Drop every open proposal of a deleted project."""
+        """Close a deleted project's open proposals and drop its finished ones.
+
+        Finished rows go too: a project created later under the same id would
+        otherwise inherit the old project's write log, and its "Undo the
+        Agent's last write" button would name a record that is not there.
+        Returns how many open proposals were closed.
+        """
 
         count = 0
 
         with self._lock, _file_lock(self.path):
             rows = self._load()
+            kept = []
             for row in rows:
-                if row["project_id"] == project_id and row["status"] in OPEN_STATUSES:
+                if row["project_id"] == project_id:
+                    if row["status"] not in OPEN_STATUSES:
+                        continue
                     row["status"] = "discarded"
                     row["approval"] = None
                     count += 1
-            if count:
-                self._persist(rows)
+                kept.append(row)
+            if count or len(kept) != len(rows):
+                self._persist(kept)
         return count
 
     # ------------------------------------------------------------ internals
@@ -323,6 +334,12 @@ class ChapterHistory:
                 with suppress(OSError):
                     stale.unlink()
         return snapshot_id
+
+    def forget_project(self, project_id: str) -> None:
+        """Delete every saved text of a project that no longer exists."""
+
+        with self._lock:
+            shutil.rmtree(self.root / _segment(project_id), ignore_errors=True)
 
     def load(self, *, project_id: str, target_id: str, snapshot_id: str) -> dict[str, Any] | None:
         path = self._folder(project_id, target_id) / f"{_segment(snapshot_id)}.json"

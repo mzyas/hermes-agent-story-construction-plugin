@@ -96,6 +96,9 @@ def create_project(body: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except _component(runtime, "repository").DomainValidationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    # A project that was deleted earlier under this id may have left its write
+    # log and undo texts behind (older versions kept them); a new project starts clean.
+    _forget_proposals(runtime, state, tree.project.id)
     return {"tree": _tree_payload(tree)}
 
 
@@ -633,7 +636,9 @@ def _forget_proposals(runtime: Any, state: Any, project_id: str) -> int:
 
     try:
         service = _component(runtime, "runtime").proposal_service_for(state)
-        return service.store.forget_project(project_id)
+        closed = service.store.forget_project(project_id)
+        service.history.forget_project(project_id)
+        return closed
     except Exception:
         return 0
 

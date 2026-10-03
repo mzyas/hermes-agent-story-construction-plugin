@@ -174,6 +174,30 @@ def test_deleting_a_project_closes_its_open_proposals(api) -> None:
     assert api.service().store.get(proposal_id)["status"] == "discarded"
 
 
+def test_a_deleted_projects_write_log_does_not_follow_a_new_project_with_its_id(api) -> None:
+    proposal_id = api.propose()
+    api.approve(proposal_id)
+    api.service().apply(project_id="novel", proposal_id=proposal_id, **SCOPE)
+    assert len(api.module.list_agent_writes("novel", **SCOPE)["writes"]) == 1
+
+    api.module.delete_project("novel", **SCOPE, confirm_name="Novel")
+
+    assert api.service().store.recent_applied(project_id="novel") == []
+    assert not list((api.service().history.root).glob("novel/**/*.json"))
+
+
+def test_creating_a_project_clears_a_write_log_an_older_version_left_behind(api) -> None:
+    proposal_id = api.propose()
+    api.approve(proposal_id)
+    api.service().apply(project_id="novel", proposal_id=proposal_id, **SCOPE)
+    api.repo.trash_project("novel")  # as before: the project goes, its write log stays
+    assert api.service().store.recent_applied(project_id="novel")
+
+    api.module.create_project({**SCOPE, "name": "Novel", "slug": "novel"})
+
+    assert api.service().store.recent_applied(project_id="novel") == []
+
+
 # ------------------------------------------------- characters, entries and notes
 CHARACTER_EDIT = {"op": "replace", "old_text": "少年", "new_text": "青年"}
 
