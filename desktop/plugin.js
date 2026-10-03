@@ -147,7 +147,7 @@ const en = {
     noSessions: 'No writing sessions for this project',
     newWritingSession: 'New writing session',
     continueSession: 'Continue',
-    openBeside: 'Open beside this page',
+    focusLatest: 'Go to latest session',
     retryFirstTask: 'Retry first task',
     removeStaleBinding: 'Remove stale binding',
     currentSession: 'Current session',
@@ -357,7 +357,7 @@ const zh = {
     noSessions: '此项目还没有写作会话',
     newWritingSession: '新建写作会话',
     continueSession: '继续',
-    openBeside: '并排打开最近会话',
+    focusLatest: '切到最近会话',
     retryFirstTask: '重试首次任务',
     removeStaleBinding: '移除失效绑定',
     currentSession: '当前会话',
@@ -628,32 +628,6 @@ export function projectSessionRows(data) {
   return rows.sort((left, right) => String(right.updated_at || '').localeCompare(String(left.updated_at || '')))
 }
 
-// Projects whose bound session was already put beside the page during the
-// current visit. A tile the person closes stays closed until they leave the
-// project and come back, or ask for it again.
-const sideBySideOpened = new Set()
-
-export function sideBySideKey({ profile, connectionId, projectId } = {}) {
-  return [profile, connectionId, projectId].map(value => value || '').join(':')
-}
-
-// Which bound session, if any, should open beside the project page on entry.
-// None when it already did, when a bound session is on screen, or while the
-// panel is busy creating/opening one.
-export function sideBySideTarget({ rows, focusedBound, key, busy = false, opened = sideBySideOpened } = {}) {
-  if (busy || focusedBound || !key || opened.has(key)) return null
-  const list = Array.isArray(rows) ? rows : []
-  return list.find(row => row?.stored_session_id) || null
-}
-
-export function markSideBySideOpened(key, opened = sideBySideOpened) {
-  if (key) opened.add(key)
-}
-
-export function forgetSideBySideOpened(key, opened = sideBySideOpened) {
-  opened.delete(key)
-}
-
 export function resetWorkspaceScope(previous, next) {
   const oldScope = [previous?.profile, previous?.connectionId, previous?.sessionId, previous?.projectId].map(value => value || '').join(':')
   const newScope = [next?.profile, next?.connectionId, next?.sessionId, next?.projectId].map(value => value || '').join(':')
@@ -748,8 +722,10 @@ function currentStoryConnectionId() {
   }
 }
 
-// A Story session opens as a tab beside the project page. 'in-place' would load
-// it into the main area, which is where this page lives, and push the page out.
+// Story sessions open with the 'tab' intent. A session already on screen (for
+// example a tile the person dragged to the side) is only focused, so the page
+// keeps its place. One that is not on screen opens as a tab in the centre zone
+// and covers the page: Hermes gives plugins no way to dock a session to a side.
 export const STORY_SIDE_INTENT = 'tab'
 
 export function storySessionOpenOptions(route, profile, connectionId = currentStoryConnectionId(), intent = 'in-place') {
@@ -757,7 +733,7 @@ export function storySessionOpenOptions(route, profile, connectionId = currentSt
   // bare profile does the same unless keepAllProfilesScope is false. For the
   // connection the user is already on, open by profile and keep the sidebar
   // scoped to it. Only another connection needs the route to be reachable.
-  // A tab beside the page may be a session nobody has written in yet; there is
+  // A tab may be a session nobody has written in yet; there is
   // no history to wait for, and waiting would only time out.
   const base = { intent, awaitHydration: true, expectHistory: intent === 'in-place', forceResume: true }
   const routeConnectionId = typeof route?.connectionId === 'string' ? route.connectionId.trim() : ''
@@ -3053,22 +3029,6 @@ function ProjectSessionsPanel({ profile, connectionId, project, sessionId }) {
   const nameOf = id => storySessionName(id, { titles, bindings: sessions }) || t('agent.untitledSession')
   const focusedBound = Boolean(sessionId && sessions.some(row => row.stored_session_id === sessionId))
   const selectedCount = Object.keys(selectedIds).length
-  const sideKey = sideBySideKey({ profile, connectionId, projectId: project?.id })
-
-  // Entering a project puts its latest bound session beside the page, once.
-  // Failures stay quiet: the Continue buttons below report them when asked.
-  useEffect(() => {
-    if (!sessionsQuery.isSuccess || !project?.id) return
-    const target = sideBySideTarget({ rows: sessions, focusedBound, key: sideKey, busy: creatingSession })
-    if (!target) return
-    markSideBySideOpened(sideKey)
-    void continueStoryProjectSession({ binding: target, profile, connectionId, intent: STORY_SIDE_INTENT }).catch(
-      () => undefined
-    )
-  }, [sessionsQuery.isSuccess, sideKey, sessions.length, focusedBound, creatingSession])
-
-  // Leaving the project ends the visit, so coming back opens the tab again.
-  useEffect(() => () => forgetSideBySideOpened(sideKey), [sideKey])
 
   useEffect(() => {
     setBindingState(null)
@@ -3157,7 +3117,6 @@ function ProjectSessionsPanel({ profile, connectionId, project, sessionId }) {
       intent: STORY_SIDE_INTENT
     })
       .then(result => {
-        markSideBySideOpened(sideKey)
         setStage('ready')
         if (result?.workspaceIssue) {
           setSessionState({
@@ -3203,7 +3162,6 @@ function ProjectSessionsPanel({ profile, connectionId, project, sessionId }) {
           setSessionState({ key: 'agent.staleBinding', args: [] })
           return
         }
-        markSideBySideOpened(sideKey)
         setStage('ready')
       })
       .catch(error => setSessionState({ key: 'agent.continueFailed', args: [error.message] }))
@@ -3271,7 +3229,7 @@ function ProjectSessionsPanel({ profile, connectionId, project, sessionId }) {
             disabled: creatingSession,
             onClick: () => continueSession(sessions[0]),
             type: 'button',
-            children: t('agent.openBeside')
+            children: t('agent.focusLatest')
           })
         : null,
       jsx('div', { className: 'font-medium', children: t('agent.sessions') }),

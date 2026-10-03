@@ -263,7 +263,7 @@ Create project → initialize Obsidian skeleton → create and bind Hermes sessi
 Project creation does not require a focused chat. The backend initializes the
 Obsidian project, world, first volume, and first chapter; “New writing session”
 then creates a Hermes session that follows the locked Profile configuration,
-binds it on the backend, and opens it as an empty chat tab beside the project page. No first task is
+binds it on the backend, and opens it as an empty chat. No first task is
 sent. The Agent judges from the user's own words whether they want story work
 or just a chat; for story work it calls `story.get_session_project`, which
 returns the project bound to that session (the model cannot name another
@@ -282,14 +282,15 @@ ticking “Also permanently delete the session itself” calls Hermes
 `session.delete` and then removes the binding. The session currently open
 cannot be permanently deleted, because Hermes refuses it.
 
-Sessions open beside the project page, not in place of it. “New writing
-session”, “Continue” and “Open beside this page” open the bound session as a
-Hermes tab (`intent: 'tab'`), so the page keeps the main area and the chat sits
-next to it. Entering a project also opens its most recent bound session this
-way, once per visit; a tab you close stays closed until you leave the project
-and come back, or ask for it again. Clicking an unrelated session in the Hermes sidebar still loads
-it into the main area and replaces the page, because the plugin cannot
-intercept that; click the Story entry to bring the page back.
+Story sessions open with Hermes' `tab` intent. A session that is already on
+screen is only focused, so the project page keeps its place; one that is not
+opens as a tab in the centre zone and covers the page. Hermes gives plugins no
+way to dock a session to the side, so a lasting side-by-side layout is something
+you set up yourself: drag the session tab to the right edge once. Hermes
+remembers that layout, and “New writing session”, “Continue” and “Go to latest
+session” then focus that tile instead of covering the page. Clicking an
+unrelated session in the Hermes sidebar still loads it into the main area and
+replaces the page; click the Story entry to bring the page back.
 
 ### Hermes projects and workspace folders
 

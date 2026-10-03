@@ -46,17 +46,13 @@ const {
   switchStorySession,
   continueStoryProjectSession,
   createStoryWritingSession,
-  retryStoryKickoff,
-  sideBySideKey,
-  sideBySideTarget,
-  markSideBySideOpened,
-  forgetSideBySideOpened
+  retryStoryKickoff
 } = await import(dataModule(rewriteDesktopImports(source)))
 
 const localRoute = { connectionId: 'local', mode: 'local', profile: 'writer', targetProfile: 'writer' }
 const profileRoutes = async () => [localRoute]
 
-test('Story sessions open as a tab beside the page, not in the main area', () => {
+test('Story sessions open with the tab intent, which focuses a session already on screen', () => {
   assert.equal(STORY_SIDE_INTENT, 'tab')
   assert.equal(storySessionOpenOptions(localRoute, 'writer', 'local').intent, 'in-place')
   assert.equal(storySessionOpenOptions(localRoute, 'writer', 'local', STORY_SIDE_INTENT).intent, 'tab')
@@ -137,38 +133,4 @@ test('retrying the kickoff opens with the requested intent', async () => {
   await retryStoryKickoff({ ...deps, intent: 'tab' })
 
   assert.deepEqual(opened.map(entry => entry[1].intent), ['in-place', 'tab'])
-})
-
-test('the latest bound session opens beside the page once per project', () => {
-  const rows = [{ stored_session_id: 'new' }, { stored_session_id: 'old' }]
-  const opened = new Set()
-  const key = sideBySideKey({ profile: 'writer', connectionId: 'local', projectId: 'novel' })
-
-  assert.equal(key, 'writer:local:novel')
-  assert.equal(sideBySideTarget({ rows, focusedBound: false, key, opened }).stored_session_id, 'new')
-  markSideBySideOpened(key, opened)
-  assert.equal(sideBySideTarget({ rows, focusedBound: false, key, opened }), null)
-  assert.equal(sideBySideTarget({ rows, focusedBound: false, key: 'writer:local:other', opened }).stored_session_id, 'new')
-})
-
-test('leaving a project lets the next visit open the session again', () => {
-  const rows = [{ stored_session_id: 'a' }]
-  const opened = new Set()
-  const key = 'writer:local:novel'
-
-  markSideBySideOpened(key, opened)
-  forgetSideBySideOpened(key, opened)
-
-  assert.equal(sideBySideTarget({ rows, focusedBound: false, key, opened }).stored_session_id, 'a')
-})
-
-test('nothing opens when a bound session is on screen, while busy, or with no sessions', () => {
-  const rows = [{ stored_session_id: 'a' }]
-  const key = 'writer:local:novel'
-
-  assert.equal(sideBySideTarget({ rows, focusedBound: true, key, opened: new Set() }), null)
-  assert.equal(sideBySideTarget({ rows, focusedBound: false, key, busy: true, opened: new Set() }), null)
-  assert.equal(sideBySideTarget({ rows: [], focusedBound: false, key, opened: new Set() }), null)
-  assert.equal(sideBySideTarget({ rows: undefined, focusedBound: false, key, opened: new Set() }), null)
-  assert.equal(sideBySideTarget({ rows, focusedBound: false, key: '', opened: new Set() }), null)
 })
