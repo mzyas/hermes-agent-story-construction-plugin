@@ -274,3 +274,71 @@ def test_a_needle_of_only_blanks_never_matches_by_folding() -> None:
         _apply([{"op": "replace", "old_text": "　", "new_text": "x"}], base="甲乙")
 
     assert error.value.code == "edit_not_found"
+
+
+# ----------------------------------------------------------- previews of long texts
+def _long_text(paragraphs: int, tag: str = "") -> str:
+    return "\n\n".join(f"{tag}第{i}段：" + "雨" * 40 + f"{i}" for i in range(paragraphs))
+
+
+def _rebuilt(region: dict) -> tuple[str, str]:
+    old = "".join(part["text"] for part in region["inline"] if part["op"] in ("equal", "delete"))
+    new = "".join(part["text"] for part in region["inline"] if part["op"] in ("equal", "insert"))
+    return old, new
+
+
+def test_a_small_change_in_a_long_text_is_one_region_at_the_right_line() -> None:
+    base = _long_text(3000)
+    (preview,) = build_previews(base, [Edit(op="replace", old_text="第1500段：", new_text="第一千五百段：")])
+
+    (region,) = preview["regions"]
+    assert region["line"] == 1500 * 2 + 1
+    assert region["old"].startswith("第1500段：") and region["new"].startswith("第一千五百段：")
+    assert _rebuilt(region) == (region["old"], region["new"])
+
+
+def test_the_cut_off_head_and_tail_do_not_move_line_numbers_or_merge_regions() -> None:
+    base = "甲\n乙\n丙\n丁\n戊\n己\n庚"
+    edits = [
+        Edit(op="replace", old_text="乙", new_text="乙乙"),
+        Edit(op="replace", old_text="己", new_text="己己"),
+    ]
+
+    first, second = build_previews(base, edits)
+
+    assert [(r["line"], r["old"], r["new"]) for r in first["regions"]] == [(2, "乙", "乙乙")]
+    assert [(r["line"], r["old"], r["new"]) for r in second["regions"]] == [(6, "己", "己己")]
+
+
+def test_two_separate_changes_in_one_edit_stay_two_regions() -> None:
+    base = "一\n二\n三\n四\n五\n六\n七"
+    after = base.replace("二", "2").replace("六", "6")
+
+    (preview,) = build_previews(base, [Edit(op="rewrite", content=after)])
+
+    assert [(r["line"], r["old"], r["new"]) for r in preview["regions"]] == [(2, "二", "2"), (6, "六", "6")]
+
+
+def test_a_rewrite_of_a_very_long_text_is_fast_and_shown_as_one_region() -> None:
+    import time
+
+    base = _long_text(2000)
+    rewritten = _long_text(2000, tag="新")
+
+    started = time.perf_counter()
+    (preview,) = build_previews(base, [Edit(op="rewrite", content=rewritten)])
+    elapsed = time.perf_counter() - started
+
+    (region,) = preview["regions"]
+    assert region["line"] == 1 and region["old"] == base and region["new"] == rewritten
+    assert elapsed < 5, elapsed  # matching every line pair took minutes before the cap
+
+
+def test_unchanged_text_has_no_regions_and_a_pure_insert_keeps_its_line() -> None:
+    base = "甲\n乙\n丙"
+
+    assert build_previews(base, [Edit(op="replace", old_text="乙", new_text="乙")])[0]["regions"] == []
+    (added,) = build_previews(base, [Edit(op="append", new_text="新")])
+    assert [(r["line"], r["old"], r["new"]) for r in added["regions"]] == [(4, "", "\n新")]
+    (inline,) = build_previews(base, [Edit(op="insert_after", anchor_text="乙", new_text="新")])
+    assert [(r["line"], r["old"], r["new"]) for r in inline["regions"]] == [(2, "乙", "乙新")]

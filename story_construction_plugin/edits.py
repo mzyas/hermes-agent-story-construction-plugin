@@ -30,6 +30,10 @@ _FIELDS = {
 _ALLOW_EMPTY = {("replace", "new_text")}
 # A char-level diff is quadratic; past this size the preview falls back to whole paragraphs.
 _INLINE_LIMIT = 4_000_000
+# Matching lines is quadratic in the number of lines that differ, so a rewrite of a
+# whole long chapter would block the Agent's tool call for a minute. Past this many
+# line pairs (after the unchanged head and tail are cut off) one region is shown.
+_LINE_DIFF_LIMIT = 40_000
 
 
 class EditError(ValueError):
@@ -329,17 +333,32 @@ def build_previews(base_text: str, edits: Sequence[Edit]) -> list[dict[str, Any]
 def _regions(before: str, after: str) -> list[dict[str, Any]]:
     old_lines = before.split("\n")
     new_lines = after.split("\n")
-    matcher = difflib.SequenceMatcher(None, old_lines, new_lines, autojunk=False)
+    # The unchanged head and tail are the common case in a long text: cut them off
+    # first, which is linear, and only match what is left.
+    head = 0
+    limit = min(len(old_lines), len(new_lines))
+    while head < limit and old_lines[head] == new_lines[head]:
+        head += 1
+    tail = 0
+    while tail < limit - head and old_lines[-1 - tail] == new_lines[-1 - tail]:
+        tail += 1
+    old_mid = old_lines[head:len(old_lines) - tail]
+    new_mid = new_lines[head:len(new_lines) - tail]
+    if not old_mid and not new_mid:
+        return []
+    if len(old_mid) * len(new_mid) > _LINE_DIFF_LIMIT:
+        spans = [("replace", 0, len(old_mid), 0, len(new_mid))]
+    else:
+        matcher = difflib.SequenceMatcher(None, old_mid, new_mid, autojunk=False)
+        spans = [span for span in matcher.get_opcodes() if span[0] != "equal"]
     regions: list[dict[str, Any]] = []
-    for tag, a1, a2, b1, b2 in matcher.get_opcodes():
-        if tag == "equal":
-            continue
-        old = "\n".join(old_lines[a1:a2])
-        new = "\n".join(new_lines[b1:b2])
+    for _tag, a1, a2, b1, b2 in spans:
+        old = "\n".join(old_mid[a1:a2])
+        new = "\n".join(new_mid[b1:b2])
         regions.append({
             "old": old,
             "new": new,
-            "line": a1 + 1,
+            "line": head + a1 + 1,
             "inline": _inline(old, new),
         })
     return regions
