@@ -450,7 +450,16 @@ entries and notes**; each proposal targets one of them (`target_type`:
    category) is flagged in red in the review, and when written it gets a number
    after it (`林远 (2)`) instead of replacing anything. `story.apply_edit`
    reports the final title. A new note may name an existing category, but the
-   Agent cannot create categories, rename records or delete them.
+   Agent cannot create categories.
+   **Renaming and deleting** — `story.propose_rename` changes only a record's
+   title or name (chapters, characters, world entries, notes; the text, id and
+   file stay). `story.propose_delete` moves a character, world entry or note
+   into the Vault's `.story-trash/records/` folder; nothing is erased, and
+   **Undo** puts it back (it refuses if something now sits where it was). The
+   Agent cannot delete chapters, and reference notes can be neither renamed nor
+   deleted. Both are approved and applied like any other proposal, with nothing
+   to select or edit. A deletion is always “high risk” in the chat prompt, so
+   “always allow” never skips it.
 4. **Body only** — `new_text` / `content` is only the record's text. A wrapping
    code fence is removed, frontmatter is refused, and an introduction
    (“好的…”, “Here is…”), a closing remark (“希望…”, “Let me know…”) or a

@@ -58,11 +58,14 @@ NORMAL = Risk("normal", (), 0, 0)
 def assess_risk(proposal: Mapping[str, Any], base_text: str) -> Risk:
     """How careful the person has to be about this proposal.
 
-    Only edits to an existing record can lose text; a new record is normal.
-    ``removed`` counts the characters the diff deletes (a rewrite deletes what
-    it replaces), so rewriting most of a record is flagged like deleting it.
+    Deleting a record is always high risk. Otherwise only edits to an existing
+    record can lose text; a new record or a new name is normal. ``removed``
+    counts the characters the diff deletes (a rewrite deletes what it
+    replaces), so rewriting most of a record is flagged like deleting it.
     """
 
+    if proposal.get("kind") == "delete":
+        return Risk("high", ("deletes_record",), len(base_text), len(base_text))
     if proposal.get("kind") != "edit":
         return NORMAL
     removed = 0
@@ -117,10 +120,17 @@ def approval_message(proposal: Mapping[str, Any], risk: Risk) -> str:
 
     title = str(proposal.get("target_title") or proposal.get("chapter_title") or proposal.get("title") or "")
     result = str(proposal.get("result_text") or "")
-    zh = bool(_CJK.search(title + result))
+    new_title = str(proposal.get("new_title") or "")
+    zh = bool(_CJK.search(title + result + new_title))
     kind = str(proposal.get("target_type") or "chapter")
-    is_new = str(proposal.get("kind") or "").startswith("new_")
-    if zh:
+    action = str(proposal.get("kind") or "")
+    is_new = action.startswith("new_")
+    if action == "rename":
+        head = f"重命名{_KIND_ZH.get(kind, kind)}「{title}」→「{new_title}」" if zh else (
+            f"Rename {_KIND_EN.get(kind, kind)}: {title} -> {new_title}")
+    elif action == "delete":
+        head = f"删除{_KIND_ZH.get(kind, kind)}「{title}」" if zh else f"Delete {_KIND_EN.get(kind, kind)}: {title}"
+    elif zh:
         head = f"{'新建' if is_new else '修改'}{_KIND_ZH.get(kind, kind)}「{title}」"
     else:
         head = f"{'New' if is_new else 'Edit'} {_KIND_EN.get(kind, kind)}: {title}"
@@ -135,7 +145,12 @@ def approval_message(proposal: Mapping[str, Any], risk: Risk) -> str:
 def _risk_line(risk: Risk, zh: bool) -> str:
     parts = []
     for reason in risk.reasons:
-        if reason == "clears_record":
+        if reason == "deletes_record":
+            parts.append(
+                f"会删除这条记录（约 {risk.total} 字，移入回收站，可撤销）" if zh
+                else f"deletes the record (about {risk.total} characters; moved to the trash, can be undone)"
+            )
+        elif reason == "clears_record":
             parts.append("会清空整条记录" if zh else "clears the whole record")
         elif reason == "large_removal":
             share = round(100 * risk.removed / risk.total) if risk.total else 100
@@ -148,6 +163,8 @@ def _risk_line(risk: Risk, zh: bool) -> str:
 
 
 def _change_lines(proposal: Mapping[str, Any], result: str, is_new: bool, zh: bool) -> list[str]:
+    if proposal.get("kind") in ("rename", "delete"):
+        return []
     if is_new:
         shown = _clip(result, _MAX_NEW_TEXT_CHARS)
         return [f"+ {shown}"] if shown else []

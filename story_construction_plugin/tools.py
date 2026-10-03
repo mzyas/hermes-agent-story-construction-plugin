@@ -20,13 +20,15 @@ SESSION_PROJECT_TOOL = "story.get_session_project"
 PROPOSE_EDIT_TOOL = "story.propose_edit"
 PROPOSE_NEW_TOOL = "story.propose_new"
 APPLY_EDIT_TOOL = "story.apply_edit"
+PROPOSE_RENAME_TOOL = "story.propose_rename"
+PROPOSE_DELETE_TOOL = "story.propose_delete"
 LIST_RECORDS_TOOL = "story.list_records"
 GET_RECORD_TOOL = "story.get_record"
 # The project of these tools comes from the session's binding, never from the model.
 SESSION_RESOLVED_TOOLS = frozenset(
     {
         SESSION_PROJECT_TOOL, PROPOSE_EDIT_TOOL, PROPOSE_NEW_TOOL, APPLY_EDIT_TOOL,
-        LIST_RECORDS_TOOL, GET_RECORD_TOOL,
+        PROPOSE_RENAME_TOOL, PROPOSE_DELETE_TOOL, LIST_RECORDS_TOOL, GET_RECORD_TOOL,
     }
 )
 DEFAULT_SEARCH_LIMIT = 20
@@ -105,7 +107,9 @@ class StoryToolService:
     def _dispatch(
         self, name: str, project_id: str, payload: dict[str, Any], scope: SessionScope
     ) -> Any:
-        if name in (PROPOSE_EDIT_TOOL, PROPOSE_NEW_TOOL, APPLY_EDIT_TOOL):
+        if name in (
+            PROPOSE_EDIT_TOOL, PROPOSE_NEW_TOOL, PROPOSE_RENAME_TOOL, PROPOSE_DELETE_TOOL, APPLY_EDIT_TOOL
+        ):
             return self._proposal_tool(name, project_id, payload, scope)
         if name == LIST_RECORDS_TOOL:
             return record_summaries(self.repository, project_id, _required(payload, "target_type"))
@@ -182,6 +186,14 @@ class StoryToolService:
             self._approve_in_chat(service, proposal_id, common)
             return service.apply(proposal_id=proposal_id, **common)
         common["session_id"] = scope.session_id
+        if name in (PROPOSE_RENAME_TOOL, PROPOSE_DELETE_TOOL):
+            target = _required(payload, "target_id")
+            target_type = payload.get("target_type") or "chapter"
+            if name == PROPOSE_DELETE_TOOL:
+                return service.propose_delete(target_type=target_type, target_id=target, **common)
+            return service.propose_rename(
+                target_type=target_type, target_id=target, new_title=payload.get("new_title"), **common
+            )
         if name == PROPOSE_NEW_TOOL:
             return service.propose_new(
                 target_type=payload.get("target_type") or "chapter",

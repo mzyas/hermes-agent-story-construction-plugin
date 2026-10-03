@@ -102,6 +102,11 @@ const en = {
     stale: 'This changed since it was proposed',
     newRecord: (kind, title) => `New ${kind}: ${title}`,
     editRecord: (kind, title) => `Changes to ${kind} ${title}`,
+    renameRecord: (kind, from, to) => `Rename ${kind}: ${from} → ${to}`,
+    deleteRecord: (kind, title) => `Delete ${kind}: ${title}`,
+    renameHint: 'Only the name changes. The text stays as it is.',
+    deleteHint: 'The record is moved to the Vault trash folder, not erased. You can undo it from here afterwards.',
+    approveAction: 'Approve',
     kind: { chapter: 'chapter', character: 'character', world_entry: 'world entry', note: 'note' },
     close: 'Close',
     approve: 'Approve selected changes',
@@ -322,6 +327,11 @@ const zh = {
     stale: '提案之后内容已被修改',
     newRecord: (kind, title) => `新建${kind}：${title}`,
     editRecord: (kind, title) => `对${kind}《${title}》的修改`,
+    renameRecord: (kind, from, to) => `重命名${kind}：${from} → ${to}`,
+    deleteRecord: (kind, title) => `删除${kind}：${title}`,
+    renameHint: '只改名字，正文不变。',
+    deleteHint: '这条记录会被移到资料库的回收目录，不会被彻底删除，之后可以在这里撤销。',
+    approveAction: '批准',
     kind: { chapter: '章节', character: '角色', world_entry: '世界设定条目', note: '笔记' },
     close: '关闭',
     approve: '批准所选修改',
@@ -1615,6 +1625,16 @@ export function displayName(item, t) {
 }
 
 // Which kind of readable record a sidebar row is (null for rows that open nothing).
+// The sidebar branch that lists each kind of readable record.
+const RECORD_BRANCH = { character: 'characters', world_entry: 'worldInfo', note: 'notes' }
+
+// Whether the record being viewed is still in the project (a deletion removes it).
+export function recordStillListed(tree, record) {
+  if (!record || !tree?.branches) return true
+  const branch = tree.branches.find(item => item.id === RECORD_BRANCH[record.type])
+  return Boolean(branch?.children.some(child => child.id === record.id))
+}
+
 export function recordTypeOf(branchId, child) {
   if (branchId === 'characters') return 'character'
   if (branchId === 'worldInfo') return 'world_entry'
@@ -2051,7 +2071,9 @@ export function ProposalReview({ proposal, projectId, profile, connectionId, dra
   const [note, setNote] = useState(null)
   const scope = { profile, connectionId }
   const approved = proposal.status === 'approved'
-  const stale = proposal.kind === 'edit' && proposal.current_version && proposal.current_version !== proposal.base_version
+  // A rename or a deletion acts on the whole record: nothing to select or edit.
+  const isAction = proposal.kind === 'rename' || proposal.kind === 'delete'
+  const stale = (proposal.kind === 'edit' || isAction) && proposal.current_version && proposal.current_version !== proposal.base_version
   const targetType = proposal.target_type || 'chapter'
   const isNew = String(proposal.kind || '').startsWith('new_')
   const title = proposal.target_title || proposal.chapter_title || proposal.title || ''
@@ -2072,7 +2094,7 @@ export function ProposalReview({ proposal, projectId, profile, connectionId, dra
   const approve = () =>
     run(async () => {
       const chosen = Object.keys(selected).filter(key => selected[key]).map(Number).sort((a, b) => a - b)
-      if (editedText === null && !chosen.length) {
+      if (!isAction && editedText === null && !chosen.length) {
         setNote({ key: 'proposal.nothingSelected', args: [] })
         return
       }
@@ -2089,9 +2111,11 @@ export function ProposalReview({ proposal, projectId, profile, connectionId, dra
       await approveStoryProposal(
         projectId,
         proposal.id,
-        editedText !== null
-          ? { ...scope, text: editedText, baseVersion: proposal.current_version || '' }
-          : { ...scope, selected: chosen }
+        isAction
+          ? scope
+          : editedText !== null
+            ? { ...scope, text: editedText, baseVersion: proposal.current_version || '' }
+            : { ...scope, selected: chosen }
       )
       await onChanged()
       const sent = await notifyAgentOfApproval({
@@ -2126,9 +2150,13 @@ export function ProposalReview({ proposal, projectId, profile, connectionId, dra
         children: [
           jsx('h2', {
             className: 'min-w-0 flex-1 truncate text-base font-medium',
-            children: isNew
-              ? t('proposal.newRecord', t('proposal.kind.' + targetType), title)
-              : t('proposal.editRecord', t('proposal.kind.' + targetType), title)
+            children: proposal.kind === 'rename'
+              ? t('proposal.renameRecord', t('proposal.kind.' + targetType), title, proposal.new_title || '')
+              : proposal.kind === 'delete'
+                ? t('proposal.deleteRecord', t('proposal.kind.' + targetType), title)
+                : isNew
+                  ? t('proposal.newRecord', t('proposal.kind.' + targetType), title)
+                  : t('proposal.editRecord', t('proposal.kind.' + targetType), title)
           }),
           jsx('span', {
             className: 'text-xs text-(--ui-text-secondary)',
@@ -2150,7 +2178,12 @@ export function ProposalReview({ proposal, projectId, profile, connectionId, dra
           ]
         }, index)
       ),
-      editedText === null
+      isAction
+        ? jsx('div', {
+            className: 'rounded border border-(--ui-stroke-secondary) p-3 text-sm' + (proposal.kind === 'delete' ? ' hermes-story-danger' : ''),
+            children: t(proposal.kind === 'delete' ? 'proposal.deleteHint' : 'proposal.renameHint')
+          })
+        : editedText === null
         ? jsx('div', {
             className: 'flex flex-col gap-3',
             children: proposal.previews.map(preview =>
@@ -2204,9 +2237,9 @@ export function ProposalReview({ proposal, projectId, profile, connectionId, dra
             disabled: busy,
             onClick: approve,
             type: 'button',
-            children: editedText !== null ? t('proposal.approveText') : t('proposal.approve')
+            children: isAction ? t('proposal.approveAction') : editedText !== null ? t('proposal.approveText') : t('proposal.approve')
           }),
-          jsx('button', {
+          isAction ? null : jsx('button', {
             className: buttonClass,
             disabled: busy,
             onClick: () => setEditedText(previous => (previous === null ? proposal.result_text : null)),
@@ -2257,7 +2290,7 @@ function ProposalArea({ projectId, profile, connectionId, draftStore, children }
   const wasBusyRef = useMutableRef(busy)
   const lastWriteRef = useMutableRef(undefined)
   const reviewing = proposals.find(proposal => proposal.id === reviewId) || null
-  const latestWrite = writes.find(write => !write.undone && write.kind === 'edit') || null
+  const latestWrite = writes.find(write => !write.undone && ['edit', 'rename', 'delete'].includes(write.kind)) || null
   const openIds = proposals.map(proposal => proposal.id).join(',')
   const writeMark = writes[0] ? `${writes[0].proposal_id}:${writes[0].undone}` : ''
 
@@ -4052,6 +4085,11 @@ function ProjectWorkspace() {
   })
   const tree = treeQuery.data ? buildProjectTree(treeQuery.data.tree || treeQuery.data, t) : scope.tree
   const project = tree?.project || projects.find(item => item.id === selectedProjectId) || null
+
+  // A record that was deleted while it was open: close the viewer instead of showing an error.
+  useEffect(() => {
+    if (treeQuery.data && !treeQuery.isFetching && !recordStillListed(tree, selectedRecord)) setSelectedRecord(null)
+  }, [treeQuery.data, treeQuery.isFetching, selectedRecord])
 
   // A creation row belongs to the project it was opened in.
   useEffect(() => {

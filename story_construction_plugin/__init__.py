@@ -10,6 +10,7 @@ from typing import Any, Callable
 from . import runtime as _runtime
 from .approval_gate import SessionGrants, make_apply_hook
 from .permissions import StoryPermissionGate
+from .prompt_templates import STORY_PROMPT_MAX_CHARS
 from .repository import StoryRepository
 from .runtime import StoryRuntimeState
 from .schemas import TOOL_SCHEMAS
@@ -21,6 +22,11 @@ _SKILLS = (
     ("chapter-drafting", "Draft a chapter from cited project context."),
     ("continuity-check", "Check story continuity against retrieved project facts."),
     ("obsidian-format", "Format a confirmed chapter as Obsidian Markdown."),
+    (
+        "record-format",
+        "What goes in the text of a proposal for a chapter, character, world entry or note, "
+        "and how to word the edits.",
+    ),
 )
 
 
@@ -63,7 +69,7 @@ def register_story_prompt(
         "story-construction.agent",
         prompt_registry.render_system_prompt,
         position="after_memory",
-        max_chars=4000,
+        max_chars=STORY_PROMPT_MAX_CHARS,
     )
 
 

@@ -8,7 +8,7 @@ import unicodedata
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 from .domain import (
     Chapter,
@@ -120,6 +120,16 @@ class StoryRepository(Protocol):
     def create_note(
         self, project_id: str, title: str, content: str = "", category_id: str | None = None
     ) -> Note: ...
+
+    def rename_record(
+        self, project_id: str, target_type: str, record_id: str, new_title: str, *, expected_version: str
+    ) -> Any: ...
+
+    def trash_record(
+        self, project_id: str, target_type: str, record_id: str, *, expected_version: str
+    ) -> tuple[str, str]: ...
+
+    def restore_record(self, project_id: str, trash_ref: str, source_ref: str) -> None: ...
 
 
 _WINDOWS_RESERVED = {

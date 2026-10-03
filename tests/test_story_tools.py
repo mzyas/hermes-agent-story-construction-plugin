@@ -161,6 +161,8 @@ def test_registration_exposes_the_story_toolset() -> None:
         "story.get_session_project",
         "story.propose_edit",
         "story.propose_new",
+        "story.propose_rename",
+        "story.propose_delete",
         "story.apply_edit",
         "story.list_records",
         "story.get_record",

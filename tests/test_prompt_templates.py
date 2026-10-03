@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from story_construction_plugin.prompt_templates import (
     STORY_AGENT_PROMPT_VERSION,
+    STORY_PROMPT_MAX_CHARS,
     build_story_request_messages,
     compose_story_system_prompt,
     render_story_agent_system_prompt,
@@ -74,3 +75,32 @@ def test_request_assembly_keeps_templates_out_of_session_history() -> None:
     assert "chapter_id: ch1" in first[-1]["content"]
     assert first[-1]["content"] != second[-1]["content"]
     assert first[2]["role"] == "tool"
+
+
+def test_the_agent_prompt_stays_well_under_the_size_hermes_accepts() -> None:
+    # Hermes skips a plugin prompt section longer than its limit as a whole, so a prompt
+    # that grows past it is not shortened: the Agent simply gets no Story instructions.
+    rendered = render_story_agent_system_prompt()
+
+    assert STORY_PROMPT_MAX_CHARS == 4000
+    assert len(rendered.strip()) <= STORY_PROMPT_MAX_CHARS - 300, len(rendered.strip())
+
+
+def test_the_prompt_is_registered_with_the_limit_it_was_checked_against() -> None:
+    from story_construction_plugin import register_story_prompt
+    from story_construction_plugin.session_store import StorySessionRegistry
+
+    class Ctx:
+        def __init__(self) -> None:
+            self.calls = []
+
+        def register_system_prompt_section(self, *args, **kwargs) -> None:
+            self.calls.append((args, kwargs))
+
+    ctx = Ctx()
+    register_story_prompt(ctx, StorySessionRegistry(locked_profile="writer"))
+
+    (args, kwargs), = ctx.calls
+    assert kwargs["max_chars"] == STORY_PROMPT_MAX_CHARS
+    rendered = args[1]({"profile_name": "writer"})
+    assert 0 < len(rendered.strip()) <= kwargs["max_chars"]

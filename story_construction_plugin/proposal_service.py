@@ -36,6 +36,8 @@ from .proposal_store import ChapterHistory, ProposalStore
 from .repository import NotFoundError, RepositoryError, StoryRepository, VersionConflictError
 
 MAX_TITLE = 120
+# Proposals that act on a whole record instead of its text.
+ACTION_KINDS = ("rename", "delete")
 TARGET_TYPES = ("chapter", "character", "world_entry", "note")
 _LABELS = {
     "chapter": "chapter",
@@ -189,6 +191,81 @@ class StoryProposalService:
         })
         return _agent_summary(proposal)
 
+    def propose_rename(
+        self,
+        *,
+        project_id: str,
+        session_id: str,
+        profile: str,
+        connection_id: str,
+        target_type: str,
+        target_id: str,
+        new_title: str,
+    ) -> dict[str, Any]:
+        target_type = _target_type(target_type)
+        label = _LABELS[target_type]
+        doc = self._doc(project_id, target_type, self.resolve_target(project_id, target_type, target_id))
+        if doc.read_only:
+            raise ProposalError("read_only", f"this {label} is a reference and cannot be changed by the Agent")
+        title = _title(new_title)
+        if title == doc.title:
+            raise ProposalError("no_change", f"the {label} already has this name")
+        warnings: list[BodyWarning] = []
+        if target_type != "chapter":
+            tree = self.repository.get_project(project_id)
+            category = next((n.category_id for n in tree.notes if n.id == doc.id), None) if target_type == "note" else None
+            taken = _taken_titles(tree, target_type, category)
+            taken.pop(doc.title.casefold(), None)
+            if title.casefold() in taken:
+                warnings.append(BodyWarning(edit=0, kind="name_in_use", text=taken[title.casefold()]))
+        proposal = self.store.create({
+            "project_id": project_id,
+            "profile": profile,
+            "connection_id": connection_id,
+            "session_id": session_id,
+            "kind": "rename",
+            **_identity(target_type, doc.id, doc.title),
+            "new_title": title,
+            "base_version": doc.version,
+            "edits": [],
+            "result_text": "",
+            "previews": [],
+            "warnings": [warning.as_dict() for warning in warnings],
+        })
+        return _agent_summary(proposal)
+
+    def propose_delete(
+        self,
+        *,
+        project_id: str,
+        session_id: str,
+        profile: str,
+        connection_id: str,
+        target_type: str,
+        target_id: str,
+    ) -> dict[str, Any]:
+        target_type = _target_type(target_type)
+        label = _LABELS[target_type]
+        if target_type == "chapter":
+            raise ProposalError("unsupported", "the Agent cannot delete chapters; ask the user to do it")
+        doc = self._doc(project_id, target_type, self.resolve_target(project_id, target_type, target_id))
+        if doc.read_only:
+            raise ProposalError("read_only", f"this {label} is a reference and cannot be changed by the Agent")
+        proposal = self.store.create({
+            "project_id": project_id,
+            "profile": profile,
+            "connection_id": connection_id,
+            "session_id": session_id,
+            "kind": "delete",
+            **_identity(target_type, doc.id, doc.title),
+            "base_version": doc.version,
+            "edits": [],
+            "result_text": "",
+            "previews": [],
+            "warnings": [],
+        })
+        return _agent_summary(proposal)
+
     def propose_chapter(
         self,
         *,
@@ -211,6 +288,8 @@ class StoryProposalService:
         if proposal["status"] != "approved":
             code, message = _STATUS_ERRORS.get(proposal["status"], ("proposal_closed", "this proposal cannot be applied"))
             raise ProposalError(code, message, status=proposal["status"])
+        if proposal["kind"] in ACTION_KINDS:
+            return self._apply_action(project_id, proposal_id, proposal)
         approval = proposal["approval"]
         mode = approval["mode"]
         if mode == "edits":
@@ -286,7 +365,7 @@ class StoryProposalService:
             # The record's version right now, so the Desktop can tell a proposal
             # written against an older text and can approve a hand edit against it.
             view["current_version"] = None
-            if row["kind"] == "edit":
+            if row["kind"] == "edit" or row["kind"] in ACTION_KINDS:
                 try:
                     view["current_version"] = self._doc(
                         project_id, _proposal_type(row), row.get("target_id") or row["chapter_id"]
@@ -313,7 +392,11 @@ class StoryProposalService:
         if proposal["status"] not in ("pending", "approved", "expired"):
             code, message = _STATUS_ERRORS.get(proposal["status"], ("proposal_closed", "this proposal is closed"))
             raise ProposalError(code, message, status=proposal["status"])
-        if text is not None:
+        if proposal["kind"] in ACTION_KINDS:
+            if text is not None or selected is not None:
+                raise ProposalError("invalid_request", "this proposal has no edits to choose or change; approve or discard it")
+            approval = self._approve_action(proposal, project_id)
+        elif text is not None:
             approval = self._approve_text(proposal, project_id, text, base_version)
         else:
             approval = self._approve_edits(proposal, project_id, selected)
@@ -328,7 +411,7 @@ class StoryProposalService:
         """How risky applying this proposal is, against the record as it is now."""
 
         base = ""
-        if proposal["kind"] == "edit":
+        if proposal["kind"] in ("edit", "delete"):
             base = normalize_newlines(
                 self._doc(project_id, _proposal_type(proposal), proposal["target_id"]).content
             )
@@ -359,6 +442,8 @@ class StoryProposalService:
         if applied is None:
             raise ProposalError("nothing_to_undo", f"there is no Agent write to undo for this {label}")
         info = applied["applied"]
+        if applied["kind"] in ACTION_KINDS:
+            return self._undo_action(project_id, target_type, target_id, applied)
         if not info.get("snapshot_id"):
             raise ProposalError(
                 "undo_unsupported",
@@ -450,6 +535,102 @@ class StoryProposalService:
             return _Doc(row.id, row.title, row.content, row.version)
         row = repo.create_chapter(project_id, proposal["volume_id"], title, text)
         return _Doc(row.id, row.title, row.content, row.version)
+
+    # ----------------------------------------------- renaming and deleting
+    def _approve_action(self, proposal: dict[str, Any], project_id: str) -> dict[str, Any]:
+        target_type = _proposal_type(proposal)
+        label = _LABELS[target_type]
+        doc = self._doc(project_id, target_type, proposal["target_id"])
+        if doc.read_only:
+            raise ProposalError("read_only", f"this {label} is a reference and cannot be changed by the Agent")
+        if doc.version != proposal["base_version"]:
+            raise ProposalError(
+                "version_changed",
+                f"the {label} changed after this was proposed; ask the Agent to propose it again",
+                current_version=doc.version,
+            )
+        return {"mode": "action", "digest": _action_digest(proposal)}
+
+    def _apply_action(self, project_id: str, proposal_id: str, proposal: dict[str, Any]) -> dict[str, Any]:
+        approval = proposal["approval"]
+        if approval.get("mode") != "action" or approval.get("digest") != _action_digest(proposal):
+            raise ProposalError("approval_mismatch", "the approved content no longer matches this proposal")
+        target_type = _proposal_type(proposal)
+        label = _LABELS[target_type]
+        doc = self._doc(project_id, target_type, proposal["target_id"])
+        if doc.read_only:
+            raise ProposalError("read_only", f"this {label} is a reference and cannot be changed by the Agent")
+        if doc.version != proposal["base_version"]:
+            raise ProposalError(
+                "version_changed",
+                f"the {label} changed after this was proposed; ask the Agent to propose it again",
+                current_version=doc.version,
+            )
+        try:
+            if proposal["kind"] == "rename":
+                self.repository.rename_record(
+                    project_id, target_type, doc.id, proposal["new_title"], expected_version=doc.version
+                )
+                after = self._doc(project_id, target_type, doc.id)
+                self.store.mark_applied(proposal_id, {
+                    **_written(target_type, doc.id),
+                    "title": after.title,
+                    "old_title": doc.title,
+                    "version_before": doc.version,
+                    "version_after": after.version,
+                    "snapshot_id": None,
+                })
+                return {"status": "applied", "title": after.title, "version": after.version,
+                        **_written(target_type, doc.id)}
+            trash_ref, source_ref = self.repository.trash_record(
+                project_id, target_type, doc.id, expected_version=doc.version
+            )
+        except VersionConflictError as exc:
+            raise ProposalError(
+                "version_changed", f"the {label} changed while it was being saved", current_version=""
+            ) from exc
+        self.store.mark_applied(proposal_id, {
+            **_written(target_type, doc.id),
+            "title": doc.title,
+            "trash_ref": trash_ref,
+            "source_ref": source_ref,
+            "version_before": doc.version,
+            "snapshot_id": None,
+        })
+        return {"status": "applied", "deleted": True, "title": doc.title, **_written(target_type, doc.id)}
+
+    def _undo_action(
+        self, project_id: str, target_type: str, target_id: str, applied: dict[str, Any]
+    ) -> dict[str, Any]:
+        label = _LABELS[target_type]
+        info = applied["applied"]
+        if applied["kind"] == "rename":
+            doc = self._doc(project_id, target_type, target_id)
+            if doc.version != info["version_after"]:
+                raise ProposalError(
+                    "chapter_changed",
+                    f"the {label} was edited after the Agent's write, so it cannot be undone safely",
+                    current_version=doc.version,
+                )
+            try:
+                self.repository.rename_record(
+                    project_id, target_type, target_id, info["old_title"], expected_version=doc.version
+                )
+            except VersionConflictError as exc:
+                raise ProposalError("chapter_changed", f"the {label} changed while it was being restored") from exc
+        else:
+            try:
+                self.repository.restore_record(project_id, info["trash_ref"], info["source_ref"])
+            except RepositoryError as exc:
+                raise ProposalError("restore_failed", f"the {label} could not be put back: {exc}") from exc
+        version = self._doc(project_id, target_type, target_id).version
+        self.store.mark_undone(applied["id"])
+        return {
+            "target_type": target_type,
+            "target_id": target_id,
+            "chapter_id": target_id if target_type == "chapter" else None,
+            "version": version,
+        }
 
     # ------------------------------------------------------------ internals
     def _owned(self, project_id: str, proposal_id: str, profile: str, connection_id: str) -> dict[str, Any]:
@@ -581,6 +762,14 @@ def _selected(proposal: dict[str, Any], indexes: Sequence[int]) -> list[dict[str
     return [edits[i] for i in indexes if isinstance(i, int) and 0 <= i < len(edits)]
 
 
+def _action_digest(proposal: dict[str, Any]) -> str:
+    """What an approval of a rename or delete covers: that action on that record version."""
+
+    return text_digest("|".join(str(proposal.get(key) or "") for key in (
+        "kind", "target_type", "target_id", "base_version", "new_title",
+    )))
+
+
 def _title(value: object) -> str:
     if not isinstance(value, str):
         raise ProposalError("invalid_title", "title must be a string")
@@ -686,6 +875,7 @@ def _desktop_view(proposal: dict[str, Any] | None) -> dict[str, Any]:
         "volume_id": proposal.get("volume_id"),
         "category_id": proposal.get("category_id"),
         "title": proposal.get("title"),
+        "new_title": proposal.get("new_title"),
         "chapter_title": proposal.get("chapter_title"),
         "base_version": proposal["base_version"],
         "edits": proposal["edits"],

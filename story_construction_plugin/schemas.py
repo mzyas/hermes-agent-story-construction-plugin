@@ -156,10 +156,67 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             ["title", "content"],
         ),
     },
+    "story.propose_rename": {
+        "name": "story.propose_rename",
+        "description": (
+            "Propose a new title or name for an existing chapter, character, world "
+            "info entry or note. Only the name changes: the text, id and file stay "
+            "the same. A name another record already has gets a number after it. "
+            "This only stores a proposal; call story.apply_edit next to have the "
+            "user approve it. To change the text as well, use story.propose_edit "
+            "separately. Notes marked as references are read-only. The project "
+            "comes from this session's binding."
+        ),
+        "parameters": _parameters(
+            {
+                "target_type": {
+                    "type": "string",
+                    "enum": ["chapter", "character", "world_entry", "note"],
+                    "description": "What kind of record to rename. Defaults to chapter.",
+                },
+                "target_id": {
+                    "type": "string",
+                    "description": "ID of the record, or its exact current title/name when that is unique.",
+                },
+                "new_title": {
+                    "type": "string", "minLength": 1, "maxLength": 120,
+                    "description": "The new title or name, nothing else.",
+                },
+            },
+            ["target_id", "new_title"],
+        ),
+    },
+    "story.propose_delete": {
+        "name": "story.propose_delete",
+        "description": (
+            "Propose deleting a character, world info entry or note. The record is "
+            "moved to the Vault's trash folder, not erased, and the user can undo "
+            "it. This only stores a proposal; call story.apply_edit next to have "
+            "the user approve it: deleting always needs the user's approval each "
+            "time. Chapters cannot be deleted by the Agent. Notes marked as "
+            "references are read-only. If the user only wants a different name, "
+            "use story.propose_rename instead. The project comes from this "
+            "session's binding."
+        ),
+        "parameters": _parameters(
+            {
+                "target_type": {
+                    "type": "string",
+                    "enum": ["character", "world_entry", "note"],
+                    "description": "What kind of record to delete.",
+                },
+                "target_id": {
+                    "type": "string",
+                    "description": "ID of the record, or its exact title/name when that is unique.",
+                },
+            },
+            ["target_type", "target_id"],
+        ),
+    },
     "story.apply_edit": {
         "name": "story.apply_edit",
         "description": (
-            "Write a proposal. Takes only the proposal_id. The user is asked to "
+            "Carry out a proposal (an edit, a new record, a rename or a deletion). Takes only the proposal_id. The user is asked to "
             "approve the change in this chat (or has already approved it in the "
             "Story panel); it writes exactly what they approve and nothing else. "
             "If the call is blocked or declined, nothing was written: tell the user "

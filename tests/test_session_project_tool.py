@@ -84,8 +84,9 @@ def test_prompt_makes_the_agent_propose_wait_for_approval_and_keep_text_clean() 
     for tool in ("story.propose_edit", "story.propose_new", "story.apply_edit"):
         assert tool in rendered
     assert "never say it was saved" in rendered
-    assert "no greeting" in rendered and "no code fence" in rendered
     assert "Never write files or save chapters yourself" in rendered
+    # The format rules moved to a Skill, so the prompt only points to it.
+    assert "no greeting" not in rendered and "story-construction:record-format" in rendered
 
 
 def test_prompt_covers_every_kind_of_record_and_checks_before_creating() -> None:
@@ -108,4 +109,4 @@ def test_prompt_keeps_the_agent_brief_and_from_acting_unasked() -> None:
 
 
 def test_prompt_version_names_the_current_protocol() -> None:
-    assert render_story_agent_system_prompt().startswith("# StoryConstructionAgentPrompt v7")
+    assert render_story_agent_system_prompt().startswith("# StoryConstructionAgentPrompt v8")

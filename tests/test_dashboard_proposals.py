@@ -259,3 +259,45 @@ def test_reading_a_record_checks_kind_scope_and_existence(bound) -> None:
     _assert_http_error(
         lambda: api.module.get_record("novel", "character", character.id, session_id="s1", profile="other", connection_id="local"), 403
     )
+
+
+# ------------------------------------------------------------ renaming and deleting
+def test_the_panel_lists_approves_and_undoes_a_rename_and_a_delete(api) -> None:
+    character = api.repo.create_character("novel", "江昼", "少年。")
+    service = api.service()
+    rename_id = service.propose_rename(
+        project_id="novel", session_id="s1", **SCOPE, target_type="character",
+        target_id=character.id, new_title="沈疏白",
+    )["proposal_id"]
+
+    listed = api.module.list_proposals("novel", **SCOPE)["proposals"]
+    assert listed[0]["kind"] == "rename" and listed[0]["new_title"] == "沈疏白"
+    assert listed[0]["current_version"] == character.version and listed[0]["edits"] == []
+
+    approved = api.approve(rename_id)["proposal"]
+    assert approved["status"] == "approved" and approved["approval"]["mode"] == "action"
+    service.apply(project_id="novel", proposal_id=rename_id, **SCOPE)
+    assert api.repo.get_character("novel", character.id).name == "沈疏白"
+    api.module.undo_agent_write("novel", character.id, {**SCOPE, "target_type": "character"})
+    assert api.repo.get_character("novel", character.id).name == "江昼"
+
+    delete_id = service.propose_delete(
+        project_id="novel", session_id="s1", **SCOPE, target_type="character", target_id=character.id,
+    )["proposal_id"]
+    api.approve(delete_id)
+    service.apply(project_id="novel", proposal_id=delete_id, **SCOPE)
+    assert api.repo.get_project("novel").characters == ()
+    log = api.module.list_agent_writes("novel", **SCOPE)["writes"]
+    assert log[0]["kind"] == "delete" and log[0]["target_title"] == "江昼"
+    api.module.undo_agent_write("novel", character.id, {**SCOPE, "target_type": "character"})
+    assert api.repo.get_character("novel", character.id).name == "江昼"
+
+
+def test_a_panel_approval_of_a_rename_refuses_a_selection(api) -> None:
+    character = api.repo.create_character("novel", "江昼", "少年。")
+    rename_id = api.service().propose_rename(
+        project_id="novel", session_id="s1", **SCOPE, target_type="character",
+        target_id=character.id, new_title="沈疏白",
+    )["proposal_id"]
+
+    _assert_http_error(lambda: api.approve(rename_id, selected=[0]), 422, "invalid_request")

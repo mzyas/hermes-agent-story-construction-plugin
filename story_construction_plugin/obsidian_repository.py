@@ -402,6 +402,81 @@ class ObsidianProjectRepository:
             self._invalidate_records()
         return self._one(self.get_project(project_id).notes, note_id, "note")
 
+    def rename_record(
+        self, project_id: str, target_type: str, record_id: str, new_title: str, *, expected_version: str
+    ) -> Any:
+        """Change a record's title or name; its text, id and file stay as they are.
+
+        A name already used by another record (a note only counts within its
+        category) gets a number after it, as when creating one.
+        """
+
+        with self._create_lock:
+            tree = self.get_project(project_id)
+            row, key, label, siblings = _titled_scope(tree, target_type, record_id)
+            clean = _clean_title(new_title, label)
+            title = clean if target_type == "chapter" else _unique_title(clean, siblings)
+            path = self.resolve_source_path(row.source_ref)
+            raw = path.read_bytes()
+            if _version(raw) != expected_version:
+                raise VersionConflictError(f"{label} {record_id!r} changed since version {expected_version!r}")
+            _atomic_write(path, _with_frontmatter_value(raw.decode("utf-8"), key, title))
+            self._invalidate_records()
+        return _titled_scope(self.get_project(project_id), target_type, record_id)[0]
+
+    def trash_record(
+        self, project_id: str, target_type: str, record_id: str, *, expected_version: str
+    ) -> tuple[str, str]:
+        """Move a character, world entry or note into ``.story-trash``.
+
+        Nothing is deleted: the file is moved in one step and can be put back with
+        ``restore_record``. Returns ``(trash_ref, source_ref)``, both relative to the Vault.
+        """
+
+        if target_type == "chapter":
+            raise DomainValidationError("chapters cannot be moved to the trash here")
+        with self._create_lock:
+            tree = self.get_project(project_id)
+            row, _key, label, _siblings = _titled_scope(tree, target_type, record_id)
+            path = self.resolve_source_path(row.source_ref)
+            if _version(path.read_bytes()) != expected_version:
+                raise VersionConflictError(f"{label} {record_id!r} changed since version {expected_version!r}")
+            project_folder = Path(row.source_ref).parts[0]
+            folder = self.vault_root / TRASH_DIRECTORY / "records" / project_folder
+            folder.mkdir(parents=True, exist_ok=True)
+            stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            destination = folder / f"{stamp}-{path.name}"
+            suffix = 1
+            while destination.exists():
+                suffix += 1
+                destination = folder / f"{stamp}-{suffix}-{path.name}"
+            os.replace(path, destination)
+            self._invalidate_records()
+        return destination.relative_to(self.vault_root).as_posix(), row.source_ref
+
+    def restore_record(self, project_id: str, trash_ref: str, source_ref: str) -> None:
+        """Put a record moved by ``trash_record`` back where it was; never overwrites."""
+
+        with self._create_lock:
+            source = self._inside_vault(source_ref)
+            trashed = self._inside_vault(trash_ref)
+            trash_root = (self.vault_root / TRASH_DIRECTORY / "records").resolve()
+            if trash_root not in trashed.parents or TRASH_DIRECTORY in source.relative_to(self.vault_root).parts:
+                raise RepositoryError("not a record that was moved to the trash")
+            if not trashed.is_file():
+                raise NotFoundError(f"the trashed copy {trash_ref!r} is gone")
+            if source.exists():
+                raise RepositoryError("something already exists where the record used to be")
+            source.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(trashed, source)
+            self._invalidate_records()
+
+    def _inside_vault(self, reference: str) -> Path:
+        path = (self.vault_root / reference).resolve()
+        if self.vault_root.resolve() not in path.parents:
+            raise RepositoryError("path is outside the Vault")
+        return path
+
     def _save_body(
         self, source_ref: str, label: str, record_id: str, content: str, expected_version: str
     ) -> None:
@@ -504,6 +579,73 @@ class ObsidianProjectRepository:
             if row.id == object_id:
                 return row
         raise NotFoundError(f"{kind} {object_id!r} was not found")
+
+
+def _titled_scope(tree: Any, target_type: str, record_id: str) -> tuple[Any, str, str, list[str]]:
+    """The record, its title key in the frontmatter, its label, and the other titles it must differ from."""
+
+    if target_type == "character":
+        rows, key, label, name = tree.characters, "name", "character", "name"
+    elif target_type == "world_entry":
+        rows, key, label, name = tree.world_info_entries, "title", "world info entry", "title"
+    elif target_type == "note":
+        rows, key, label, name = tree.notes, "title", "note", "title"
+    elif target_type == "chapter":
+        rows, key, label, name = tree.chapters, "title", "chapter", "title"
+    else:
+        raise DomainValidationError(f"unknown record kind {target_type!r}")
+    row = next((candidate for candidate in rows if candidate.id == record_id), None)
+    if row is None:
+        raise NotFoundError(f"{label} {record_id!r} was not found")
+    siblings = [
+        getattr(other, name) for other in rows
+        if other.id != record_id and (target_type != "note" or other.category_id == row.category_id)
+    ]
+    return row, key, label, siblings
+
+
+def _with_frontmatter_value(text: str, key: str, value: str) -> str:
+    """``text`` with one frontmatter value replaced and everything else left byte for byte."""
+
+    lines = text.splitlines(keepends=True)
+    if not lines or lines[0].strip() != "---":
+        raise RepositoryError("the record has no frontmatter")
+    end = next((index for index in range(1, len(lines)) if lines[index].strip() == "---"), None)
+    if end is None:
+        raise RepositoryError("Markdown frontmatter is not closed")
+    entry = yaml.safe_dump({key: value}, allow_unicode=True, sort_keys=False, width=10**6).rstrip("\n")
+    for index in range(1, end):
+        if not re.match(rf"{re.escape(key)}\s*:", lines[index]):
+            continue
+        if index + 1 < end and lines[index + 1][:1] in (" ", "\t"):
+            break  # a multi-line value: rewrite the whole block below
+        eol = "\r\n" if lines[index].endswith("\r\n") else "\n"
+        replaced = lines[:index] + [entry + eol] + lines[index + 1:]
+        result = "".join(replaced)
+        if _split_document(result)[0].get(key) == value:
+            return result
+        break
+    metadata, _body = _split_document(text)
+    metadata[key] = value
+    frontmatter = yaml.safe_dump(metadata, allow_unicode=True, sort_keys=False, width=10**6).rstrip("\n")
+    return f"---\n{frontmatter}\n---\n" + "".join(lines[end + 1:])
+
+
+def _atomic_write(path: Path, text: str) -> None:
+    temporary_name: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", newline="", dir=path.parent,
+            prefix=f".{path.name}.", suffix=".tmp", delete=False,
+        ) as handle:
+            temporary_name = handle.name
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_name, path)
+    finally:
+        if temporary_name and Path(temporary_name).exists():
+            Path(temporary_name).unlink()
 
 
 _MAX_TITLE_LENGTH = 120

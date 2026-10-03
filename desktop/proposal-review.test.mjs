@@ -372,3 +372,61 @@ test('undoing a write says which kind of record it was', async () => {
     ['/projects/novel/chapters/novel%3Achapter-1/undo', { method: 'POST', body: { profile: 'writer', connection_id: 'local' } }]
   ])
 })
+
+
+// ------------------------------------------------------------ renaming and deleting
+const renaming = {
+  ...character,
+  kind: 'rename',
+  new_title: '江昼',
+  edits: [],
+  previews: [],
+  warnings: [],
+  result_text: ''
+}
+const deleting = { ...renaming, kind: 'delete', new_title: null }
+
+test('a rename or a deletion is headed by what it does, with no changes to pick', () => {
+  const renamed = review(renaming)
+  const deleted = review(deleting)
+
+  assert.match(textOf(renamed), /proposal\.renameRecord:proposal\.kind\.character,林远,江昼/)
+  assert.match(textOf(deleted), /proposal\.deleteRecord:proposal\.kind\.character,林远/)
+  assert.equal(find(renamed, node => node.props?.type === 'checkbox').length, 0)
+  assert.match(textOf(renamed), /proposal\.renameHint/)
+  assert.match(textOf(deleted), /proposal\.deleteHint/)
+  assert.equal(find(deleted, node => String(node.props?.className || '').includes('hermes-story-danger') && textOf(node) === 'proposal.deleteHint').length, 1)
+})
+
+test('an action cannot be edited by hand and its button just says approve', () => {
+  const tree = review(renaming)
+
+  assert.ok(button(tree, 'proposal.approveAction'))
+  assert.equal(button(tree, 'proposal.editResult'), undefined)
+  assert.equal(button(tree, 'proposal.approve'), undefined)
+  assert.ok(button(tree, 'proposal.discard'))
+})
+
+test('approving a rename or a deletion sends no selection and no text', async () => {
+  for (const action of [renaming, deleting]) {
+    const { calls, dispose } = bindRest()
+    try {
+      await button(review(action), 'proposal.approveAction').props.onClick()
+    } finally {
+      dispose()
+    }
+
+    assert.deepEqual(calls, [[
+      '/projects/novel/proposals/abc123/approve',
+      { method: 'POST', body: { profile: 'writer', connection_id: 'local' } }
+    ]])
+  }
+})
+
+test('an action on a record that changed since is marked as stale', () => {
+  const changed = review({ ...renaming, current_version: 'v2' })
+  const same = review(renaming)
+
+  assert.ok(find(changed, node => textOf(node) === 'proposal.stale').length >= 1)
+  assert.equal(find(same, node => textOf(node) === 'proposal.stale').length, 0)
+})

@@ -40,7 +40,7 @@ function rewriteDesktopImports(source) {
 }
 
 const source = readFileSync(fileURLToPath(pluginUrl), 'utf8')
-const { buildChapterOutline, buildProjectTree, recordTypeOf, StorySidebar } = await import(
+const { buildChapterOutline, buildProjectTree, recordStillListed, recordTypeOf, StorySidebar } = await import(
   dataModule(rewriteDesktopImports(source))
 )
 
@@ -204,4 +204,15 @@ test('a category row opens nothing and the open record is marked', () => {
 
 test('without a handler the rows stay inert rather than throwing', () => {
   assert.doesNotThrow(() => notesTabButtons().forEach(button => button.props.onClick?.()))
+})
+
+test('a viewed record that is no longer in the project is detected', () => {
+  const tree = buildProjectTree(recordPayload, t)
+
+  assert.equal(recordStillListed(tree, { type: 'character', id: 'c1' }), true)
+  assert.equal(recordStillListed(tree, { type: 'character', id: 'gone' }), false)
+  assert.equal(recordStillListed(tree, { type: 'note', id: 'c1' }), false)
+  assert.equal(recordStillListed(tree, { type: 'world_entry', id: 'we1' }), true)
+  assert.equal(recordStillListed(tree, null), true)
+  assert.equal(recordStillListed(null, { type: 'note', id: 'n1' }), true)
 })
