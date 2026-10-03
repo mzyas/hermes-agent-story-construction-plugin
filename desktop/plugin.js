@@ -23,7 +23,8 @@ const en = {
     changeVaultPath: 'Change Vault path',
     projectTree: 'Project tree',
     loadingProject: 'Loading project…',
-    projectUnavailable: error => `Project unavailable: ${error}`
+    projectUnavailable: error => `Project unavailable: ${error}`,
+    needsSession: 'No writing session is linked to this project yet. Create one on the right and the project opens here.'
   },
   library: {
     search: 'Search projects',
@@ -248,7 +249,8 @@ const zh = {
     changeVaultPath: '更换资料库路径',
     projectTree: '项目树',
     loadingProject: '正在加载项目…',
-    projectUnavailable: error => `项目不可用：${error}`
+    projectUnavailable: error => `项目不可用：${error}`,
+    needsSession: '这个项目还没有关联的写作会话。请在右侧新建一个写作会话，项目就能在这里打开。'
   },
   library: {
     search: '搜索项目',
@@ -656,6 +658,16 @@ export function selectedProjectForScope(selection, { profile, connectionId } = {
 export function projectSessionRows(data) {
   const rows = Array.isArray(data?.sessions) ? [...data.sessions] : []
   return rows.sort((left, right) => String(right.updated_at || '').localeCompare(String(left.updated_at || '')))
+}
+
+// The backend lets a session read a project only if that session is bound to it. The page
+// is opened from whatever session happens to be focused, which is often not a Story one,
+// so reads use a session that is bound: the one already in use while it stays bound, else
+// the focused session if it is bound, else the project's most recent one.
+export function pickReadSession({ focusedId, boundIds = [], current = null } = {}) {
+  if (current && boundIds.includes(current)) return current
+  if (focusedId && boundIds.includes(focusedId)) return focusedId
+  return boundIds[0] || focusedId || null
 }
 
 export function resetWorkspaceScope(previous, next) {
@@ -4070,18 +4082,30 @@ function ProjectWorkspace() {
     storyProjectMemory.set({ profile, connectionId }, null)
     setProjectSelection({ profile, connectionId, projectId: null })
   }, [selectedProjectId, projectsQuery.data, projectsQuery.isFetching, profile, connectionId])
-  const [scope, setScope] = useState({ profile, connectionId, sessionId, projectId: null, tree: null, selectedChapterId: null, status: 'idle' })
+  // Same query as the sessions panel, so the list is fetched once.
+  const boundQuery = useQuery({
+    enabled: Boolean(selectedProjectId && profile && connectionId && gateOpen),
+    queryKey: ['story-construction', 'project-sessions', profile, connectionId, selectedProjectId],
+    queryFn: () => fetchProjectSessions(selectedProjectId, { profile, connectionId }),
+    refetchInterval: 60_000
+  })
+  const boundIds = projectSessionRows(boundQuery.data).map(row => row.stored_session_id)
+  const readSessionRef = useMutableRef(null)
+  const readSessionId = pickReadSession({ focusedId: sessionId, boundIds, current: readSessionRef.current })
+  readSessionRef.current = readSessionId
+  const [scope, setScope] = useState({ profile, connectionId, sessionId: readSessionId, projectId: null, tree: null, selectedChapterId: null, status: 'idle' })
 
   useEffect(() => {
-    setScope(previous => resetWorkspaceScope(previous, { profile, connectionId, sessionId, projectId: selectedProjectId }))
+    setScope(previous => resetWorkspaceScope(previous, { profile, connectionId, sessionId: readSessionId, projectId: selectedProjectId }))
     setSelectedChapterId(null)
     setSelectedRecord(null)
-  }, [profile, connectionId, sessionId, selectedProjectId])
+  }, [profile, connectionId, readSessionId, selectedProjectId])
 
   const treeQuery = useQuery({
-    enabled: Boolean(selectedProjectId && sessionId && profile && connectionId && gateOpen),
-    queryKey: ['story-construction', 'project-tree', profile, connectionId, sessionId, selectedProjectId],
-    queryFn: () => fetchProjectTree(selectedProjectId, { sessionId, profile, connectionId })
+    // Wait for the bound sessions, or the first read would use an unbound one and fail.
+    enabled: Boolean(selectedProjectId && readSessionId && profile && connectionId && gateOpen && !boundQuery.isLoading),
+    queryKey: ['story-construction', 'project-tree', profile, connectionId, readSessionId, selectedProjectId],
+    queryFn: () => fetchProjectTree(selectedProjectId, { sessionId: readSessionId, profile, connectionId })
   })
   const tree = treeQuery.data ? buildProjectTree(treeQuery.data.tree || treeQuery.data, t) : scope.tree
   const project = tree?.project || projects.find(item => item.id === selectedProjectId) || null
@@ -4302,7 +4326,9 @@ function ProjectWorkspace() {
         : treeQuery.error
           ? jsx('div', {
               className: 'break-words p-3 text-(--ui-text-secondary)',
-              children: t('workspace.projectUnavailable', treeQuery.error.message)
+              children: storyDiagnostic(treeQuery.error, null).httpStatus === 403 && !boundIds.length
+                ? t('workspace.needsSession')
+                : t('workspace.projectUnavailable', treeQuery.error.message)
             })
           : jsx(StorySidebar, {
               createBusy: createState.busy,
@@ -4345,7 +4371,7 @@ function ProjectWorkspace() {
             onDraftState: handleDraftState,
             profile,
             projectId: selectedProjectId,
-            sessionId
+            sessionId: readSessionId
           })
         }, 'chapter'),
         selectedRecord
@@ -4354,7 +4380,7 @@ function ProjectWorkspace() {
               profile,
               projectId: selectedProjectId,
               record: selectedRecord,
-              sessionId
+              sessionId: readSessionId
             }, 'record')
           : null
       ]

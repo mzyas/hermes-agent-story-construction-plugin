@@ -40,7 +40,7 @@ function rewriteDesktopImports(source) {
 }
 
 const source = readFileSync(fileURLToPath(pluginUrl), 'utf8')
-const { buildChapterOutline, buildProjectTree, recordStillListed, recordTypeOf, StorySidebar } = await import(
+const { buildChapterOutline, buildProjectTree, pickReadSession, recordStillListed, recordTypeOf, StorySidebar } = await import(
   dataModule(rewriteDesktopImports(source))
 )
 
@@ -215,4 +215,32 @@ test('a viewed record that is no longer in the project is detected', () => {
   assert.equal(recordStillListed(tree, { type: 'world_entry', id: 'we1' }), true)
   assert.equal(recordStillListed(tree, null), true)
   assert.equal(recordStillListed(null, { type: 'note', id: 'n1' }), true)
+})
+
+// ------------------------------------------------ which session the page reads with
+test('an unbound focused session is never used when the project has a bound one', () => {
+  // The case from a real run: a general chat is focused, the Story session is not.
+  assert.equal(pickReadSession({ focusedId: 'home-chat', boundIds: ['story-2', 'story-1'] }), 'story-2')
+})
+
+test('the focused session is used when it is bound, even if it is not the latest', () => {
+  assert.equal(pickReadSession({ focusedId: 'story-1', boundIds: ['story-2', 'story-1'] }), 'story-1')
+})
+
+test('a session already in use stays in use while it is bound, so the editor is not reset', () => {
+  const boundIds = ['story-2', 'story-1']
+
+  assert.equal(pickReadSession({ focusedId: 'story-2', boundIds, current: 'story-1' }), 'story-1')
+  assert.equal(pickReadSession({ focusedId: 'home-chat', boundIds, current: 'story-1' }), 'story-1')
+})
+
+test('a session that is no longer bound is dropped', () => {
+  assert.equal(pickReadSession({ focusedId: 'home-chat', boundIds: ['story-2'], current: 'removed' }), 'story-2')
+})
+
+test('with nothing bound it falls back to the focused session, then to none', () => {
+  assert.equal(pickReadSession({ focusedId: 'home-chat', boundIds: [] }), 'home-chat')
+  assert.equal(pickReadSession({ focusedId: null, boundIds: [] }), null)
+  assert.equal(pickReadSession({}), null)
+  assert.equal(pickReadSession(), null)
 })
