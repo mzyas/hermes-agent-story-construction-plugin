@@ -165,14 +165,6 @@ class ProposalStore:
 
         return self.mutate(proposal_id, change)
 
-    def revoke(self, proposal_id: str) -> dict[str, Any] | None:
-        def change(row: dict[str, Any]) -> None:
-            if row["status"] == "approved":
-                row["status"] = "pending"
-                row["approval"] = None
-
-        return self.mutate(proposal_id, change)
-
     def discard(self, proposal_id: str) -> dict[str, Any] | None:
         def change(row: dict[str, Any]) -> None:
             if row["status"] in OPEN_STATUSES:

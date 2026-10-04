@@ -6,7 +6,7 @@ other tool. Two things keep that from being the only line of defence:
 
 * The hook cannot be trusted to have run (Hermes lets a failing hook through),
   so it leaves a one-time grant that the tool itself requires. No grant, no
-  write: the proposal then has to be approved in the Story panel as before.
+  write: the call is refused and the Agent has to ask again.
 * A risky change (clearing a record, removing a lot of text) gets its own
   ``rule_key`` per proposal. Choosing "always allow" on a prompt can therefore
   never skip the review of the next risky change.
@@ -290,7 +290,7 @@ def _directive(
         or proposal["project_id"] != scope.project_id
         or proposal["profile"] != scope.profile
         or proposal["connection_id"] != scope.connection_id
-        # Approved in the Story panel already, or closed: apply_edit decides.
+        # Not waiting for an answer (already approved, or closed): apply_edit decides.
         or proposal["status"] not in ("pending", "expired")
     ):
         return None

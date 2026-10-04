@@ -15,6 +15,14 @@ from test_dashboard_api import (
 
 pytestmark = pytest.mark.hermes_integration
 
+
+def _assert_proposal_error(call, code: str, **details) -> None:
+    with pytest.raises(Exception) as error:
+        call()
+    assert getattr(error.value, "code", None) == code, repr(error.value)
+    for key, value in details.items():
+        assert error.value.details.get(key) == value
+
 BODY = "他推开门。\n\n雨下得很大，街上没有人。\n\n她在屋里等着。"
 CHAPTER = "novel:chapter-1"
 SCOPE = {"profile": "writer", "connection_id": "local"}
@@ -51,7 +59,8 @@ def api(monkeypatch, tmp_path):
             )["proposal_id"]
 
         def approve(self, proposal_id, **body):
-            return plugin_api.approve_proposal("novel", proposal_id, {**SCOPE, **body})
+            """Approve through the service, as the chat does; the Desktop has no way to."""
+            return {"proposal": self.service().approve(project_id="novel", proposal_id=proposal_id, **{**SCOPE, **body})}
 
     return Api()
 
@@ -94,46 +103,36 @@ def test_approving_an_edited_text_needs_the_version_it_was_edited_against(api) -
     approved = api.approve(proposal_id, text="完全不同的正文。", base_version=version)["proposal"]
 
     assert approved["approval"]["mode"] == "text"
-    _assert_http_error(lambda: api.approve(proposal_id, text="x", base_version="stale"), 409, "version_changed")
+    _assert_proposal_error(lambda: api.approve(proposal_id, text="x", base_version="stale"), "version_changed")
 
 
-def test_approval_errors_have_stable_statuses(api) -> None:
+def test_approval_errors_have_stable_codes(api) -> None:
     proposal_id = api.propose()
 
-    _assert_http_error(lambda: api.approve(proposal_id, selected=[9]), 422, "invalid_selection")
-    _assert_http_error(lambda: api.approve(proposal_id, selected="all"), 422, "invalid_selection")
-    _assert_http_error(lambda: api.approve(proposal_id, selected=[True]), 422, "invalid_selection")
-    _assert_http_error(lambda: api.approve(proposal_id, text=5), 422, "invalid_request")
-    _assert_http_error(lambda: api.approve(proposal_id, profile="other"), 403, "profile_lock_mismatch")
-    _assert_http_error(lambda: api.approve("missing"), 404)
-    _assert_http_error(
-        lambda: api.approve(proposal_id, text="---\nid: x\n---\n正文", base_version="x"), 422, "frontmatter_not_allowed"
+    _assert_proposal_error(lambda: api.approve(proposal_id, selected=[9]), "invalid_selection")
+    _assert_proposal_error(
+        lambda: api.approve(proposal_id, text="---\nid: x\n---\n正文", base_version="x"), "frontmatter_not_allowed"
     )
-    _assert_http_error(lambda: api.module.approve_proposal("novel", proposal_id, {"profile": "writer"}), 422)
+    with pytest.raises(Exception) as missing:
+        api.approve("missing")
+    assert type(missing.value).__name__ == "NotFoundError"
 
 
-def test_a_conflicting_approval_is_a_409_naming_the_edit(api) -> None:
+def test_a_conflicting_approval_names_the_edit(api) -> None:
     proposal_id = api.propose()
     chapter = api.repo.get_chapter("novel", CHAPTER)
     api.repo.save_chapter("novel", CHAPTER, BODY.replace("雨下得很大", "雨一直下"), expected_version=chapter.version)
 
-    with pytest.raises(Exception) as error:
-        api.approve(proposal_id)
-
-    assert error.value.status_code == 409
-    assert error.value.detail["code"] == "conflict" and error.value.detail["reason"] == "edit_not_found"
+    _assert_proposal_error(lambda: api.approve(proposal_id), "conflict", reason="edit_not_found")
 
 
-def test_revoke_and_discard_close_the_way_to_a_write(api) -> None:
+def test_discarding_closes_the_way_to_a_write(api) -> None:
     first = api.propose()
     api.approve(first)
 
-    revoked = api.module.revoke_proposal("novel", first, dict(SCOPE))["proposal"]
-    assert revoked["status"] == "pending" and revoked["approval"] is None
-
     discarded = api.module.discard_proposal("novel", first, **SCOPE)["proposal"]
     assert discarded["status"] == "discarded"
-    _assert_http_error(lambda: api.approve(first), 409, "proposal_closed")
+    _assert_proposal_error(lambda: api.approve(first), "proposal_closed")
     assert api.module.list_proposals("novel", **SCOPE) == {"proposals": []}
 
 
@@ -324,4 +323,4 @@ def test_a_panel_approval_of_a_rename_refuses_a_selection(api) -> None:
         target_id=character.id, new_title="沈疏白",
     )["proposal_id"]
 
-    _assert_http_error(lambda: api.approve(rename_id, selected=[0]), 422, "invalid_request")
+    _assert_proposal_error(lambda: api.approve(rename_id, selected=[0]), "invalid_request")

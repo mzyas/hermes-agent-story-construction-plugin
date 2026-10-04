@@ -92,16 +92,6 @@ def test_approval_expires_after_fifteen_minutes(store, clock) -> None:
     assert [row["status"] for row in store.list_for_project(project_id="novel", profile="writer", connection_id="local")] == ["expired"]
 
 
-def test_revoking_returns_an_approved_proposal_to_pending(store) -> None:
-    created = store.create(_proposal())
-    store.approve(created["id"], {"digest": "d"})
-
-    revoked = store.revoke(created["id"])
-
-    assert revoked["status"] == "pending" and revoked["approval"] is None
-    assert store.revoke("missing") is None
-
-
 def test_discarding_closes_an_open_proposal_only(store) -> None:
     open_one = store.create(_proposal())
     done = store.create(_proposal(chapter_id="novel:chapter-2"))

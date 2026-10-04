@@ -417,11 +417,6 @@ class StoryProposalService:
             )
         return assess_risk(proposal, base)
 
-    def revoke(self, *, project_id: str, proposal_id: str, profile: str, connection_id: str) -> dict[str, Any]:
-        self._owned(project_id, proposal_id, profile, connection_id)
-        stored = self.store.revoke(proposal_id)
-        return _desktop_view(stored)
-
     def discard(self, *, project_id: str, proposal_id: str, profile: str, connection_id: str) -> dict[str, Any]:
         self._owned(project_id, proposal_id, profile, connection_id)
         stored = self.store.discard(proposal_id)

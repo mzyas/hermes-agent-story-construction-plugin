@@ -158,7 +158,7 @@ class StoryToolService:
         The pre_tool_call hook leaves a one-time grant when it sends this call to
         Hermes' approval prompt, and the call only reaches here if the person
         accepted. Without a grant (the hook did not run) nothing is approved
-        here, so only an approval from the Story panel can let the write through.
+        here, so the write is refused.
         """
 
         if self.grants is None:

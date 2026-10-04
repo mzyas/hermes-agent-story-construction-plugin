@@ -246,8 +246,6 @@ DELETE /projects/{project_id}/sessions/{stored_session_id}    remove a binding
 POST /projects/{project_id}/chapters/{chapter_id}/save        confirmed chapter save
 GET  /projects/{project_id}/records/{character|world_entry|note}/{id}   one record with its text (read-only)
 GET  /projects/{project_id}/proposals               the Agent's open proposals, with their diff
-POST /projects/{project_id}/proposals/{id}/approve  approve selected edits (or an edited text)
-POST /projects/{project_id}/proposals/{id}/revoke   withdraw an approval
 DELETE /projects/{project_id}/proposals/{id}        discard a proposal
 POST /projects/{project_id}/chapters/{id}/undo      restore the text from before the Agent's last write
                                                     (body `target_type` names another kind of record)
@@ -574,9 +572,7 @@ entries and notes**; each proposal targets one of them (`target_type`:
    writes nothing, and the proposal is closed. If nobody answers, the prompt
    times out and nothing is written either; the proposal stays in the panel
    marked as expired, and asking the Agent to apply it again raises a fresh
-   prompt. (The Dashboard API still has
-   `approve` and `revoke` endpoints for a panel approval, but the Desktop no
-   longer offers them.)
+   prompt.
    **Risky changes** (emptying a record, or removing about 800 characters, or 30%
    of a record of 100 or more) are marked “high risk” in the prompt and get a
    prompt rule of their own, so choosing *always allow* on a prompt never
@@ -585,9 +581,8 @@ entries and notes**; each proposal targets one of them (`target_type`:
 7. **Apply** — `story.apply_edit` takes only a `proposal_id`, so it cannot
    write anything else. It refuses a proposal that is not approved, expired,
    already written, discarded or replaced, and it does not rely on the prompt
-   having run: without the one-time grant the prompt hook leaves, an approval
-   made through the Dashboard API is the only other way it writes. Approved
-   edits are applied to the record as it is *now*: if you edited elsewhere in
+   having run: without the one-time grant the prompt hook leaves, it refuses
+   to write. Approved edits are applied to the record as it is *now*: if you edited elsewhere in
    the meantime they still apply, and if an approved edit no longer matches
    nothing is written.
 8. **Undo** — before every write the record's text is saved to

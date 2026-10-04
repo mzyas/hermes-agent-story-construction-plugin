@@ -271,48 +271,6 @@ def list_proposals(
     return {"proposals": proposals}
 
 
-@router.post("/projects/{project_id}/proposals/{proposal_id}/approve")
-def approve_proposal(project_id: str, proposal_id: str, body: dict[str, Any]) -> dict[str, Any]:
-    """Approve one proposal; this is the only way the Agent gets to write it."""
-
-    runtime, state = _require_runtime()
-    profile = _required_body(body, "profile")
-    connection_id = _required_body(body, "connection_id")
-    selected = body.get("selected")
-    if selected is not None and (
-        not isinstance(selected, list) or any(isinstance(i, bool) or not isinstance(i, int) for i in selected)
-    ):
-        raise HTTPException(status_code=422, detail={"code": "invalid_selection"})
-    text = body.get("text")
-    if text is not None and not isinstance(text, str):
-        raise HTTPException(status_code=422, detail={"code": "invalid_request"})
-    base_version = _optional_body(body, "base_version")
-    proposal = _proposal_call(
-        runtime, state, project_id, profile,
-        lambda service: service.approve(
-            project_id=project_id, proposal_id=proposal_id, profile=profile,
-            connection_id=connection_id, selected=selected, text=text, base_version=base_version,
-        ),
-        write=True,
-    )
-    return {"proposal": proposal}
-
-
-@router.post("/projects/{project_id}/proposals/{proposal_id}/revoke")
-def revoke_proposal(project_id: str, proposal_id: str, body: dict[str, Any]) -> dict[str, Any]:
-    runtime, state = _require_runtime()
-    profile = _required_body(body, "profile")
-    connection_id = _required_body(body, "connection_id")
-    proposal = _proposal_call(
-        runtime, state, project_id, profile,
-        lambda service: service.revoke(
-            project_id=project_id, proposal_id=proposal_id, profile=profile, connection_id=connection_id
-        ),
-        write=True,
-    )
-    return {"proposal": proposal}
-
-
 @router.delete("/projects/{project_id}/proposals/{proposal_id}")
 def discard_proposal(
     project_id: str,

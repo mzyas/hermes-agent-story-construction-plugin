@@ -203,17 +203,6 @@ def test_an_expired_approval_can_be_given_again(env) -> None:
     assert "雨下得很急" in env.chapter.content
 
 
-def test_a_revoked_approval_cannot_be_used(env) -> None:
-    proposal_id = env.propose([RAIN])["proposal_id"]
-    env.approve(proposal_id)
-    env.service.revoke(project_id="novel", proposal_id=proposal_id, **SCOPE)
-
-    with pytest.raises(ProposalError) as error:
-        env.apply(proposal_id)
-
-    assert error.value.code == "not_approved"
-
-
 def test_a_discarded_or_replaced_proposal_cannot_be_approved(env) -> None:
     first = env.propose([RAIN])["proposal_id"]
     second = env.propose([OPEN])["proposal_id"]
