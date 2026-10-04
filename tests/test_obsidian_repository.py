@@ -69,8 +69,8 @@ def test_create_project_initializes_readable_minimum_tree(tmp_path: Path) -> Non
     assert (tmp_path / "星海-纪事" / "world" / "world.md").is_file()
     assert (tmp_path / "星海-纪事" / "characters").is_dir()
     assert (tmp_path / "星海-纪事" / "notes").is_dir()
-    assert (tmp_path / "星海-纪事" / "volumes" / "volume-001.md").is_file()
-    chapter_path = tmp_path / "星海-纪事" / "chapters" / "chapter-001.md"
+    assert (tmp_path / "星海-纪事" / "volumes" / "volume-001" / "volume-001.md").is_file()
+    chapter_path = tmp_path / "星海-纪事" / "volumes" / "volume-001" / "chapter-001.md"
     assert chapter_path.is_file()
     assert not chapter_path.read_bytes().startswith(b"\xef\xbb\xbf")
 

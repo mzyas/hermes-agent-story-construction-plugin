@@ -446,7 +446,7 @@ characters, and notes. “New volume” and “New chapter” (a chapter goes in
 open chapter's volume, else the last volume) open an inline title field;
 Enter creates, Escape cancels, and Enter that confirms an IME candidate is
 ignored. The new volume or chapter is a new Markdown record
-(`volumes/volume-NNN.md`, `chapters/chapter-NNN.md`) with the next free
+(`volumes/volume-NNN/volume-NNN.md`, `volumes/volume-NNN/chapter-NNN.md`, so a chapter sits inside its volume's folder) with the next free
 `<project>:volume-N` / `<project>:chapter-N` ID; an existing file is never
 overwritten, titles are trimmed and limited to 120 characters without control
 characters, and a failed request shows generic copy rather than the raw error.

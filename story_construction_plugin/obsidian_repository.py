@@ -100,22 +100,24 @@ class ObsidianProjectRepository:
         staging_parent = Path(tempfile.mkdtemp(prefix=".story-create-", dir=self.vault_root))
         staging_root = staging_parent / project_slug
         try:
-            for relative in ("world", "characters", "notes", "volumes", "chapters"):
+            for relative in ("world", "characters", "notes", "volumes"):
                 (staging_root / relative).mkdir(parents=True, exist_ok=True)
             _write_story_document(staging_root / "project.md", {
                 "type": "project", "id": project_id, "name": name.strip(),
                 "world_info_id": world_id,
             })
             _write_story_document(staging_root / "world" / "world.md", {
-                "type": "world_info", "id": world_id, "name": titles["world"],
-                "project_id": project_id,
+                "project_id": project_id, "type": "world_info", "id": world_id,
+                "name": titles["world"],
             })
-            _write_story_document(staging_root / "volumes" / "volume-001.md", {
-                "type": "volume", "id": volume_id, "project_id": project_id,
+            volume_folder = staging_root / "volumes" / "volume-001"
+            volume_folder.mkdir()
+            _write_story_document(volume_folder / "volume-001.md", {
+                "project_id": project_id, "type": "volume", "id": volume_id,
                 "title": titles["volume"],
             })
-            _write_story_document(staging_root / "chapters" / "chapter-001.md", {
-                "type": "chapter", "id": chapter_id, "project_id": project_id,
+            _write_story_document(volume_folder / "chapter-001.md", {
+                "project_id": project_id, "type": "chapter", "id": chapter_id,
                 "volume_id": volume_id, "title": titles["chapter"],
             })
             tree = ObsidianProjectRepository(staging_parent).get_project(project_id)
@@ -140,10 +142,10 @@ class ObsidianProjectRepository:
                 tree.project.id, "volume", (row.id for row in tree.volumes)
             )
             _write_new_story_document(
-                root / "volumes" / f"volume-{number:03d}.md",
+                root / "volumes" / f"volume-{number:03d}" / f"volume-{number:03d}.md",
                 {
-                    "type": "volume", "id": volume_id,
-                    "project_id": tree.project.id, "title": clean_title,
+                    "project_id": tree.project.id, "type": "volume",
+                    "id": volume_id, "title": clean_title,
                 },
             )
             self._invalidate_records()
@@ -158,15 +160,15 @@ class ObsidianProjectRepository:
         with self._create_lock:
             tree = self.get_project(project_id)
             self._one(tree.volumes, volume_id, "volume")
-            root = self._project_root(tree.project.id)
+            folder = self._volume_folder(volume_id)
             number, chapter_id = _next_numbered_id(
                 tree.project.id, "chapter", (row.id for row in tree.chapters)
             )
             _write_new_story_document(
-                root / "chapters" / f"chapter-{number:03d}.md",
+                folder / f"chapter-{number:03d}.md",
                 {
-                    "type": "chapter", "id": chapter_id,
-                    "project_id": tree.project.id, "volume_id": volume_id,
+                    "project_id": tree.project.id, "type": "chapter",
+                    "id": chapter_id, "volume_id": volume_id,
                     "title": clean_title,
                 },
                 content,
@@ -218,6 +220,22 @@ class ObsidianProjectRepository:
             ):
                 return path.parent
         raise NotFoundError(f"project {project_id!r} was not found")
+
+    def _volume_folder(self, volume_id: str) -> Path:
+        """Folder a volume's chapters live in: the one holding its record file.
+
+        A volume still stored as a loose ``volumes/volume-NNN.md`` gets a folder
+        of the same name beside it.
+        """
+
+        for path in self._markdown_files():
+            metadata = _read_document(path).metadata
+            if (
+                str(metadata.get("type", "")).strip() == "volume"
+                and str(metadata.get("id", "")).strip() == volume_id
+            ):
+                return path.parent if path.parent.name == path.stem else path.with_suffix("")
+        raise NotFoundError(f"volume {volume_id!r} was not found")
 
     def get_project(self, project_id: str) -> ProjectTree:
         records = self._records()
@@ -354,8 +372,8 @@ class ObsidianProjectRepository:
             _write_new_story_document(
                 root / "characters" / f"character-{number:03d}.md",
                 {
-                    "type": "character", "id": character_id,
-                    "project_id": tree.project.id,
+                    "project_id": tree.project.id, "type": "character",
+                    "id": character_id,
                     "name": _unique_title(clean, (row.name for row in tree.characters)),
                 },
                 content,
@@ -402,7 +420,7 @@ class ObsidianProjectRepository:
                 tree.project.id, "note", (row.id for row in tree.notes)
             )
             metadata: dict[str, Any] = {
-                "type": "note", "id": note_id, "project_id": tree.project.id,
+                "project_id": tree.project.id, "type": "note", "id": note_id,
                 "title": _unique_title(
                     clean, (row.title for row in tree.notes if row.category_id == category_id)
                 ),

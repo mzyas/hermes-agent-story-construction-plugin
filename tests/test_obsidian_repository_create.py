@@ -34,7 +34,8 @@ def test_new_volume_is_appended_after_the_existing_ones(repository, tmp_path) ->
         "novel:volume-1",
         "novel:volume-2",
     ]
-    written = _read(tmp_path / "novel" / "volumes" / "volume-002.md")
+    written = _read(tmp_path / "novel" / "volumes" / "volume-002" / "volume-002.md")
+    assert written.startswith("---\nproject_id: novel\ntype: volume\n")
     assert "type: volume" in written
     assert "id: novel:volume-2" in written
     assert "project_id: novel" in written
@@ -49,14 +50,14 @@ def test_new_chapter_is_empty_and_belongs_to_the_chosen_volume(repository, tmp_p
     assert chapter.volume_id == second.id
     assert chapter.title == "雨夜"
     assert chapter.content == ""
-    assert chapter.source_ref == "novel/chapters/chapter-002.md"
+    assert chapter.source_ref == "novel/volumes/volume-002/chapter-002.md"
     assert repository.get_chapter("novel", chapter.id) == chapter
     assert [row.id for row in repository.list_chapters("novel", second.id)] == [chapter.id]
-    assert "volume_id: novel:volume-2" in _read(tmp_path / "novel" / "chapters" / "chapter-002.md")
+    assert "volume_id: novel:volume-2" in _read(tmp_path / "novel" / "volumes" / "volume-002" / "chapter-002.md")
 
 
 def test_numbering_continues_after_the_highest_id_even_with_gaps(repository, tmp_path) -> None:
-    gap = tmp_path / "novel" / "chapters" / "chapter-007.md"
+    gap = tmp_path / "novel" / "volumes" / "volume-001" / "chapter-007.md"
     gap.write_text(
         "---\ntype: chapter\nid: novel:chapter-7\nproject_id: novel\n"
         "volume_id: novel:volume-1\ntitle: Seven\n---\n\nbody\n",
@@ -66,7 +67,7 @@ def test_numbering_continues_after_the_highest_id_even_with_gaps(repository, tmp
     chapter = repository.create_chapter("novel", "novel:volume-1", "Eight")
 
     assert chapter.id == "novel:chapter-8"
-    assert (tmp_path / "novel" / "chapters" / "chapter-008.md").is_file()
+    assert (tmp_path / "novel" / "volumes" / "volume-001" / "chapter-008.md").is_file()
 
 
 @pytest.mark.parametrize(
@@ -96,7 +97,8 @@ def test_unknown_project_or_volume_is_not_found_and_writes_nothing(repository, t
 
 
 def test_an_existing_file_at_the_target_path_is_never_overwritten(repository, tmp_path) -> None:
-    squatter = tmp_path / "novel" / "volumes" / "volume-002.md"
+    squatter = tmp_path / "novel" / "volumes" / "volume-002" / "volume-002.md"
+    squatter.parent.mkdir()
     squatter.write_text("---\ntype: note\nid: keep\nproject_id: novel\ntitle: Keep\n---\n\nmine\n", encoding="utf-8")
     before = squatter.read_bytes()
 
@@ -120,7 +122,7 @@ def test_other_projects_are_untouched(tmp_path) -> None:
     repository.create_chapter("novel", "novel:volume-1", "Two")
 
     assert {path: path.read_bytes() for path in (tmp_path / "other").rglob("*.md")} == before
-    assert not list((tmp_path / "other" / "chapters").glob("chapter-002.md"))
+    assert not list((tmp_path / "other" / "volumes").rglob("chapter-002.md"))
 
 
 def test_concurrent_creates_get_distinct_ids_and_files(repository, tmp_path) -> None:
@@ -132,7 +134,7 @@ def test_concurrent_creates_get_distinct_ids_and_files(repository, tmp_path) -> 
 
     ids = [chapter.id for chapter in chapters]
     assert len(set(ids)) == 8
-    assert len(list((tmp_path / "novel" / "chapters").glob("chapter-*.md"))) == 9
+    assert len(list((tmp_path / "novel" / "volumes" / "volume-001").glob("chapter-*.md"))) == 9
     assert len(repository.get_project("novel").chapters) == 9
 
 
@@ -144,7 +146,7 @@ def test_trashing_a_project_moves_the_folder_and_hides_it(repository, tmp_path) 
     assert destination.parent == tmp_path / ".story-trash"
     assert destination.name.startswith("novel-")
     assert (destination / "project.md").is_file()
-    assert (destination / "chapters" / "chapter-001.md").is_file()
+    assert (destination / "volumes" / "volume-001" / "chapter-001.md").is_file()
     assert not (tmp_path / "novel").exists()
     assert [row.id for row in repository.list_projects()] == ["other"]
     with pytest.raises(NotFoundError):
@@ -173,6 +175,6 @@ def test_a_new_chapter_can_start_with_its_text(repository, tmp_path) -> None:
     chapter = repository.create_chapter("novel", "novel:volume-1", "第二章", "天亮了。\n\n雨停了。\n")
 
     assert chapter.id == "novel:chapter-2" and chapter.content == "天亮了。\n\n雨停了。"
-    written = _read(tmp_path / "novel" / "chapters" / "chapter-002.md")
+    written = _read(tmp_path / "novel" / "volumes" / "volume-001" / "chapter-002.md")
     assert written.startswith("---\n") and written.endswith("---\n\n天亮了。\n\n雨停了。\n")
     assert repository.create_chapter("novel", "novel:volume-1", "空章").content == ""

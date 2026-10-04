@@ -170,7 +170,7 @@ def test_project_session_lifecycle_and_confirmed_save_round_trip(tmp_path: Path)
     ))
     assert saved.chapter.content.startswith("The opening scene")
     raw = (vault / chapter.source_ref).read_text(encoding="utf-8")
-    assert raw.startswith("---\ntype: chapter")
+    assert raw.startswith("---\nproject_id: novel\ntype: chapter")
     assert f"id: {chapter.id}" in raw
     assert f"project_id: {project.id}" in raw
     assert f"volume_id: {chapter.volume_id}" in raw

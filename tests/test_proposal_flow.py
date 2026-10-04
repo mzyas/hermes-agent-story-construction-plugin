@@ -49,7 +49,7 @@ class Env:
 
     @property
     def file_text(self) -> str:
-        return (self.vault / "novel" / "chapters" / "chapter-001.md").read_text(encoding="utf-8")
+        return (self.vault / "novel" / "volumes" / "volume-001" / "chapter-001.md").read_text(encoding="utf-8")
 
     def propose(self, edits, version: str | None = None) -> dict:
         return self.service.propose_edit(
