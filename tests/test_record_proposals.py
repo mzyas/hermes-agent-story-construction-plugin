@@ -496,9 +496,7 @@ def test_the_older_chapter_argument_names_still_work(env) -> None:
 # ------------------------------------------------------------------ hardening
 def test_a_world_entry_needs_the_projects_world_info_and_the_proposal_says_so(env) -> None:
     env.repository.create_project("Bare", slug="bare")
-    project_file = env.vault / "bare" / "project.md"
-    lines = project_file.read_text(encoding="utf-8").splitlines(keepends=True)
-    project_file.write_text("".join(line for line in lines if not line.startswith("world_info_id")), encoding="utf-8")
+    (env.vault / "bare" / "world" / "world.md").unlink()
     env.repository._invalidate_records()
 
     with pytest.raises(ProposalError) as error:

@@ -33,12 +33,12 @@ def test_project_creation_creates_one_default_volume() -> None:
 
 def test_domain_records_keep_the_approved_relationships() -> None:
     world_info = WorldInfo(id="world-1", name="World", project_id=None)
-    entry = WorldInfoEntry(id="entry-1", world_info_id=world_info.id, title="Rule", content="Magic")
+    entry = WorldInfoEntry(id="entry-1", project_id="project-1", title="Rule", content="Magic")
     character = Character(id="character-1", project_id="project-1", name="A", content="Lead")
     root_note = Note(id="note-1", project_id="project-1", title="Reference", content="Fact")
 
     assert world_info.project_id is None
-    assert entry.world_info_id == world_info.id
+    assert entry.project_id == "project-1"
     assert character.project_id == "project-1"
     assert root_note.category_id is None
 

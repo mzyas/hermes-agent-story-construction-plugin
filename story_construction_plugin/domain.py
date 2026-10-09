@@ -9,7 +9,6 @@ from dataclasses import dataclass
 class Project:
     id: str
     name: str
-    world_info_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,7 +21,7 @@ class WorldInfo:
 @dataclass(frozen=True, slots=True)
 class WorldInfoEntry:
     id: str
-    world_info_id: str
+    project_id: str
     title: str
     content: str
     source_ref: str = ""

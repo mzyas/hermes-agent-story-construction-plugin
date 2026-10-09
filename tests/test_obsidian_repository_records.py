@@ -81,7 +81,7 @@ def test_a_new_world_entry_belongs_to_the_projects_world_info(repository, tmp_pa
 
     assert entry.id == "novel:world-entry-1"
     assert entry.title == "钟楼" and entry.content == "镇上最高的建筑。"
-    assert entry.world_info_id == "novel:world"
+    assert entry.project_id == "novel"
     assert entry.source_ref == "novel/world/entry-001.md"
     assert repository.get_world_entry("novel", entry.id) == entry
     assert [row.id for row in repository.search_world_info("novel", "钟楼")] == [entry.id]
@@ -198,7 +198,7 @@ def test_renaming_keeps_windows_line_endings_and_other_frontmatter(repository, t
     raw = path.read_bytes().decode("utf-8")
     assert "title: 旧钟楼\r\n" in raw
     assert "\n" not in raw.replace("\r\n", "")
-    assert "world_info_id: novel:world" in raw
+    assert raw.startswith("---\r\nproject_id: novel") or raw.startswith("---\nproject_id: novel")
 
 
 def test_a_name_already_in_use_gets_a_number_when_renaming(repository) -> None:

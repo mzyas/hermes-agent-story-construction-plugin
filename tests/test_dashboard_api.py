@@ -36,7 +36,7 @@ class FakeRepository:
         # catch those exact class objects, not the real-package copies imported
         # by tests.
         self._repository_module = repository_module
-        self.project = Project(id="p1", name="Novel", world_info_id="w1")
+        self.project = Project(id="p1", name="Novel")
         self.chapter = Chapter(
             id="ch1", project_id="p1", volume_id="v1", title="Opening",
             content="full chapter body", source_ref="chapters/ch1.md", version="v1",
@@ -66,7 +66,7 @@ class FakeRepository:
             return self._repository_module.ProjectTree(
                 project=self.project,
                 world_info=WorldInfo(id="w1", name="World", project_id="p1"),
-                world_info_entries=(WorldInfoEntry(id="e1", world_info_id="w1", title="Rule", content="secret"),),
+                world_info_entries=(WorldInfoEntry(id="e1", project_id="p1", title="Rule", content="secret"),),
                 characters=(Character(id="c1", project_id="p1", name="Hero", content="secret"),),
                 categories=(),
                 notes=(Note(id="n1", project_id="p1", title="Ref", content="secret"),),

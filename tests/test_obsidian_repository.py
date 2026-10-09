@@ -29,12 +29,12 @@ def _write(root: Path, relative: str, frontmatter: str, body: str) -> Path:
 
 @pytest.fixture
 def vault(tmp_path: Path) -> Path:
-    _write(tmp_path, "project.md", "type: project\nid: p1\nname: Demo\nworld_info_id: w1", "")
-    _write(tmp_path, "world/index.md", "type: world_info\nid: w1\nname: World", "")
+    _write(tmp_path, "project.md", "project_id: p1\ntype: project\nid: p1\nname: Demo", "")
+    _write(tmp_path, "world/index.md", "project_id: p1\ntype: world_info\nid: w1\nname: World", "")
     _write(
         tmp_path,
         "world/entry.md",
-        "type: world_info_entry\nid: e1\nworld_info_id: w1\ntitle: Magic\nproject_id: p1",
+        "project_id: p1\ntype: world_info_entry\nid: e1\ntitle: Magic",
         "Magic has a price.",
     )
     _write(tmp_path, "characters/hero.md", "type: character\nid: c1\nproject_id: p1\nname: Hero", "Brave")
@@ -93,7 +93,7 @@ def test_create_project_rejects_existing_project_id_before_publish(tmp_path: Pat
     _write(
         tmp_path,
         "legacy/project.md",
-        "type: project\nid: p1\nname: Legacy\nworld_info_id: legacy-world",
+        "type: project\nid: p1\nname: Legacy",
         "",
     )
     _write(

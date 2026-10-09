@@ -103,8 +103,8 @@ class ObsidianProjectRepository:
             for relative in ("world", "characters", "notes", "volumes"):
                 (staging_root / relative).mkdir(parents=True, exist_ok=True)
             _write_story_document(staging_root / "project.md", {
-                "type": "project", "id": project_id, "name": name.strip(),
-                "world_info_id": world_id,
+                "project_id": project_id, "type": "project", "id": project_id,
+                "name": name.strip(),
             })
             _write_story_document(staging_root / "world" / "world.md", {
                 "project_id": project_id, "type": "world_info", "id": world_id,
@@ -240,13 +240,13 @@ class ObsidianProjectRepository:
     def get_project(self, project_id: str) -> ProjectTree:
         records = self._records()
         project = self._one(records["project"], project_id, "project")
-        world_info = next(
-            (row for row in records["world_info"] if row.id == project.world_info_id),
-            None,
-        )
+        worlds = [row for row in records["world_info"] if row.project_id == project.id]
+        if len(worlds) > 1:
+            raise RepositoryError(f"project {project.id!r} has more than one world info")
+        world_info = worlds[0] if worlds else None
         entries = tuple(
             row for row in records["world_info_entry"]
-            if world_info is not None and row.world_info_id == world_info.id
+            if world_info is not None and row.project_id == project.id
         )
         characters = tuple(row for row in records["character"] if row.project_id == project.id)
         categories = tuple(row for row in records["note_category"] if row.project_id == project.id)
@@ -396,8 +396,8 @@ class ObsidianProjectRepository:
             _write_new_story_document(
                 root / "world" / f"entry-{number:03d}.md",
                 {
-                    "type": "world_info_entry", "id": entry_id,
-                    "world_info_id": tree.world_info.id,
+                    "project_id": tree.project.id, "type": "world_info_entry",
+                    "id": entry_id,
                     "title": _unique_title(clean, (row.title for row in tree.world_info_entries)),
                 },
                 content,
@@ -788,11 +788,11 @@ def _to_record(kind: str, document: _Document, vault_root: Path) -> Any:
     source_ref = document.path.relative_to(vault_root).as_posix()
     common = {"source_ref": source_ref, "version": document.version}
     if kind == "project":
-        return Project(id=object_id, name=_text(metadata, "name", document.path.stem), world_info_id=_optional(metadata, "world_info_id"))
+        return Project(id=object_id, name=_text(metadata, "name", document.path.stem))
     if kind == "world_info":
         return WorldInfo(id=object_id, name=_text(metadata, "name", document.path.stem), project_id=_optional(metadata, "project_id"))
     if kind == "world_info_entry":
-        return WorldInfoEntry(id=object_id, world_info_id=_required(metadata, "world_info_id", kind), title=_text(metadata, "title", document.path.stem), content=document.content, **common)
+        return WorldInfoEntry(id=object_id, project_id=_required(metadata, "project_id", kind), title=_text(metadata, "title", document.path.stem), content=document.content, **common)
     if kind == "character":
         return Character(id=object_id, project_id=_required(metadata, "project_id", kind), name=_text(metadata, "name", document.path.stem), content=document.content, **common)
     if kind == "note_category":
