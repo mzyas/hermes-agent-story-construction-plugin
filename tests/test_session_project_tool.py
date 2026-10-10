@@ -94,19 +94,31 @@ def test_prompt_covers_every_kind_of_record_and_checks_before_creating() -> None
 
     for kind in ("chapter", "character", "world_entry", "note"):
         assert kind in rendered
-    assert "story.get_record" in rendered and "story.list_records" in rendered
+    assert "story.list_records" in rendered
     assert "does not already exist" in rendered  # list before creating a duplicate
-    assert "name_in_use" in rendered
     assert "read-only" in rendered  # reference notes
+    # Per-tool detail lives in the tool descriptions, not the prompt.
+    assert "name_in_use" in TOOL_SCHEMAS["story.propose_new"]["description"]
+    assert "final title" in TOOL_SCHEMAS["story.apply_edit"]["description"]
 
 
 def test_prompt_keeps_the_agent_brief_and_from_acting_unasked() -> None:
     rendered = render_story_agent_system_prompt()
 
-    assert "## Tone" in rendered and "no flattery" in rendered and "no emoji" in rendered
+    # Brevity and no-filler rules come from Hermes' own identity prompt; only the extras stay here.
+    assert "## Tone" in rendered and "language of the user's latest message" in rendered
+    assert "no emoji" in rendered.lower()
     assert "A question is answered, not acted on" in rendered
     assert "propose a change only when the user asks" in rendered.lower()
 
 
+def test_prompt_output_rule_applies_only_to_planning_and_drafting() -> None:
+    rendered = render_story_agent_system_prompt()
+
+    assert "When asked to plan or draft a chapter" in rendered
+    assert "continuity warnings" in rendered
+    assert "for the current request" not in rendered  # no blanket contract on every reply
+
+
 def test_prompt_version_names_the_current_protocol() -> None:
-    assert render_story_agent_system_prompt().startswith("# StoryConstructionAgentPrompt v8")
+    assert render_story_agent_system_prompt().startswith("# StoryConstructionAgentPrompt v9")
