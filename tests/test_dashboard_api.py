@@ -226,8 +226,16 @@ def test_dashboard_status_is_ready_without_returning_vault_path(monkeypatch, tmp
     assert str(tmp_path / "vault") not in repr(status)
 
 
-def test_guide_route_needs_no_ready_runtime(monkeypatch, tmp_path: Path) -> None:
-    plugin_api, _, _ = _ready_runtime(monkeypatch, tmp_path)
+def test_guide_route_needs_no_selected_profile_or_ready_runtime(monkeypatch, tmp_path: Path) -> None:
+    from dashboard import plugin_api
+
+    home = tmp_path / "uninitialized-home"
+    home.mkdir()
+    monkeypatch.setenv("HERMES_HOME", str(home))
+    monkeypatch.delenv("HERMES_MANAGED", raising=False)
+    monkeypatch.delenv("HERMES_MANAGED_DIR", raising=False)
+    monkeypatch.setattr(Path, "home", lambda: home)
+    assert plugin_api.status()["code"] == "profile_not_selected"
 
     guide = plugin_api.story_guide()
 

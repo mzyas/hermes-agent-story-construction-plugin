@@ -10,6 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from . import _SKILLS
 from .prompt_templates import (
     STORY_AGENT_PROMPT_VERSION,
     STORY_PROMPT_MAX_CHARS,
@@ -38,6 +39,7 @@ def _main_prompt() -> dict[str, Any]:
         "text": text,
         "chars": len(text),
         "max_chars": STORY_PROMPT_MAX_CHARS,
+        "injected": True,
     }
 
 
@@ -60,10 +62,15 @@ def _worker_prompt() -> dict[str, Any]:
         "text": text,
         "chars": len(text),
         "max_chars": None,
+        # Nothing in the runtime sends this template to a sub-agent yet.
+        "injected": False,
     }
 
 
 def _skills(skills_dir: Path) -> list[dict[str, Any]]:
+    # The description registered with Hermes is what the Agent sees, so it wins
+    # over the SKILL.md frontmatter.
+    registered = dict(_SKILLS)
     skills: list[dict[str, Any]] = []
     for skill_file in sorted(skills_dir.glob("*/SKILL.md")):
         text = skill_file.read_text(encoding="utf-8")
@@ -73,7 +80,7 @@ def _skills(skills_dir: Path) -> list[dict[str, Any]]:
             {
                 "id": folder,
                 "name": f"{SKILL_NAMESPACE}:{meta.get('name') or folder}",
-                "description": meta.get("description", ""),
+                "description": registered.get(folder) or meta.get("description", ""),
                 "text": text,
                 "chars": len(text),
             }

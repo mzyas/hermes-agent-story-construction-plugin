@@ -71,8 +71,9 @@ const en = {
     loading: 'Loading…',
     unavailable: 'Could not load the guide. Check the Story service and try again.',
     retry: 'Retry',
-    readOnly: 'Read-only: this is what the plugin gives the Agent.',
-    workerNote: 'Template: the fields in <angle brackets> are filled in for each task.',
+    readOnly: 'Read-only.',
+    empty: 'Nothing to show.',
+    notInjected: 'Not injected yet: nothing sends this template to a sub-agent, so the Agent never receives it. Fields in <angle brackets> would be filled in per task.',
     chars: (count, max) => (max ? `${count} / ${max} characters` : `${count} characters`)
   },
   tree: {
@@ -302,8 +303,9 @@ const zh = {
     loading: '正在加载…',
     unavailable: '无法加载设定，请检查故事服务后重试。',
     retry: '重试',
-    readOnly: '只读：这是插件交给 Agent 的内容。',
-    workerNote: '模板：<尖括号> 中的字段会在每次任务时填入。',
+    readOnly: '只读。',
+    empty: '没有可显示的内容。',
+    notInjected: '尚未注入：目前没有代码会把这份模板发给子 Agent，Agent 不会收到它。<尖括号> 中的字段将在每次任务时填入。',
     chars: (count, max) => (max ? `${count} / ${max} 字符` : `${count} 字符`)
   },
   tree: {
@@ -3588,7 +3590,7 @@ function ProjectWorkspace() {
 
   useEffect(() => {
     if (!containerNode) return undefined
-    const measure = () => setLayoutWidth(containerNode.clientWidth)
+    const measure = () => setLayoutWidth(previous => nextLayoutWidth(previous, containerNode.clientWidth))
     measure()
     if (typeof ResizeObserver !== 'function') {
       window.addEventListener('resize', measure)
@@ -4371,6 +4373,31 @@ function ProjectWorkspace() {
 
 // One row per readable item of the Guide view, built from the backend's
 // /guide payload so prompt text is never duplicated in the front end.
+// A width of 0 means the page is hidden (display:none), not that it is narrow:
+// keep the last real width so the layout does not flip while the Guide shows.
+export function nextLayoutWidth(previous, measured) {
+  return measured > 0 ? measured : previous
+}
+
+const STORY_PAGE_MODES = ['story', 'guide']
+
+// Arrow keys, Home and End move between the page's two modes (tab pattern).
+export function nextStoryMode(mode, key) {
+  const index = STORY_PAGE_MODES.indexOf(mode)
+  if (key === 'ArrowRight') return STORY_PAGE_MODES[(index + 1) % STORY_PAGE_MODES.length]
+  if (key === 'ArrowLeft') return STORY_PAGE_MODES[(index + STORY_PAGE_MODES.length - 1) % STORY_PAGE_MODES.length]
+  if (key === 'Home') return STORY_PAGE_MODES[0]
+  if (key === 'End') return STORY_PAGE_MODES[STORY_PAGE_MODES.length - 1]
+  return null
+}
+
+// A prompt id the front end has no label for falls back to the id itself.
+function storyGuidePromptLabel(id, t) {
+  const key = `guide.${id}`
+  const label = t(key)
+  return label && label !== key ? label : id
+}
+
 export function storyGuideEntries(guide, t) {
   const prompts = Array.isArray(guide?.prompts) ? guide.prompts : []
   const skills = Array.isArray(guide?.skills) ? guide.skills : []
@@ -4378,9 +4405,9 @@ export function storyGuideEntries(guide, t) {
     ...prompts.map(prompt => ({
       id: `prompt:${prompt.id}`,
       group: 'prompts',
-      label: t(`guide.${prompt.id}`),
+      label: storyGuidePromptLabel(prompt.id, t),
       version: prompt.version || '',
-      note: prompt.id === 'worker' ? t('guide.workerNote') : '',
+      note: prompt.injected === false ? t('guide.notInjected') : '',
       text: prompt.text || '',
       chars: prompt.chars,
       maxChars: prompt.max_chars ?? null
@@ -4400,11 +4427,15 @@ export function storyGuideEntries(guide, t) {
 
 // Read-only view of what the plugin injects: the global and sub-agent prompts
 // and the packaged writing skills.
-function StoryGuide() {
+export function StoryGuide() {
   const t = usePluginI18n('story-construction')
+  const profile = useValue(host.state.profile)
+  const connectionId = useValue(host.state.connectionId)
   const [selectedId, setSelectedId] = useState(null)
+  // Scoped like every other query: each connection's backend serves its own
+  // plugin version, so one connection's guide must never stand in for another's.
   const query = useQuery({
-    queryKey: ['story-construction', 'guide'],
+    queryKey: ['story-construction', 'guide', profile, connectionId],
     queryFn: fetchStoryGuide
   })
   const entries = storyGuideEntries(query.data, t)
@@ -4412,6 +4443,9 @@ function StoryGuide() {
 
   if (query.isLoading) {
     return jsx('div', { className: 'p-4 text-(--ui-text-secondary)', children: t('guide.loading') })
+  }
+  if (!query.error && !selected) {
+    return jsx('div', { className: 'p-4 text-(--ui-text-secondary)', children: t('guide.empty') })
   }
   if (query.error || !selected) {
     return jsxs('div', {
@@ -4488,14 +4522,27 @@ function StoryGuide() {
 export function StoryPage() {
   const t = usePluginI18n('story-construction')
   const [mode, setMode] = useState('story')
+  const switchMode = (next, focus) => {
+    setMode(next)
+    if (focus && typeof document !== 'undefined') document.getElementById(`hermes-story-tab-${next}`)?.focus()
+  }
   const tab = (id, label) =>
     jsx('button', {
+      'aria-controls': `hermes-story-panel-${id}`,
       'aria-selected': mode === id,
       className:
         'rounded px-3 py-1 text-xs ' +
         (mode === id ? 'bg-(--chrome-action-hover) font-medium' : 'text-(--ui-text-secondary) hover:bg-(--chrome-action-hover)'),
-      onClick: () => setMode(id),
+      id: `hermes-story-tab-${id}`,
+      onClick: () => switchMode(id, false),
+      onKeyDown: event => {
+        const next = nextStoryMode(mode, event.key)
+        if (!next) return
+        event.preventDefault?.()
+        switchMode(next, true)
+      },
       role: 'tab',
+      tabIndex: mode === id ? 0 : -1,
       type: 'button',
       children: label
     })
@@ -4509,11 +4556,22 @@ export function StoryPage() {
         children: [tab('story', t('page.modeStory')), tab('guide', t('page.modeGuide'))]
       }),
       jsx('div', {
+        'aria-labelledby': 'hermes-story-tab-story',
         className: 'flex min-h-0 flex-1 flex-col',
+        id: 'hermes-story-panel-story',
+        role: 'tabpanel',
         style: mode === 'story' ? undefined : { display: 'none' },
         children: jsx(ProjectWorkspace, {})
       }),
-      mode === 'guide' ? jsx(StoryGuide, {}) : null
+      mode === 'guide'
+        ? jsx('div', {
+            'aria-labelledby': 'hermes-story-tab-guide',
+            className: 'flex min-h-0 flex-1 flex-col',
+            id: 'hermes-story-panel-guide',
+            role: 'tabpanel',
+            children: jsx(StoryGuide, {})
+          })
+        : null
     ]
   })
 }
