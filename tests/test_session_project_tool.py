@@ -100,6 +100,14 @@ def test_prompt_covers_every_kind_of_record_and_checks_before_creating() -> None
     # Per-tool detail lives in the tool descriptions, not the prompt.
     assert "name_in_use" in TOOL_SCHEMAS["story.propose_new"]["description"]
     assert "final title" in TOOL_SCHEMAS["story.apply_edit"]["description"]
+    assert "name_in_use" in TOOL_SCHEMAS["story.propose_rename"]["description"]
+
+
+def test_tool_descriptions_keep_the_read_guidance_the_prompt_no_longer_has() -> None:
+    edit = TOOL_SCHEMAS["story.propose_edit"]["description"]
+
+    assert "story.get_chapter" in edit and "story.get_record" in edit
+    assert "base_version" in edit  # pass the version you read
 
 
 def test_prompt_keeps_the_agent_brief_and_from_acting_unasked() -> None:
@@ -108,6 +116,7 @@ def test_prompt_keeps_the_agent_brief_and_from_acting_unasked() -> None:
     # Brevity and no-filler rules come from Hermes' own identity prompt; only the extras stay here.
     assert "## Tone" in rendered and "language of the user's latest message" in rendered
     assert "no emoji" in rendered.lower()
+    assert "say so and offer an alternative" in rendered  # flag continuity or setting conflicts
     assert "A question is answered, not acted on" in rendered
     assert "propose a change only when the user asks" in rendered.lower()
 
@@ -117,6 +126,7 @@ def test_prompt_output_rule_applies_only_to_planning_and_drafting() -> None:
 
     assert "When asked to plan or draft a chapter" in rendered
     assert "continuity warnings" in rendered
+    assert "still citing sources" in rendered  # plain answers keep the citation rule
     assert "for the current request" not in rendered  # no blanket contract on every reply
 
 

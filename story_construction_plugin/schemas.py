@@ -133,8 +133,9 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "first with story.list_records that it does not already exist, and "
             "change an existing one with story.propose_edit instead. This only "
             "stores a proposal; call story.apply_edit next to have the user approve it. "
-            "A name that is already taken is flagged with a name_in_use warning and "
-            "gets a number after it. "
+            "A character, world entry or note name already in use (for a note, within "
+            "its category) is flagged with a name_in_use warning and gets a number "
+            "after it; chapters may share a title. "
             "content must be only the record's text: no greeting, no explanation, "
             "no closing remark, no code fence, no frontmatter, no repeated title. "
             "Put all conversation in your chat reply instead. The project comes "
@@ -163,7 +164,9 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "description": (
             "Propose a new title or name for an existing chapter, character, world "
             "info entry or note. Only the name changes: the text, id and file stay "
-            "the same. A name another record already has gets a number after it. "
+            "the same. A character, world entry or note name already in use (for a "
+            "note, within its category) is flagged with a name_in_use warning and "
+            "gets a number after it; chapters may share a title. "
             "This only stores a proposal; call story.apply_edit next to have the "
             "user approve it. To change the text as well, use story.propose_edit "
             "separately. Notes marked as references are read-only. The project "
@@ -223,9 +226,9 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "Story panel); it writes exactly what they approve and nothing else. "
             "If the call is blocked or declined, nothing was written: tell the user "
             "and do not retry. If it says the proposal expired or is in conflict, "
-            "tell the user instead of retrying with other content. When it applies, "
-            "it reports the final title or name, which differs from the proposed "
-            "one if that name was already taken."
+            "tell the user, then propose again instead of retrying with other content. "
+            "For a new record or a rename, it reports the final title or name, which "
+            "differs from the proposed one if that name was already taken."
         ),
         "parameters": _parameters(
             {"proposal_id": {"type": "string", "minLength": 1, "description": "The proposal_id returned by the proposal tool you just called."}},
