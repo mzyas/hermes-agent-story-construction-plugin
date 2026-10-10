@@ -78,6 +78,16 @@ def test_prompt_tells_the_agent_to_judge_intent_and_use_the_tool() -> None:
     assert "project_id:" not in rendered  # the frozen prompt carries no live records
 
 
+def test_prompt_and_tool_keep_the_story_project_apart_from_code_projects() -> None:
+    rendered = render_story_agent_system_prompt()
+
+    assert "not things inside the story" in rendered  # a story about code is still story work
+    assert "latest message is about code or software" in rendered
+    assert "never story work" not in rendered  # no absolute rule over the ask-when-unclear fallback
+    assert "story (fiction) project" in TOOL_SCHEMAS[TOOL]["description"]
+    assert "never a code or software project" in TOOL_SCHEMAS[TOOL]["description"]
+
+
 def test_prompt_makes_the_agent_propose_wait_for_approval_and_keep_text_clean() -> None:
     rendered = render_story_agent_system_prompt()
 
@@ -132,4 +142,4 @@ def test_prompt_output_rule_applies_only_to_planning_and_drafting() -> None:
 
 
 def test_prompt_version_names_the_current_protocol() -> None:
-    assert render_story_agent_system_prompt().startswith("# StoryConstructionAgentPrompt v9")
+    assert render_story_agent_system_prompt().startswith("# StoryConstructionAgentPrompt v10")

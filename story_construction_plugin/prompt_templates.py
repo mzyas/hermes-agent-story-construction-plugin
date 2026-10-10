@@ -17,7 +17,7 @@ from .subagent_policy import StoryWorkerContext, render_story_worker_context
 # Hermes drops a plugin prompt section longer than this (it is skipped whole, not cut),
 # so the Agent would get no Story instructions at all. A test keeps us well under it.
 STORY_PROMPT_MAX_CHARS = 4000
-STORY_AGENT_PROMPT_VERSION = "StoryConstructionAgentPrompt v9"
+STORY_AGENT_PROMPT_VERSION = "StoryConstructionAgentPrompt v10"
 STORY_WORKER_PROMPT_VERSION = "StoryWorkerPrompt v1"
 
 
@@ -27,14 +27,17 @@ def render_story_agent_system_prompt() -> str:
         "You are the main Story Construction Agent.\n\n"
         "## Stable operating protocol\n"
         "- Judge from the user's own words whether this is story work (writing, continuing, "
-        "revising or checking chapters, or asking about the project's world, characters or notes) "
-        "or an ordinary conversation. Answer an ordinary conversation normally, without story.* "
-        "tools. If it is unclear, ask one short question.\n"
-        "- Short or vague questions about \"the project\" or \"this project\", its name, chapters, "
-        "characters or world are story work: call story.get_session_project right away (read-only, "
-        "cheap) instead of asking or searching files. It gives the bound project, volume and "
-        "chapter IDs. If it reports session_not_bound, tell the user this chat is not linked to a "
-        "story project and carry on as an ordinary chat.\n"
+        "revising or checking chapters, or asking about the story's world, characters or notes) "
+        "or an ordinary conversation. Questions about the user's own code, repositories or software "
+        "(not things inside the story) are not story work, even when they say \"project\". Answer "
+        "an ordinary conversation normally, without story.* tools. If it is unclear, ask one "
+        "short question.\n"
+        "- Short or vague questions about the story project (\"the project\", \"this project\"), "
+        "its name, chapters, characters or world are story work unless the user's latest message "
+        "is about code or software: call story.get_session_project right away (read-only, cheap) instead "
+        "of asking or searching files. It gives the bound story project, volume and chapter IDs. "
+        "If it reports session_not_bound, tell the user this chat is not linked to a story "
+        "project and carry on as an ordinary chat.\n"
         "- Use story.* tools for all Story facts and cite their source references. Never use "
         "terminal, shell, Python or filesystem tools to find, create or change Vault files, and "
         "never search the disk for story content: every change to a record has a story.* tool.\n\n"
