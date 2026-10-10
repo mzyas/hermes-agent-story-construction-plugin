@@ -21,8 +21,15 @@ const sdkUrl = dataModule(`
 `)
 // A test can force the first useState value (the page mode) through a global.
 const reactUrl = dataModule(`
-  export const useEffect = () => {}
-  export const useState = value => [globalThis.forcedMode ?? value, () => {}]
+  export const useEffect = effect => { globalThis.effectCleanup = effect() }
+  export const useState = value => {
+    const slot = { value: globalThis.forcedMode ?? value }
+    const set = next => {
+      slot.value = typeof next === 'function' ? next(slot.value) : next
+      globalThis.lastState = slot.value
+    }
+    return [slot.value, set]
+  }
 `)
 const jsxRuntimeUrl = dataModule(`
   export const jsx = (type, props, key) => ({ type, props, key })
@@ -41,7 +48,7 @@ function rewriteDesktopImports(source) {
 }
 
 const source = readFileSync(fileURLToPath(pluginUrl), 'utf8')
-const { StoryGuide, StoryPage, nextLayoutWidth, nextStoryMode, storyGuideEntries } = await import(dataModule(rewriteDesktopImports(source)))
+const { StoryGuide, StoryPage, nextLayoutWidth, nextStoryMode, storyGuideEntries, useLayoutWidth } = await import(dataModule(rewriteDesktopImports(source)))
 
 const t = (key, ...args) => [key, ...args].join('|')
 const guide = {
@@ -94,6 +101,36 @@ test('a hidden page keeps the last real width', () => {
   assert.equal(nextLayoutWidth(900, 640), 640)
 })
 
+test('the measured width ignores a hidden (zero-width) container and detaches on cleanup', () => {
+  let observed = null
+  let disconnected = false
+  let notify = null
+  globalThis.ResizeObserver = class {
+    constructor(callback) { notify = callback }
+    observe(node) { observed = node }
+    disconnect() { disconnected = true }
+  }
+  const node = { clientWidth: 900 }
+  useLayoutWidth(node)
+  assert.equal(observed, node)
+  assert.equal(globalThis.lastState, 900)
+
+  node.clientWidth = 0
+  notify()
+  assert.equal(globalThis.lastState, 900)
+  node.clientWidth = 640
+  notify()
+  assert.equal(globalThis.lastState, 640)
+
+  globalThis.effectCleanup()
+  assert.equal(disconnected, true)
+
+  observed = null
+  useLayoutWidth(null)
+  assert.equal(observed, null)
+  delete globalThis.ResizeObserver
+})
+
 test('arrow keys, Home and End move between the page modes', () => {
   assert.equal(nextStoryMode('story', 'ArrowRight'), 'guide')
   assert.equal(nextStoryMode('guide', 'ArrowRight'), 'story')
@@ -101,6 +138,12 @@ test('arrow keys, Home and End move between the page modes', () => {
   assert.equal(nextStoryMode('guide', 'Home'), 'story')
   assert.equal(nextStoryMode('story', 'End'), 'guide')
   assert.equal(nextStoryMode('story', 'a'), null)
+})
+
+test('a query that has neither data nor an error yet (paused) still reads as loading', () => {
+  globalThis.guideQuery = {}
+  assert.equal(StoryGuide({}).props.children, 'guide.loading')
+  globalThis.guideQuery = undefined
 })
 
 test('the guide query is scoped to the connection and profile', () => {
@@ -144,7 +187,10 @@ test('the page shows the Story workspace by default and keeps it mounted under t
   assert.deepEqual(tabs.map(tab => tab.props['aria-selected']), [true, false])
   const pane = story.props.children[1]
   assert.equal(pane.props.style, undefined)
-  assert.equal(story.props.children[2], null)
+  const hiddenGuidePanel = story.props.children[2]
+  assert.equal(hiddenGuidePanel.props.id, 'hermes-story-panel-guide')
+  assert.deepEqual(hiddenGuidePanel.props.style, { display: 'none' })
+  assert.equal(hiddenGuidePanel.props.children, null)
   assert.equal(pane.props.role, 'tabpanel')
   assert.deepEqual(tabs.map(tab => tab.props.tabIndex), [0, -1])
   assert.deepEqual(tabs.map(tab => tab.props['aria-controls']), ['hermes-story-panel-story', 'hermes-story-panel-guide'])
@@ -157,5 +203,24 @@ test('the page shows the Story workspace by default and keeps it mounted under t
   const guidePanel = guideView.props.children[2]
   assert.equal(guidePanel.props.role, 'tabpanel')
   assert.equal(guidePanel.props.id, 'hermes-story-panel-guide')
+  assert.equal(guidePanel.props.style, undefined)
+  assert.equal(typeof guidePanel.props.children.type, 'function')
   globalThis.forcedMode = undefined
+})
+
+test('arrow keys on a tab prevent the default and focus the newly selected tab', () => {
+  globalThis.forcedMode = undefined
+  const focused = []
+  globalThis.document = { getElementById: id => ({ focus: () => focused.push(id) }) }
+  const [storyTab] = flat(StoryPage({})).filter(node => node.props?.role === 'tab')
+
+  let prevented = 0
+  storyTab.props.onKeyDown({ key: 'ArrowRight', preventDefault: () => { prevented += 1 } })
+  assert.equal(prevented, 1)
+  assert.deepEqual(focused, ['hermes-story-tab-guide'])
+
+  storyTab.props.onKeyDown({ key: 'a', preventDefault: () => { prevented += 1 } })
+  assert.equal(prevented, 1)
+  assert.equal(focused.length, 1)
+  delete globalThis.document
 })

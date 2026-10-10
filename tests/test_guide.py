@@ -57,3 +57,16 @@ def test_guide_skills_match_what_is_registered_with_hermes() -> None:
     assert set(skills) == {name for name, _description in _SKILLS}
     for name, description in _SKILLS:
         assert skills[name]["description"] == description
+
+
+def test_guide_prefers_the_registered_description_over_the_frontmatter(tmp_path: Path) -> None:
+    folder, registered = _SKILLS[0]
+    skill = tmp_path / folder / "SKILL.md"
+    skill.parent.mkdir()
+    skill.write_text(
+        "---\nname: x\ndescription: stale frontmatter\n---\nbody", encoding="utf-8"
+    )
+
+    (entry,) = build_story_guide(tmp_path)["skills"]
+
+    assert entry["description"] == registered

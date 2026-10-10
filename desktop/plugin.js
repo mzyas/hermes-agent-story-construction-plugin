@@ -3585,21 +3585,9 @@ function ProjectWorkspace() {
   // observer binds to the currently mounted page root and is detached whenever
   // that root swaps or the page unmounts, so no measurement outlives its node.
   const [containerNode, setContainerNode] = useState(null)
-  const [layoutWidth, setLayoutWidth] = useState(0)
+  const layoutWidth = useLayoutWidth(containerNode)
   const [sessionsOpen, setSessionsOpen] = useState(false)
 
-  useEffect(() => {
-    if (!containerNode) return undefined
-    const measure = () => setLayoutWidth(previous => nextLayoutWidth(previous, containerNode.clientWidth))
-    measure()
-    if (typeof ResizeObserver !== 'function') {
-      window.addEventListener('resize', measure)
-      return () => window.removeEventListener('resize', measure)
-    }
-    const observer = new ResizeObserver(measure)
-    observer.observe(containerNode)
-    return () => observer.disconnect()
-  }, [containerNode])
   const ownerKey = JSON.stringify([connectionId || '', profile || ''])
   // Task 5: page-lifetime unsaved draft store and the live editor's saving
   // flag. The map lives in a ref so entries survive every view switch inside
@@ -4371,12 +4359,29 @@ function ProjectWorkspace() {
   })
 }
 
-// One row per readable item of the Guide view, built from the backend's
-// /guide payload so prompt text is never duplicated in the front end.
 // A width of 0 means the page is hidden (display:none), not that it is narrow:
 // keep the last real width so the layout does not flip while the Guide shows.
 export function nextLayoutWidth(previous, measured) {
   return measured > 0 ? measured : previous
+}
+
+// The measured width of the page container, kept current by a ResizeObserver
+// that is detached whenever the node swaps or the page unmounts.
+export function useLayoutWidth(containerNode) {
+  const [layoutWidth, setLayoutWidth] = useState(0)
+  useEffect(() => {
+    if (!containerNode) return undefined
+    const measure = () => setLayoutWidth(previous => nextLayoutWidth(previous, containerNode.clientWidth))
+    measure()
+    if (typeof ResizeObserver !== 'function') {
+      window.addEventListener('resize', measure)
+      return () => window.removeEventListener('resize', measure)
+    }
+    const observer = new ResizeObserver(measure)
+    observer.observe(containerNode)
+    return () => observer.disconnect()
+  }, [containerNode])
+  return layoutWidth
 }
 
 const STORY_PAGE_MODES = ['story', 'guide']
@@ -4398,6 +4403,8 @@ function storyGuidePromptLabel(id, t) {
   return label && label !== key ? label : id
 }
 
+// One row per readable item of the Guide view, built from the backend's
+// /guide payload so prompt text is never duplicated in the front end.
 export function storyGuideEntries(guide, t) {
   const prompts = Array.isArray(guide?.prompts) ? guide.prompts : []
   const skills = Array.isArray(guide?.skills) ? guide.skills : []
@@ -4441,7 +4448,9 @@ export function StoryGuide() {
   const entries = storyGuideEntries(query.data, t)
   const selected = entries.find(entry => entry.id === selectedId) || entries[0] || null
 
-  if (query.isLoading) {
+  // No data and no error yet is still loading, including a paused query that
+  // is waiting for the network.
+  if (query.isLoading || (!query.data && !query.error)) {
     return jsx('div', { className: 'p-4 text-(--ui-text-secondary)', children: t('guide.loading') })
   }
   if (!query.error && !selected) {
@@ -4563,15 +4572,16 @@ export function StoryPage() {
         style: mode === 'story' ? undefined : { display: 'none' },
         children: jsx(ProjectWorkspace, {})
       }),
-      mode === 'guide'
-        ? jsx('div', {
-            'aria-labelledby': 'hermes-story-tab-guide',
-            className: 'flex min-h-0 flex-1 flex-col',
-            id: 'hermes-story-panel-guide',
-            role: 'tabpanel',
-            children: jsx(StoryGuide, {})
-          })
-        : null
+      // Always present so the Guide tab's aria-controls resolves; the Guide
+      // itself mounts only while it is shown.
+      jsx('div', {
+        'aria-labelledby': 'hermes-story-tab-guide',
+        className: 'flex min-h-0 flex-1 flex-col',
+        id: 'hermes-story-panel-guide',
+        role: 'tabpanel',
+        style: mode === 'guide' ? undefined : { display: 'none' },
+        children: mode === 'guide' ? jsx(StoryGuide, {}) : null
+      })
     ]
   })
 }
