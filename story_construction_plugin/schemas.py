@@ -38,9 +38,9 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "story.get_session_project": {
         "name": "story.get_session_project",
         "description": (
-            "Return the story (fiction) project this chat session is bound to, "
-            "never a code or software project, with its "
-            "volumes and chapter metadata (no chapter text). Takes no "
+            "Return the story (fiction) project this chat session is bound to, with its "
+            "volumes and chapter metadata (no chapter text); never a code or software "
+            "project. Takes no "
             "arguments. Call this first when the user wants to write, continue, "
             "or check the story, to learn the project_id, volume_id, and "
             "chapter_id that the other story.* tools need. An error "

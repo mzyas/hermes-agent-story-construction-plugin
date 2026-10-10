@@ -481,7 +481,7 @@ The normal Hermes loop is preserved:
 
 ```text
 Session input
-  → Hermes stable system prompt + StoryConstructionAgentPrompt v1
+  → Hermes stable system prompt + StoryConstructionAgentPrompt
   → canonical Session history + current turn
   → LLM call
   → story.* / skill_view tool call

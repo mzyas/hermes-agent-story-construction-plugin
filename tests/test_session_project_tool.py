@@ -81,8 +81,9 @@ def test_prompt_tells_the_agent_to_judge_intent_and_use_the_tool() -> None:
 def test_prompt_and_tool_keep_the_story_project_apart_from_code_projects() -> None:
     rendered = render_story_agent_system_prompt()
 
-    assert "never story work, even when they say \"project\"" in rendered
-    assert "unless the conversation is about code or software" in rendered
+    assert "not things inside the story" in rendered  # a story about code is still story work
+    assert "latest message is about code or software" in rendered
+    assert "never story work" not in rendered  # no absolute rule over the ask-when-unclear fallback
     assert "story (fiction) project" in TOOL_SCHEMAS[TOOL]["description"]
     assert "never a code or software project" in TOOL_SCHEMAS[TOOL]["description"]
 
