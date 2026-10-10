@@ -58,6 +58,24 @@ const en = {
     readOnly: 'Read-only here. Ask the Agent in a session to propose changes.',
     kind: { character: 'Character', world_entry: 'World entry', note: 'Note' }
   },
+  page: {
+    modes: 'View',
+    modeStory: 'Story',
+    modeGuide: 'Guide'
+  },
+  guide: {
+    prompts: 'Prompts',
+    skills: 'Skills',
+    global: 'Global prompt',
+    worker: 'Sub-agent prompt',
+    loading: 'Loading…',
+    unavailable: 'Could not load the guide. Check the Story service and try again.',
+    retry: 'Retry',
+    readOnly: 'Read-only.',
+    empty: 'Nothing to show.',
+    notInjected: 'Not injected yet: nothing sends this template to a sub-agent, so the Agent never receives it. Fields in <angle brackets> would be filled in per task.',
+    chars: (count, max) => (max ? `${count} / ${max} characters` : `${count} characters`)
+  },
   tree: {
     project: 'Project',
     worldInfo: 'WorldInfo',
@@ -271,6 +289,24 @@ const zh = {
     empty: '这条记录还没有内容。',
     readOnly: '这里是只读的。想修改请在会话里让 Agent 提出修改。',
     kind: { character: '角色', world_entry: '世界设定条目', note: '笔记' }
+  },
+  page: {
+    modes: '视图',
+    modeStory: '故事构建',
+    modeGuide: '设定查看'
+  },
+  guide: {
+    prompts: '提示词',
+    skills: 'Skill',
+    global: '全局提示词',
+    worker: '子 Agent 提示词',
+    loading: '正在加载…',
+    unavailable: '无法加载设定，请检查故事服务后重试。',
+    retry: '重试',
+    readOnly: '只读。',
+    empty: '没有可显示的内容。',
+    notInjected: '尚未注入：目前没有代码会把这份模板发给子 Agent，Agent 不会收到它。<尖括号> 中的字段将在每次任务时填入。',
+    chars: (count, max) => (max ? `${count} / ${max} 字符` : `${count} 字符`)
   },
   tree: {
     project: '项目',
@@ -811,6 +847,7 @@ export function bindWorkspaceApi(restFunction) {
 }
 
 export const fetchStoryStatus = () => call('/status')
+export const fetchStoryGuide = () => call('/guide')
 function storyConnectionQueueKey(connectionId) {
   return typeof connectionId === 'string' && connectionId.trim()
     ? `connection:${connectionId.trim()}`
@@ -3548,21 +3585,9 @@ function ProjectWorkspace() {
   // observer binds to the currently mounted page root and is detached whenever
   // that root swaps or the page unmounts, so no measurement outlives its node.
   const [containerNode, setContainerNode] = useState(null)
-  const [layoutWidth, setLayoutWidth] = useState(0)
+  const layoutWidth = useLayoutWidth(containerNode)
   const [sessionsOpen, setSessionsOpen] = useState(false)
 
-  useEffect(() => {
-    if (!containerNode) return undefined
-    const measure = () => setLayoutWidth(containerNode.clientWidth)
-    measure()
-    if (typeof ResizeObserver !== 'function') {
-      window.addEventListener('resize', measure)
-      return () => window.removeEventListener('resize', measure)
-    }
-    const observer = new ResizeObserver(measure)
-    observer.observe(containerNode)
-    return () => observer.disconnect()
-  }, [containerNode])
   const ownerKey = JSON.stringify([connectionId || '', profile || ''])
   // Task 5: page-lifetime unsaved draft store and the live editor's saving
   // flag. The map lives in a ref so entries survive every view switch inside
@@ -4334,6 +4359,233 @@ function ProjectWorkspace() {
   })
 }
 
+// A width of 0 means the page is hidden (display:none), not that it is narrow:
+// keep the last real width so the layout does not flip while the Guide shows.
+export function nextLayoutWidth(previous, measured) {
+  return measured > 0 ? measured : previous
+}
+
+// The measured width of the page container, kept current by a ResizeObserver
+// that is detached whenever the node swaps or the page unmounts.
+export function useLayoutWidth(containerNode) {
+  const [layoutWidth, setLayoutWidth] = useState(0)
+  useEffect(() => {
+    if (!containerNode) return undefined
+    const measure = () => setLayoutWidth(previous => nextLayoutWidth(previous, containerNode.clientWidth))
+    measure()
+    if (typeof ResizeObserver !== 'function') {
+      window.addEventListener('resize', measure)
+      return () => window.removeEventListener('resize', measure)
+    }
+    const observer = new ResizeObserver(measure)
+    observer.observe(containerNode)
+    return () => observer.disconnect()
+  }, [containerNode])
+  return layoutWidth
+}
+
+const STORY_PAGE_MODES = ['story', 'guide']
+
+// Arrow keys, Home and End move between the page's two modes (tab pattern).
+export function nextStoryMode(mode, key) {
+  const index = STORY_PAGE_MODES.indexOf(mode)
+  if (key === 'ArrowRight') return STORY_PAGE_MODES[(index + 1) % STORY_PAGE_MODES.length]
+  if (key === 'ArrowLeft') return STORY_PAGE_MODES[(index + STORY_PAGE_MODES.length - 1) % STORY_PAGE_MODES.length]
+  if (key === 'Home') return STORY_PAGE_MODES[0]
+  if (key === 'End') return STORY_PAGE_MODES[STORY_PAGE_MODES.length - 1]
+  return null
+}
+
+// A prompt id the front end has no label for falls back to the id itself.
+function storyGuidePromptLabel(id, t) {
+  const key = `guide.${id}`
+  const label = t(key)
+  return label && label !== key ? label : id
+}
+
+// One row per readable item of the Guide view, built from the backend's
+// /guide payload so prompt text is never duplicated in the front end.
+export function storyGuideEntries(guide, t) {
+  const prompts = Array.isArray(guide?.prompts) ? guide.prompts : []
+  const skills = Array.isArray(guide?.skills) ? guide.skills : []
+  return [
+    ...prompts.map(prompt => ({
+      id: `prompt:${prompt.id}`,
+      group: 'prompts',
+      label: storyGuidePromptLabel(prompt.id, t),
+      version: prompt.version || '',
+      note: prompt.injected === false ? t('guide.notInjected') : '',
+      text: prompt.text || '',
+      chars: prompt.chars,
+      maxChars: prompt.max_chars ?? null
+    })),
+    ...skills.map(skill => ({
+      id: `skill:${skill.id}`,
+      group: 'skills',
+      label: skill.name,
+      version: '',
+      note: skill.description || '',
+      text: skill.text || '',
+      chars: skill.chars,
+      maxChars: null
+    }))
+  ]
+}
+
+// Read-only view of what the plugin injects: the global and sub-agent prompts
+// and the packaged writing skills.
+export function StoryGuide() {
+  const t = usePluginI18n('story-construction')
+  const profile = useValue(host.state.profile)
+  const connectionId = useValue(host.state.connectionId)
+  const [selectedId, setSelectedId] = useState(null)
+  // Scoped like every other query: each connection's backend serves its own
+  // plugin version, so one connection's guide must never stand in for another's.
+  const query = useQuery({
+    queryKey: ['story-construction', 'guide', profile, connectionId],
+    queryFn: fetchStoryGuide
+  })
+  const entries = storyGuideEntries(query.data, t)
+  const selected = entries.find(entry => entry.id === selectedId) || entries[0] || null
+
+  // No data and no error yet is still loading, including a paused query that
+  // is waiting for the network.
+  if (query.isLoading || (!query.data && !query.error)) {
+    return jsx('div', { className: 'p-4 text-(--ui-text-secondary)', children: t('guide.loading') })
+  }
+  if (!query.error && !selected) {
+    return jsx('div', { className: 'p-4 text-(--ui-text-secondary)', children: t('guide.empty') })
+  }
+  if (query.error || !selected) {
+    return jsxs('div', {
+      className: 'flex items-center gap-3 p-4 text-(--ui-text-secondary)',
+      children: [
+        jsx('span', { children: t('guide.unavailable') }),
+        jsx('button', {
+          className: 'rounded border border-(--ui-stroke-secondary) px-2 py-1 text-xs hover:bg-(--chrome-action-hover)',
+          onClick: () => void query.refetch?.(),
+          type: 'button',
+          children: t('guide.retry')
+        })
+      ]
+    })
+  }
+
+  const row = entry =>
+    jsx('button', {
+      'aria-current': entry.id === selected.id ? 'true' : undefined,
+      className:
+        'block w-full truncate rounded px-2 py-1 text-left text-xs ' +
+        (entry.id === selected.id ? 'bg-(--chrome-action-hover) font-medium' : 'text-(--ui-text-secondary) hover:bg-(--chrome-action-hover)'),
+      key: entry.id,
+      onClick: () => setSelectedId(entry.id),
+      title: entry.label,
+      type: 'button',
+      children: entry.label
+    })
+  const group = (id, label) =>
+    jsxs('div', {
+      className: 'flex flex-col gap-1',
+      key: id,
+      children: [
+        jsx('div', { className: 'px-2 text-xs text-(--ui-text-tertiary)', children: label }),
+        ...entries.filter(entry => entry.group === id).map(row)
+      ]
+    })
+
+  return jsxs('div', {
+    className: 'hermes-story-guide',
+    children: [
+      jsxs('nav', {
+        className: 'hermes-story-guide-list',
+        children: [group('prompts', t('guide.prompts')), group('skills', t('guide.skills'))]
+      }),
+      jsxs('section', {
+        className: 'hermes-story-guide-detail',
+        children: [
+          jsxs('div', {
+            className: 'flex flex-wrap items-baseline gap-x-3 gap-y-1',
+            children: [
+              jsx('h2', { className: 'text-sm font-medium', children: selected.label }),
+              selected.version
+                ? jsx('span', { className: 'text-xs text-(--ui-text-tertiary)', children: selected.version })
+                : null,
+              jsx('span', {
+                className: 'text-xs text-(--ui-text-tertiary)',
+                children: t('guide.chars', selected.chars, selected.maxChars)
+              })
+            ]
+          }),
+          selected.note ? jsx('p', { className: 'text-xs text-(--ui-text-secondary)', children: selected.note }) : null,
+          jsx('p', { className: 'text-xs text-(--ui-text-tertiary)', children: t('guide.readOnly') }),
+          jsx('pre', { className: 'hermes-story-guide-text', children: selected.text })
+        ]
+      })
+    ]
+  })
+}
+
+// The page: a horizontal switch above everything else. The Story workspace
+// stays mounted (only hidden) while the Guide shows, so an open chapter, its
+// unsaved draft and the sessions panel are exactly as they were on return.
+export function StoryPage() {
+  const t = usePluginI18n('story-construction')
+  const [mode, setMode] = useState('story')
+  const switchMode = (next, focus) => {
+    setMode(next)
+    if (focus && typeof document !== 'undefined') document.getElementById(`hermes-story-tab-${next}`)?.focus()
+  }
+  const tab = (id, label) =>
+    jsx('button', {
+      'aria-controls': `hermes-story-panel-${id}`,
+      'aria-selected': mode === id,
+      className:
+        'rounded px-3 py-1 text-xs ' +
+        (mode === id ? 'bg-(--chrome-action-hover) font-medium' : 'text-(--ui-text-secondary) hover:bg-(--chrome-action-hover)'),
+      id: `hermes-story-tab-${id}`,
+      onClick: () => switchMode(id, false),
+      onKeyDown: event => {
+        const next = nextStoryMode(mode, event.key)
+        if (!next) return
+        event.preventDefault?.()
+        switchMode(next, true)
+      },
+      role: 'tab',
+      tabIndex: mode === id ? 0 : -1,
+      type: 'button',
+      children: label
+    })
+  return jsxs('div', {
+    className: 'flex h-full min-h-0 flex-col overflow-hidden text-sm',
+    children: [
+      jsxs('div', {
+        'aria-label': t('page.modes'),
+        className: 'flex shrink-0 items-center gap-1 border-b border-(--ui-stroke-secondary) px-3 py-1.5',
+        role: 'tablist',
+        children: [tab('story', t('page.modeStory')), tab('guide', t('page.modeGuide'))]
+      }),
+      jsx('div', {
+        'aria-labelledby': 'hermes-story-tab-story',
+        className: 'flex min-h-0 flex-1 flex-col',
+        id: 'hermes-story-panel-story',
+        role: 'tabpanel',
+        style: mode === 'story' ? undefined : { display: 'none' },
+        children: jsx(ProjectWorkspace, {})
+      }),
+      // Always present so the Guide tab's aria-controls resolves; the Guide
+      // itself mounts only while it is shown.
+      jsx('div', {
+        'aria-labelledby': 'hermes-story-tab-guide',
+        className: 'flex min-h-0 flex-1 flex-col',
+        id: 'hermes-story-panel-guide',
+        role: 'tabpanel',
+        style: mode === 'guide' ? undefined : { display: 'none' },
+        children: mode === 'guide' ? jsx(StoryGuide, {}) : null
+      })
+    ]
+  })
+}
+
 // Disk plugins are not scanned by Tailwind, so utilities written only here
 // never reach the built CSS. Following the Hermes Radio plugin, all Story page
 // geometry and the plugin-only utilities below live in this scoped sheet;
@@ -4357,6 +4609,10 @@ const CSS = `
 .hermes-story-sessions-panel{display:flex;flex-direction:column;gap:8px;min-width:0;min-height:0;flex:1;overflow:auto;padding:12px;font-size:12px;line-height:16px}
 .hermes-story-workspace[data-layout=compact] .hermes-story-sessions-panel,.hermes-story-workspace[data-layout=narrow] .hermes-story-sessions-panel{flex:none;max-height:18rem}
 .hermes-story-workspace[data-layout=compact] .hermes-story-sessions[data-open=false] .hermes-story-sessions-panel,.hermes-story-workspace[data-layout=narrow] .hermes-story-sessions[data-open=false] .hermes-story-sessions-panel{display:none}
+.hermes-story-guide{display:grid;grid-template-columns:minmax(10rem,16rem) minmax(0,1fr);flex:1;min-height:0;overflow:hidden}
+.hermes-story-guide-list{display:flex;flex-direction:column;gap:12px;min-height:0;overflow:auto;padding:12px;border-right:1px solid var(--ui-stroke-secondary)}
+.hermes-story-guide-detail{display:flex;flex-direction:column;gap:8px;min-width:0;min-height:0;overflow:auto;padding:12px}
+.hermes-story-guide-text{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;line-height:18px}
 .hermes-story-danger{color:#f87171}
 .hermes-story-danger-border{border-color:#f87171}
 .hermes-story-diff-del{background:rgba(239,68,68,.22);text-decoration:line-through}
@@ -4388,7 +4644,7 @@ const plugin = {
         id: 'page',
         area: ROUTES_AREA,
         data: { path: STORY_ROUTE_PATH },
-        render: () => jsx(ProjectWorkspace, {})
+        render: () => jsx(StoryPage, {})
       }
     ])
     // The sidebar and palette labels are plain strings, so they are registered
