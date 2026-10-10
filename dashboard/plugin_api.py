@@ -442,6 +442,7 @@ def bind_session(body: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(status_code=403, detail=_permission_detail(exc)) from exc
     except _component(runtime, "repository").NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    _reject_late_binding(runtime, state, stored_session_id, profile, connection_id)
     with _selected_target_guard(state):
         # The durable bind is the last fallible mutation: every later request
         # rebuilds its authorization from this file, so no in-memory permission
@@ -464,6 +465,48 @@ def bind_session(body: dict[str, Any]) -> dict[str, Any]:
             "chapters": [_summary(row, "content") for row in tree.chapters],
         },
     }
+
+
+def _reject_late_binding(
+    runtime: Any, state: Any, stored_session_id: str, profile: str, connection_id: str
+) -> None:
+    """Refuse to bind a chat whose prompt was already frozen without Story.
+
+    Hermes freezes the Story section on a chat's first render, so a chat bound
+    after that would never get the Story instructions. A chat whose stored
+    prompt already carries the Story protocol (bound before, then unbound) can
+    be bound again. Re-binding a chat already bound under this profile and
+    connection (a new runtime id after a resume) stays allowed; the same chat
+    from another connection is a different binding and is checked like any
+    other. A chat Hermes has not stored yet (the "New writing session" flow
+    binds before the first turn) and a database that cannot be read do not
+    block the bind.
+    """
+
+    if state.sessions.get(
+        stored_session_id=stored_session_id, profile=profile, connection_id=connection_id
+    ) is not None:
+        return
+    try:
+        row = _component(runtime, "session_lineage").state_db_session(
+            state.hermes_home, stored_session_id
+        )
+        marker = "# " + _component(runtime, "prompt_templates").STORY_AGENT_PROMPT_NAME
+    except Exception:
+        return
+    if row is None:
+        return
+    prompt = str(row.get("system_prompt") or "")
+    if marker in prompt:
+        return
+    if prompt or row.get("message_count"):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "session_already_started",
+                "message": "only a new writing session can be bound to a story project",
+            },
+        )
 
 
 @router.get("/projects/{project_id}/sessions")

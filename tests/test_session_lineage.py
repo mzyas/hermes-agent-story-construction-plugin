@@ -16,6 +16,7 @@ from story_construction_plugin.session_lineage import (
     ancestry,
     parent_link,
     state_db_ancestry,
+    state_db_session,
 )
 from story_construction_plugin.session_store import StorySessionRegistry
 from story_construction_plugin.tools import WRITE_TOOLS, StoryToolService
@@ -218,6 +219,29 @@ def test_links_match_a_real_hermes_session_database(tmp_path, monkeypatch) -> No
     assert expected_lineage == ["root", "c1", "c2"]
     assert state_db_ancestry(tmp_path, "branch") == {}
     assert state_db_ancestry(tmp_path, "tool") == {}
+
+
+@pytest.mark.hermes_integration
+def test_a_real_session_row_shows_its_messages_and_stored_prompt(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    from hermes_state import SessionDB
+
+    db = SessionDB(tmp_path / "state.db")
+    try:
+        db.create_session("fresh", "desktop")
+        db.create_session("busy", "desktop", system_prompt="Hermes base\n\n# StoryConstructionAgentPrompt v11")
+        db.append_message("busy", role="user", content="hello")
+    finally:
+        db.close()
+
+    fresh = state_db_session(tmp_path, "fresh")
+    busy = state_db_session(tmp_path, "busy")
+
+    assert fresh["message_count"] == 0 and not fresh["system_prompt"]
+    assert busy["message_count"] == 1
+    assert "# StoryConstructionAgentPrompt" in busy["system_prompt"]
+    assert state_db_session(tmp_path, "missing") is None
+    assert state_db_session(tmp_path / "no-home", "fresh") is None
 
 
 # ------------------------------------------------------------------ the tools

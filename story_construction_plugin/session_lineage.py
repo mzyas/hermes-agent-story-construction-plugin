@@ -64,9 +64,13 @@ class SessionLineage:
             _remember(self._subagent_parents, child, parent)
 
     def resolve(
-        self, session_id: str, is_bound: Callable[[str], bool]
+        self, session_id: str, is_bound: Callable[[str], bool], *, strict: bool = False
     ) -> ResolvedSession | None:
-        """The bound session ``session_id`` belongs to, or None for an ordinary chat."""
+        """The bound session ``session_id`` belongs to, or None for an ordinary chat.
+
+        A failed database lookup counts as no parent, unless ``strict`` asks for
+        the error so the caller can tell "not bound" from "could not tell".
+        """
 
         current = str(session_id or "").strip()
         if not current:
@@ -77,14 +81,14 @@ class SessionLineage:
             if is_bound(current):
                 return ResolvedSession(current, delegated)
             seen.add(current)
-            link = self._parent(current)
+            link = self._parent(current, strict)
             if link is None or link[0] in seen:
                 return None
             current, via_subagent = link
             delegated = delegated or via_subagent
         return None
 
-    def _parent(self, session_id: str) -> ParentLink | None:
+    def _parent(self, session_id: str, strict: bool) -> ParentLink | None:
         with self._lock:
             parent = self._subagent_parents.get(session_id)
             if parent is not None:
@@ -97,6 +101,8 @@ class SessionLineage:
         try:
             links = self._lookup(session_id)
         except Exception:
+            if strict:
+                raise
             logger.debug("Story session lineage lookup failed for %s", session_id, exc_info=True)
             return None
         with self._lock:
@@ -121,6 +127,22 @@ def state_db_ancestry(hermes_home: Path, session_id: str) -> dict[str, ParentLin
         return ancestry(db, session_id)
     finally:
         release_or_close(db)
+
+
+def state_db_session(hermes_home: Path, session_id: str) -> dict[str, Any] | None:
+    """One Hermes session row (with its stored system prompt), or None if absent."""
+
+    db_path = Path(hermes_home) / "state.db"
+    if not db_path.is_file():
+        return None
+    from hermes_state_registry import acquire, release_or_close
+
+    db = acquire(db_path)
+    try:
+        row = db.get_session(session_id)
+    finally:
+        release_or_close(db)
+    return dict(row) if row else None
 
 
 def ancestry(db: Any, session_id: str) -> dict[str, ParentLink]:

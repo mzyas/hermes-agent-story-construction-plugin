@@ -100,10 +100,9 @@ def test_project_session_lifecycle_and_confirmed_save_round_trip(tmp_path: Path)
     assert state.ready is True
     assert state.sessions is not initial_registry
 
-    stable_before_binding = compose_story_system_prompt(
-        "Hermes base",
-        state.sessions.render_system_prompt({"profile": "writer"}),
-    )
+    session_info = {"session_id": "runtime-1", "profile": "writer"}
+    # An unbound chat gets no Story section; "New writing session" binds first.
+    assert state.sessions.render_system_prompt(session_info) == ""
     binding = state.sessions.bind(
         stored_session_id="stored-1",
         runtime_session_id="runtime-1",
@@ -123,9 +122,10 @@ def test_project_session_lifecycle_and_confirmed_save_round_trip(tmp_path: Path)
         )
     stable_after_binding = compose_story_system_prompt(
         "Hermes base",
-        state.sessions.render_system_prompt({"profile": "writer"}),
+        state.sessions.render_system_prompt(session_info),
     )
-    assert stable_after_binding == stable_before_binding
+    assert stable_after_binding.startswith("Hermes base\n\n# StoryConstructionAgentPrompt")
+    # The frozen section carries no live project data.
     assert project.id not in stable_after_binding
     assert chapter.id not in stable_after_binding
 
@@ -209,8 +209,8 @@ def test_registered_tools_authorize_from_durable_bindings_without_reregistering(
     state = runtime.runtime_state_for(Path(__file__).resolve().parents[1], home)
     assert state is not None and state.ready is True
     (_section_name, render_section), _section_kwargs = context.sections[-1]
-    stable_before_binding = render_section({"profile": "writer"})
-    assert stable_before_binding
+    session_info = {"session_id": "runtime-1", "profile": "writer"}
+    assert render_section(session_info) == ""  # no Story section before the binding
 
     writer = StorySessionRegistry(state.sessions.path, locked_profile="writer")
     writer.bind(
@@ -227,10 +227,10 @@ def test_registered_tools_authorize_from_durable_bindings_without_reregistering(
     bound = json.loads(handlers["story.get_project"]({"project_id": project.id}, **kwargs))
     assert bound["ok"] is True
 
-    # The prompt section renders identically before and after binding.
-    stable_after_binding = render_section({"profile": "writer"})
-    assert stable_after_binding == stable_before_binding
+    # The section reads the durable binding too, without re-registering.
+    assert render_section(session_info).startswith("# StoryConstructionAgentPrompt")
 
     writer.unbind(stored_session_id="stored-1", profile="writer", connection_id="local")
     denied = json.loads(handlers["story.get_project"]({"project_id": project.id}, **kwargs))
     assert denied["ok"] is False
+    assert render_section(session_info) == ""

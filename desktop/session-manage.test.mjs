@@ -135,3 +135,10 @@ test('a working live session is not closed or deleted', async () => {
   assert.deepEqual(result.done, [])
   assert.match(result.failed[0].error.message, /still working/)
 })
+
+test('an existing chat cannot be bound from the panel; only a new writing session is', () => {
+  // Hermes freezes the Story prompt on a chat's first render, so late binding is gone.
+  const source = readFileSync(fileURLToPath(pluginUrl), 'utf8')
+  assert.equal(source.includes('bindFocusedSession'), false)
+  assert.equal(source.includes("t('agent.boundSession'"), true)
+})
