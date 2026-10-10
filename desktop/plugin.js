@@ -1948,6 +1948,22 @@ export function StorySidebar({ tree, tab = 'chapters', onTab, onOpenChapter, onO
   })
 }
 
+// The Agent's last write the undo button may offer: not yet undone, recent,
+// and, when a chapter or record is on screen, a write to that kind of thing.
+export const UNDO_WINDOW_MS = 30 * 60_000
+
+export function pickUndoableWrite(writes, { scopeType = null, now = Date.now() } = {}) {
+  const list = Array.isArray(writes) ? writes : []
+  return (
+    list.find(write => {
+      if (write.undone || !['edit', 'rename', 'delete'].includes(write.kind)) return false
+      if (scopeType && (write.target_type || 'chapter') !== scopeType) return false
+      const at = Date.parse(write.at || '')
+      return Number.isFinite(at) && now - at <= UNDO_WINDOW_MS
+    }) || null
+  )
+}
+
 // How often open proposals are refreshed: quickly while the Agent is working
 // (a proposal is most likely to appear then), slowly otherwise.
 export function proposalPollInterval(busy) {
@@ -2116,7 +2132,7 @@ export function ProposalReview({ proposal, projectId, profile, connectionId, onC
 
 // Shows what the Agent has proposed and lets the person review it. The chapter
 // editor stays mounted underneath, hidden, so an unsaved draft is never lost.
-function ProposalArea({ projectId, profile, connectionId, undoInStrip = true, children }) {
+function ProposalArea({ projectId, profile, connectionId, undoInStrip = true, undoScopeType = null, children }) {
   const t = usePluginI18n('story-construction')
   const busy = useValue(host.state.busy)
   const queryClient = typeof storySdk.useQueryClient === 'function' ? storySdk.useQueryClient() : null
@@ -2142,7 +2158,7 @@ function ProposalArea({ projectId, profile, connectionId, undoInStrip = true, ch
   const wasBusyRef = useMutableRef(busy)
   const lastWriteRef = useMutableRef(undefined)
   const reviewing = proposals.find(proposal => proposal.id === reviewId) || null
-  const latestWrite = writes.find(write => !write.undone && ['edit', 'rename', 'delete'].includes(write.kind)) || null
+  const latestWrite = pickUndoableWrite(writes, { scopeType: undoScopeType })
   const openIds = proposals.map(proposal => proposal.id).join(',')
   const writeMark = writes[0] ? `${writes[0].proposal_id}:${writes[0].undone}` : ''
 
@@ -4186,6 +4202,8 @@ function ProjectWorkspace() {
       projectId: selectedProjectId,
       // Undo sits beside Save in the chapter header; with no chapter on screen it stays in the strip.
       undoInStrip: Boolean(selectedRecord || !selectedChapterId),
+      // Only offer the undo of a write to what is on screen.
+      undoScopeType: selectedRecord ? selectedRecord.type : selectedChapterId ? 'chapter' : null,
       // The chapter editor stays mounted (hidden) while a record is shown, so an
       // unsaved draft and an in-flight save are never lost by looking at a character.
       children: undoButton => [
