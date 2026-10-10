@@ -40,6 +40,7 @@ const {
   ProposalReview,
   approvalMinutesLeft,
   bindWorkspaceApi,
+  pickUndoableWrite,
   proposalErrorNote,
   proposalPollInterval,
   undoStoryAgentWrite
@@ -282,4 +283,22 @@ test('an action on a record that changed since is marked as stale', () => {
 
   assert.ok(find(changed, node => textOf(node) === 'proposal.stale').length >= 1)
   assert.equal(find(same, node => textOf(node) === 'proposal.stale').length, 0)
+})
+
+test('undo offers only a recent, un-undone write to what is on screen', () => {
+  const now = Date.parse('2026-10-10T12:00:00Z')
+  const ago = minutes => new Date(now - minutes * 60_000).toISOString()
+  const writes = [
+    { proposal_id: 'a', kind: 'edit', target_type: 'note', at: ago(1), undone: false },
+    { proposal_id: 'b', kind: 'edit', target_type: 'chapter', at: ago(5), undone: false },
+    { proposal_id: 'c', kind: 'edit', target_type: 'chapter', at: ago(90), undone: false }
+  ]
+  assert.equal(pickUndoableWrite(writes, { scopeType: 'chapter', now }).proposal_id, 'b')
+  assert.equal(pickUndoableWrite(writes, { scopeType: 'note', now }).proposal_id, 'a')
+  assert.equal(pickUndoableWrite(writes, { scopeType: 'character', now }), null)
+  assert.equal(pickUndoableWrite(writes, { now }).proposal_id, 'a')
+  assert.equal(pickUndoableWrite([writes[2]], { now }), null)
+  assert.equal(pickUndoableWrite([{ ...writes[0], undone: true }], { now }), null)
+  assert.equal(pickUndoableWrite([{ ...writes[0], kind: 'create' }], { now }), null)
+  assert.equal(pickUndoableWrite([{ kind: 'edit', at: ago(1) }], { scopeType: 'chapter', now }).kind, 'edit')
 })
