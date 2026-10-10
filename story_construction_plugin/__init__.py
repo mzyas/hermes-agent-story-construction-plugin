@@ -14,7 +14,7 @@ from .prompt_templates import STORY_PROMPT_MAX_CHARS
 from .repository import StoryRepository
 from .runtime import StoryRuntimeState
 from .schemas import TOOL_SCHEMAS
-from .session_lineage import SessionLineage, state_db_parent
+from .session_lineage import SessionLineage, state_db_ancestry
 from .session_store import StorySessionRegistry
 from .tools import StoryToolService, _error, resolve_session
 
@@ -122,7 +122,7 @@ class LiveStoryRuntime:
         # Shared by the approval hook and the tools, which run in one process.
         self.grants = SessionGrants()
         # Maps compressed and delegated session ids back to the bound one.
-        self.lineage = SessionLineage(self._state_db_parent)
+        self.lineage = SessionLineage(self._state_db_ancestry)
         self._ready: dict[
             tuple[object, ...], tuple[StoryRuntimeState, StoryToolService]
         ] = {}
@@ -167,11 +167,12 @@ class LiveStoryRuntime:
             return None
         return _runtime.proposal_service_for(state), bound
 
-    def _state_db_parent(self, session_id: str) -> tuple[str, bool] | None:
+    def _state_db_ancestry(self, session_id: str) -> dict[str, tuple[str, bool]]:
+        # Resolved once per walk; the walk itself reads the database once.
         state = self.current()
         if not state.ready:
-            return None
-        return state_db_parent(state.hermes_home, session_id)
+            return {}
+        return state_db_ancestry(state.hermes_home, session_id)
 
     def render_system_prompt(self, session_info: Mapping[str, object]) -> str:
         state = self.current()
