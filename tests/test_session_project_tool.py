@@ -116,7 +116,8 @@ def test_prompt_keeps_the_agent_brief_and_from_acting_unasked() -> None:
     # Brevity and no-filler rules come from Hermes' own identity prompt; only the extras stay here.
     assert "## Tone" in rendered and "language of the user's latest message" in rendered
     assert "no emoji" in rendered.lower()
-    assert "say so and offer an alternative" in rendered  # flag continuity or setting conflicts
+    # Flag continuity or setting conflicts in the reply, without proposing a change unasked.
+    assert "say so and suggest an alternative in your reply" in rendered
     assert "A question is answered, not acted on" in rendered
     assert "propose a change only when the user asks" in rendered.lower()
 
