@@ -17,7 +17,8 @@ from .subagent_policy import StoryWorkerContext, render_story_worker_context
 # Hermes drops a plugin prompt section longer than this (it is skipped whole, not cut),
 # so the Agent would get no Story instructions at all. A test keeps us well under it.
 STORY_PROMPT_MAX_CHARS = 4000
-STORY_AGENT_PROMPT_VERSION = "StoryConstructionAgentPrompt v10"
+STORY_AGENT_PROMPT_VERSION = "StoryConstructionAgentPrompt v11"
+STORY_SUBAGENT_PROMPT_VERSION = "StorySubagentPrompt v1"
 STORY_WORKER_PROMPT_VERSION = "StoryWorkerPrompt v1"
 
 
@@ -74,6 +75,22 @@ def render_story_agent_system_prompt() -> str:
         "## Output\n"
         "When asked to plan or draft a chapter, follow it with source references and continuity "
         "warnings. Otherwise answer plainly, still citing sources for story facts."
+    )
+
+
+def render_story_subagent_prompt() -> str:
+    """The section for a subagent delegated from a bound Story session."""
+
+    return (
+        f"# {STORY_SUBAGENT_PROMPT_VERSION}\n"
+        "You were delegated by the main Agent of a story (fiction) project.\n"
+        "- Read the project with story.* tools: story.get_session_project first, then the "
+        "chapters and records you need. Never use terminal, shell, Python or filesystem tools "
+        "to find or read Vault files.\n"
+        "- You can only read. Never call story.propose_edit, story.propose_new, "
+        "story.propose_rename, story.propose_delete or story.apply_edit; say what should "
+        "change instead.\n"
+        "- Return your findings to the main Agent with source references for every story fact."
     )
 
 

@@ -9,6 +9,7 @@ from story_construction_plugin.guide import build_story_guide
 from story_construction_plugin.prompt_templates import (
     STORY_PROMPT_MAX_CHARS,
     render_story_agent_system_prompt,
+    render_story_subagent_prompt,
 )
 
 
@@ -22,6 +23,12 @@ def test_guide_lists_main_and_worker_prompts_with_versions_and_limits() -> None:
     assert main["max_chars"] == STORY_PROMPT_MAX_CHARS
     assert main["version"] in main["text"]
     assert main["injected"] is True
+
+    subagent = prompts["subagent"]
+    assert subagent["text"] == render_story_subagent_prompt()
+    assert subagent["version"] in subagent["text"]
+    assert subagent["injected"] is True
+    assert list(prompts) == ["global", "subagent", "worker"]
 
     worker = prompts["worker"]
     assert worker["version"] in worker["text"]

@@ -442,6 +442,7 @@ def bind_session(body: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(status_code=403, detail=_permission_detail(exc)) from exc
     except _component(runtime, "repository").NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    _reject_late_binding(runtime, state, stored_session_id, profile, connection_id)
     with _selected_target_guard(state):
         # The durable bind is the last fallible mutation: every later request
         # rebuilds its authorization from this file, so no in-memory permission
@@ -464,6 +465,37 @@ def bind_session(body: dict[str, Any]) -> dict[str, Any]:
             "chapters": [_summary(row, "content") for row in tree.chapters],
         },
     }
+
+
+def _reject_late_binding(
+    runtime: Any, state: Any, stored_session_id: str, profile: str, connection_id: str
+) -> None:
+    """Refuse to bind a chat that already has messages.
+
+    Hermes freezes the Story prompt on a chat's first render, so a chat bound
+    after it started would never get the Story instructions. Re-binding a chat
+    that is already bound (a new runtime id after a resume) stays allowed, and
+    a session database that cannot be read does not block the bind.
+    """
+
+    if state.sessions.get(
+        stored_session_id=stored_session_id, profile=profile, connection_id=connection_id
+    ) is not None:
+        return
+    try:
+        count = _component(runtime, "session_lineage").state_db_message_count(
+            state.hermes_home, stored_session_id
+        )
+    except Exception:
+        return
+    if count:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "session_has_messages",
+                "message": "only a new writing session can be bound to a story project",
+            },
+        )
 
 
 @router.get("/projects/{project_id}/sessions")

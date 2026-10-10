@@ -67,6 +67,7 @@ const en = {
     prompts: 'Prompts',
     skills: 'Skills',
     global: 'Global prompt',
+    subagent: 'Delegated sub-agent prompt',
     worker: 'Sub-agent prompt',
     loading: 'Loading…',
     unavailable: 'Could not load the guide. Check the Story service and try again.',
@@ -157,13 +158,9 @@ const en = {
   },
   agent: {
     title: 'Agent',
-    binding: 'Binding…',
-    bound: 'Bound to focused session',
-    bindFailed: error => `Bind failed: ${error}`,
     working: 'Working',
     idle: 'Idle',
     noFocusedSession: 'No focused session',
-    bindFocusedSession: 'Bind focused session to project',
     sessions: 'Project writing sessions',
     loadingSessions: 'Loading writing sessions…',
     sessionsUnavailable: error => `Writing sessions unavailable: ${error}`,
@@ -299,6 +296,7 @@ const zh = {
     prompts: '提示词',
     skills: 'Skill',
     global: '全局提示词',
+    subagent: '委派子 Agent 提示词',
     worker: '子 Agent 提示词',
     loading: '正在加载…',
     unavailable: '无法加载设定，请检查故事服务后重试。',
@@ -389,13 +387,9 @@ const zh = {
   },
   agent: {
     title: '智能体',
-    binding: '正在绑定…',
-    bound: '已绑定到当前会话',
-    bindFailed: error => `绑定失败：${error}`,
     working: '工作中',
     idle: '空闲',
     noFocusedSession: '没有当前会话',
-    bindFocusedSession: '将当前会话绑定到项目',
     sessions: '项目写作会话',
     loadingSessions: '正在加载写作会话…',
     sessionsUnavailable: error => `写作会话不可用：${error}`,
@@ -3023,7 +3017,6 @@ const SESSION_STAGE_KEYS = {
 function ProjectSessionsPanel({ profile, connectionId, project, sessionId }) {
   const t = usePluginI18n('story-construction')
   const busy = useValue(host.state.busy)
-  const [bindingState, setBindingState] = useState(null)
   const [sessionState, setSessionState] = useState(null)
   const [creatingSession, setCreatingSession] = useState(false)
   const [kickoffRecovery, setKickoffRecovery] = useState(null)
@@ -3051,7 +3044,6 @@ function ProjectSessionsPanel({ profile, connectionId, project, sessionId }) {
   const selectedCount = Object.keys(selectedIds).length
 
   useEffect(() => {
-    setBindingState(null)
     setSessionState(null)
     setKickoffRecovery(null)
     setStaleSessionIds({})
@@ -3207,26 +3199,6 @@ function ProjectSessionsPanel({ profile, connectionId, project, sessionId }) {
         setStage('ready')
       })
       .catch(error => setSessionState({ key: 'agent.removeFailed', args: [error.message] }))
-      .finally(() => setCreatingSession(false))
-  }
-
-  const bind = () => {
-    if (creatingSession || !sessionId || !project?.id) return
-    setCreatingSession(true)
-    setBindingState({ key: 'agent.binding', args: [] })
-    void bindStorySession({
-      session_id: sessionId,
-      profile,
-      connection_id: connectionId,
-      project_id: project.id,
-      project_name: project.name,
-      ...(storySessionName(sessionId, { titles }) ? { title: storySessionName(sessionId, { titles }) } : {})
-    })
-      .then(async () => {
-        await sessionsQuery.refetch()
-        setBindingState({ key: 'agent.bound', args: [] })
-      })
-      .catch(error => setBindingState({ key: 'agent.bindFailed', args: [error.message] }))
       .finally(() => setCreatingSession(false))
   }
 
@@ -3418,22 +3390,13 @@ function ProjectSessionsPanel({ profile, connectionId, project, sessionId }) {
             children: t(sessionState.key, ...sessionState.args)
           })
         : null,
+      // A chat is bound only by "New writing session": Hermes freezes the Story
+      // prompt on a chat's first render, so binding an existing chat later would
+      // leave it without Story instructions.
       focusedBound
         ? jsx('div', {
             className: 'break-words text-(--ui-text-secondary)',
             children: t('agent.boundSession', nameOf(sessionId))
-          })
-        : jsx('button', {
-            className: 'rounded border border-(--ui-stroke-secondary) px-2 py-1 text-left hover:bg-(--chrome-action-hover) disabled:opacity-50',
-            disabled: creatingSession || !sessionId || !project?.id,
-            onClick: bind,
-            type: 'button',
-            children: t('agent.bindFocusedSession')
-          }),
-      bindingState
-        ? jsx('div', {
-            className: 'break-words text-(--ui-text-tertiary)',
-            children: t(bindingState.key, ...bindingState.args)
           })
         : null
     ]

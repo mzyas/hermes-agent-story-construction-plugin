@@ -90,7 +90,9 @@ class StoryToolService:
                 if bound is None:
                     return _error(
                         "session_not_bound",
-                        "this session is not bound to a Story project",
+                        "this chat is not linked to a story project: treat it as an ordinary "
+                        "chat, do not call other story.* tools and do not search the disk for "
+                        "story content",
                     )
                 project_id = bound.project_id
             gate.require_read(scope, project_id)

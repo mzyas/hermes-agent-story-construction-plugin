@@ -239,7 +239,7 @@ def test_guide_route_needs_no_selected_profile_or_ready_runtime(monkeypatch, tmp
 
     guide = plugin_api.story_guide()
 
-    assert {item["id"] for item in guide["prompts"]} == {"global", "worker"}
+    assert {item["id"] for item in guide["prompts"]} == {"global", "subagent", "worker"}
     assert guide["skills"]
 
 
@@ -379,6 +379,40 @@ def test_dashboard_rejects_locked_profile_mismatch_before_binding(monkeypatch, t
         403,
         "profile_lock_mismatch",
     )
+
+def _message_counts(monkeypatch, plugin_api, counts: dict[str, int]) -> None:
+    backend = plugin_api.load_api_backend(PACKAGE_ROOT)
+    lineage = importlib.import_module(f"{backend.__name__}.session_lineage")
+    monkeypatch.setattr(
+        lineage, "state_db_message_count", lambda _home, session_id: counts.get(session_id)
+    )
+
+
+def test_a_chat_that_already_has_messages_cannot_be_bound(monkeypatch, tmp_path: Path) -> None:
+    plugin_api, _, _ = _ready_runtime(monkeypatch, tmp_path)
+    _message_counts(monkeypatch, plugin_api, {"busy": 3, "fresh": 0})
+
+    _assert_http_error(
+        lambda: plugin_api.bind_session({**_scope("busy"), "project_id": "p1"}),
+        409,
+        "session_has_messages",
+    )
+    assert _request_state(plugin_api).permissions.bound_scope("busy") is None
+    # A new chat, or one the database does not know, binds as before.
+    plugin_api.bind_session({**_scope("fresh"), "project_id": "p1"})
+    plugin_api.bind_session({**_scope("unknown"), "project_id": "p1"})
+
+
+def test_a_bound_chat_can_be_rebound_after_it_has_messages(monkeypatch, tmp_path: Path) -> None:
+    plugin_api, _, _ = _ready_runtime(monkeypatch, tmp_path)
+    base = {"stored_session_id": "stored-1", "profile": "writer", "connection_id": "local", "project_id": "p1"}
+    plugin_api.bind_session({**base, "runtime_session_id": "runtime-1"})
+    _message_counts(monkeypatch, plugin_api, {"stored-1": 5})
+
+    plugin_api.bind_session({**base, "runtime_session_id": "runtime-2"})
+
+    assert _request_state(plugin_api).permissions.bound_scope("runtime-2").project_id == "p1"
+
 
 def test_profile_mismatch_is_rejected_for_read_bind_and_save(monkeypatch, tmp_path: Path) -> None:
     plugin_api, _, _ = _ready_runtime(monkeypatch, tmp_path)

@@ -55,9 +55,13 @@ class SessionLineage:
             _remember(self._subagent_parents, child, parent)
 
     def resolve(
-        self, session_id: str, is_bound: Callable[[str], bool]
+        self, session_id: str, is_bound: Callable[[str], bool], *, strict: bool = False
     ) -> ResolvedSession | None:
-        """The bound session ``session_id`` belongs to, or None for an ordinary chat."""
+        """The bound session ``session_id`` belongs to, or None for an ordinary chat.
+
+        A failed database lookup counts as no parent, unless ``strict`` asks for
+        the error so the caller can tell "not bound" from "could not tell".
+        """
 
         current = str(session_id or "").strip()
         if not current:
@@ -68,14 +72,14 @@ class SessionLineage:
             if is_bound(current):
                 return ResolvedSession(current, delegated)
             seen.add(current)
-            link = self._parent(current)
+            link = self._parent(current, strict)
             if link is None or link[0] in seen:
                 return None
             current, via_subagent = link
             delegated = delegated or via_subagent
         return None
 
-    def _parent(self, session_id: str) -> tuple[str, bool] | None:
+    def _parent(self, session_id: str, strict: bool) -> tuple[str, bool] | None:
         with self._lock:
             parent = self._subagent_parents.get(session_id)
             if parent is not None:
@@ -88,6 +92,8 @@ class SessionLineage:
         try:
             link = self._lookup(session_id)
         except Exception:
+            if strict:
+                raise
             return None
         if link is not None:
             with self._lock:
@@ -108,6 +114,24 @@ def state_db_parent(hermes_home: Path, session_id: str) -> tuple[str, bool] | No
         return parent_link(db, session_id)
     finally:
         release(db)
+
+
+def state_db_message_count(hermes_home: Path, session_id: str) -> int | None:
+    """How many messages a Hermes session has, or None when it cannot be read."""
+
+    db_path = Path(hermes_home) / "state.db"
+    if not db_path.is_file():
+        return None
+    from hermes_state_registry import acquire, release
+
+    db = acquire(db_path)
+    try:
+        row = db.get_session(session_id)
+    finally:
+        release(db)
+    if not row:
+        return None
+    return int(row.get("message_count") or 0)
 
 
 def parent_link(db: Any, session_id: str) -> tuple[str, bool] | None:

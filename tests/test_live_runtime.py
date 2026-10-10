@@ -9,6 +9,7 @@ from pathlib import Path
 
 from story_construction_plugin import register
 from story_construction_plugin import runtime
+from story_construction_plugin.session_store import StorySessionRegistry
 
 
 class RegistrationContext:
@@ -58,14 +59,19 @@ def test_selection_saved_after_load_enables_tools_and_prompt(tmp_path, monkeypat
     register(context)
     check = context.tools[0]["check_fn"]
     (_name, render), _kwargs = context.sections[-1]
+    StorySessionRegistry(runtime._session_state_path(home), locked_profile="writer").bind(
+        stored_session_id="s1", profile="writer", connection_id="local", project_id="p1"
+    )
+    bound = {"profile": "writer", "session_id": "s1"}
     assert check() is False
-    assert render({"profile": "writer"}) == ""
+    assert render(bound) == ""
 
     context.settings.update(_settings(home, vault))
 
     assert check() is True
     assert _call(context)["error"]["code"] != "configuration_incomplete"
-    assert render({"profile": "writer"})
+    assert render(bound)
+    assert render({"profile": "writer", "session_id": "chat"}) == ""
 
 
 def test_settings_broken_after_ready_hides_tools_again(tmp_path, monkeypatch) -> None:
