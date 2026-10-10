@@ -14,8 +14,9 @@ from .prompt_templates import STORY_PROMPT_MAX_CHARS
 from .repository import StoryRepository
 from .runtime import StoryRuntimeState
 from .schemas import TOOL_SCHEMAS
+from .session_lineage import SessionLineage, state_db_ancestry
 from .session_store import StorySessionRegistry
-from .tools import StoryToolService, _error
+from .tools import StoryToolService, _error, resolve_session
 
 
 _SKILLS = (
@@ -120,6 +121,8 @@ class LiveStoryRuntime:
         self._lock = RLock()
         # Shared by the approval hook and the tools, which run in one process.
         self.grants = SessionGrants()
+        # Maps compressed and delegated session ids back to the bound one.
+        self.lineage = SessionLineage(self._state_db_ancestry)
         self._ready: dict[
             tuple[object, ...], tuple[StoryRuntimeState, StoryToolService]
         ] = {}
@@ -154,10 +157,22 @@ class LiveStoryRuntime:
         state, service = self._resolve()
         if service is None or not session_id:
             return None
-        bound = _runtime.permission_snapshot(state).bound_scope(session_id)
+        gate = _runtime.permission_snapshot(state)
+        resolved = resolve_session(self.lineage, gate, session_id)
+        # A delegated subagent never writes, so it never gets an approval prompt.
+        if resolved is None or resolved.delegated:
+            return None
+        bound = gate.bound_scope(resolved.session_id)
         if bound is None:
             return None
         return _runtime.proposal_service_for(state), bound
+
+    def _state_db_ancestry(self, session_id: str) -> dict[str, tuple[str, bool]]:
+        # Resolved once per walk; the walk itself reads the database once.
+        state = self.current()
+        if not state.ready:
+            return {}
+        return state_db_ancestry(state.hermes_home, session_id)
 
     def render_system_prompt(self, session_info: Mapping[str, object]) -> str:
         state = self.current()
@@ -195,6 +210,7 @@ class LiveStoryRuntime:
             permissions_provider=lambda: _runtime.permission_snapshot(state),
             proposals_provider=lambda: _runtime.proposal_service_for(state),
             grants=self.grants,
+            lineage=self.lineage,
         )
         with self._lock:
             if len(self._ready) >= 8:
@@ -228,6 +244,8 @@ def register_story_backend(ctx) -> LiveStoryRuntime:
         hook_registrar("pre_tool_call", make_apply_hook(live.resolve_bound_proposals, live.grants))
         # Notes when that prompt timed out or was declined, so the panel can say so.
         hook_registrar("post_tool_call", make_outcome_hook(live.resolve_bound_proposals, live.grants))
+        # Remembers which session a subagent came from, before its first turn.
+        hook_registrar("subagent_start", live.lineage.note_subagent)
     return live
 
 
