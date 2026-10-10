@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import test from 'node:test'
+import test, { afterEach } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 const pluginUrl = new URL('./plugin.js', import.meta.url)
@@ -49,6 +49,14 @@ function rewriteDesktopImports(source) {
 
 const source = readFileSync(fileURLToPath(pluginUrl), 'utf8')
 const { StoryGuide, StoryPage, nextLayoutWidth, nextStoryMode, storyGuideEntries, useLayoutWidth } = await import(dataModule(rewriteDesktopImports(source)))
+
+// Tests drive the mocks through globals; reset them all after every test so a
+// failing assertion cannot leak state into the next one.
+afterEach(() => {
+  for (const name of ['forcedMode', 'guideQuery', 'lastQueryOptions', 'lastState', 'effectCleanup', 'document', 'window', 'ResizeObserver']) {
+    delete globalThis[name]
+  }
+})
 
 const t = (key, ...args) => [key, ...args].join('|')
 const guide = {
@@ -128,7 +136,27 @@ test('the measured width ignores a hidden (zero-width) container and detaches on
   observed = null
   useLayoutWidth(null)
   assert.equal(observed, null)
-  delete globalThis.ResizeObserver
+})
+
+test('without ResizeObserver the width follows window resize and the listener is removed', () => {
+  const listeners = new Map()
+  globalThis.window = {
+    addEventListener: (name, fn) => listeners.set(name, fn),
+    removeEventListener: (name, fn) => { if (listeners.get(name) === fn) listeners.delete(name) }
+  }
+  const node = { clientWidth: 900 }
+  useLayoutWidth(node)
+  assert.equal(globalThis.lastState, 900)
+
+  node.clientWidth = 0
+  listeners.get('resize')()
+  assert.equal(globalThis.lastState, 900)
+  node.clientWidth = 700
+  listeners.get('resize')()
+  assert.equal(globalThis.lastState, 700)
+
+  globalThis.effectCleanup()
+  assert.equal(listeners.has('resize'), false)
 })
 
 test('arrow keys, Home and End move between the page modes', () => {
@@ -143,14 +171,19 @@ test('arrow keys, Home and End move between the page modes', () => {
 test('a query that has neither data nor an error yet (paused) still reads as loading', () => {
   globalThis.guideQuery = {}
   assert.equal(StoryGuide({}).props.children, 'guide.loading')
-  globalThis.guideQuery = undefined
+})
+
+test('a query that succeeded with an empty body shows the empty state, not loading', () => {
+  globalThis.guideQuery = { status: 'success', data: null }
+  assert.equal(StoryGuide({}).props.children, 'guide.empty')
+  globalThis.guideQuery = { status: 'success' }
+  assert.equal(StoryGuide({}).props.children, 'guide.empty')
 })
 
 test('the guide query is scoped to the connection and profile', () => {
   globalThis.guideQuery = { data: guide }
   StoryGuide({})
   assert.deepEqual(globalThis.lastQueryOptions.queryKey, ['story-construction', 'guide', 'p1', 'c1'])
-  globalThis.guideQuery = undefined
 })
 
 test('the guide shows loading, error with retry, empty and the first entry selected', () => {
@@ -176,11 +209,9 @@ test('the guide shows loading, error with retry, empty and the first entry selec
   const current = nodes.filter(node => node.props?.['aria-current'] === 'true')
   assert.equal(current.length, 1)
   assert.equal(current[0].props.children, 'global')
-  globalThis.guideQuery = undefined
 })
 
 test('the page shows the Story workspace by default and keeps it mounted under the Guide', () => {
-  globalThis.forcedMode = undefined
   const story = StoryPage({})
   const tabs = flat(story).filter(node => node.props?.role === 'tab')
   assert.deepEqual(tabs.map(tab => tab.props.children), ['page.modeStory', 'page.modeGuide'])
@@ -205,11 +236,9 @@ test('the page shows the Story workspace by default and keeps it mounted under t
   assert.equal(guidePanel.props.id, 'hermes-story-panel-guide')
   assert.equal(guidePanel.props.style, undefined)
   assert.equal(typeof guidePanel.props.children.type, 'function')
-  globalThis.forcedMode = undefined
 })
 
 test('arrow keys on a tab prevent the default and focus the newly selected tab', () => {
-  globalThis.forcedMode = undefined
   const focused = []
   globalThis.document = { getElementById: id => ({ focus: () => focused.push(id) }) }
   const [storyTab] = flat(StoryPage({})).filter(node => node.props?.role === 'tab')
@@ -218,9 +247,9 @@ test('arrow keys on a tab prevent the default and focus the newly selected tab',
   storyTab.props.onKeyDown({ key: 'ArrowRight', preventDefault: () => { prevented += 1 } })
   assert.equal(prevented, 1)
   assert.deepEqual(focused, ['hermes-story-tab-guide'])
+  assert.equal(globalThis.lastState, 'guide')
 
   storyTab.props.onKeyDown({ key: 'a', preventDefault: () => { prevented += 1 } })
   assert.equal(prevented, 1)
   assert.equal(focused.length, 1)
-  delete globalThis.document
 })

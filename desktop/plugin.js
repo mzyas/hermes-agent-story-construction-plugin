@@ -4449,8 +4449,9 @@ export function StoryGuide() {
   const selected = entries.find(entry => entry.id === selectedId) || entries[0] || null
 
   // No data and no error yet is still loading, including a paused query that
-  // is waiting for the network.
-  if (query.isLoading || (!query.data && !query.error)) {
+  // is waiting for the network. A query that succeeded is never loading, even
+  // when the body came back empty: that reads as the empty state.
+  if (query.isLoading || (query.status !== 'success' && !query.data && !query.error)) {
     return jsx('div', { className: 'p-4 text-(--ui-text-secondary)', children: t('guide.loading') })
   }
   if (!query.error && !selected) {
