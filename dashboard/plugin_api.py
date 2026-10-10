@@ -28,6 +28,18 @@ def status() -> dict[str, Any]:
     return state.status.as_dict()
 
 
+@router.get("/guide")
+def story_guide() -> dict[str, Any]:
+    """The prompts and skills the plugin gives the Agent, read-only.
+
+    Static plugin content: it needs no selected Profile or ready runtime.
+    """
+
+    backend, _profile_config, _api_runtime, _runtime_module = _backend_modules()
+    guide = importlib.import_module(f"{backend.__name__}.guide")
+    return guide.build_story_guide()
+
+
 @router.put("/settings")
 def update_settings(body: dict[str, Any]) -> dict[str, Any]:
     """Select the writing Profile and shared Vault through the scoped transaction.

@@ -226,6 +226,15 @@ def test_dashboard_status_is_ready_without_returning_vault_path(monkeypatch, tmp
     assert str(tmp_path / "vault") not in repr(status)
 
 
+def test_guide_route_needs_no_ready_runtime(monkeypatch, tmp_path: Path) -> None:
+    plugin_api, _, _ = _ready_runtime(monkeypatch, tmp_path)
+
+    guide = plugin_api.story_guide()
+
+    assert {item["id"] for item in guide["prompts"]} == {"global", "worker"}
+    assert guide["skills"]
+
+
 def test_project_discovery_requires_locked_profile_but_not_a_session(
     monkeypatch, tmp_path: Path,
 ) -> None:
