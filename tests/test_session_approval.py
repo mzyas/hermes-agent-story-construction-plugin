@@ -416,7 +416,7 @@ def test_the_plugin_registers_the_approval_hook_with_its_tools() -> None:
     ctx = Ctx()
     register_story_backend(ctx)
 
-    assert ctx.hooks == ["pre_tool_call", "post_tool_call"]
+    assert ctx.hooks == ["pre_tool_call", "post_tool_call", "subagent_start"]
 
 
 def test_a_host_without_hooks_still_registers_the_tools() -> None:

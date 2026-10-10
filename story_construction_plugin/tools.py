@@ -13,6 +13,7 @@ from .permissions import SessionScope, StoryPermissionGate, scope_from_tool_kwar
 from .proposal_service import ProposalError, StoryProposalService, read_record, record_summaries
 from .proposal_store import ProposalStoreError
 from .repository import NotFoundError, RepositoryError, StoryRepository
+from .session_lineage import ResolvedSession, SessionLineage
 from .session_store import SessionBindingStoreError
 
 
@@ -31,6 +32,10 @@ SESSION_RESOLVED_TOOLS = frozenset(
         PROPOSE_RENAME_TOOL, PROPOSE_DELETE_TOOL, LIST_RECORDS_TOOL, GET_RECORD_TOOL,
     }
 )
+# A delegated subagent may read the project but never propose or apply a change.
+WRITE_TOOLS = frozenset(
+    {PROPOSE_EDIT_TOOL, PROPOSE_NEW_TOOL, PROPOSE_RENAME_TOOL, PROPOSE_DELETE_TOOL, APPLY_EDIT_TOOL}
+)
 DEFAULT_SEARCH_LIMIT = 20
 MAX_SEARCH_LIMIT = 50
 
@@ -44,8 +49,10 @@ class StoryToolService:
         permissions_provider: Callable[[], StoryPermissionGate] | None = None,
         proposals_provider: Callable[[], StoryProposalService] | None = None,
         grants: SessionGrants | None = None,
+        lineage: SessionLineage | None = None,
     ) -> None:
         self.grants = grants
+        self.lineage = lineage
         self.repository = repository
         self.permissions = permissions
         self._permissions_provider = permissions_provider
@@ -64,6 +71,16 @@ class StoryToolService:
                 if self._permissions_provider is not None
                 else self.permissions
             )
+            # A compressed or delegated session acts as the session it came from.
+            resolved = resolve_session(self.lineage, gate, scope_kwargs.get("session_id"))
+            if resolved is not None:
+                scope_kwargs["session_id"] = resolved.session_id
+                if resolved.delegated and name in WRITE_TOOLS:
+                    return _error(
+                        "subagent_read_only",
+                        "a delegated subagent can only read the story; return your findings "
+                        "and let the main Agent propose any change",
+                    )
             scope = _scope_from_gate(gate, **scope_kwargs)
             bound = None
             if resolve_from_session:
@@ -213,6 +230,19 @@ class StoryToolService:
             raw_edits=payload.get("edits"),
             **common,
         )
+
+
+def resolve_session(
+    lineage: SessionLineage | None, gate: StoryPermissionGate, session_id: Any
+) -> ResolvedSession | None:
+    """The bound session a tool call belongs to, or None when it has none."""
+
+    sid = str(session_id or "").strip()
+    if not sid:
+        return None
+    if lineage is None:
+        return ResolvedSession(sid, False) if gate.bound_scope(sid) is not None else None
+    return lineage.resolve(sid, lambda candidate: gate.bound_scope(candidate) is not None)
 
 
 def _scope_from_gate(gate: StoryPermissionGate, **kwargs: Any) -> SessionScope:
