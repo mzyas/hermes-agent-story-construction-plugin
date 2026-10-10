@@ -380,38 +380,70 @@ def test_dashboard_rejects_locked_profile_mismatch_before_binding(monkeypatch, t
         "profile_lock_mismatch",
     )
 
-def _message_counts(monkeypatch, plugin_api, counts: dict[str, int]) -> None:
+def _hermes_sessions(monkeypatch, plugin_api, rows) -> None:
+    """Stand in for Hermes' session rows; a callable stands in for a failing read."""
     backend = plugin_api.load_api_backend(PACKAGE_ROOT)
     lineage = importlib.import_module(f"{backend.__name__}.session_lineage")
-    monkeypatch.setattr(
-        lineage, "state_db_message_count", lambda _home, session_id: counts.get(session_id)
-    )
+    lookup = rows if callable(rows) else lambda _home, session_id: rows.get(session_id)
+    monkeypatch.setattr(lineage, "state_db_session", lookup)
 
 
-def test_a_chat_that_already_has_messages_cannot_be_bound(monkeypatch, tmp_path: Path) -> None:
+STORY_PROMPT = "Hermes base\n\n# StoryConstructionAgentPrompt v10\n..."
+
+
+def test_a_chat_that_already_started_cannot_be_bound(monkeypatch, tmp_path: Path) -> None:
     plugin_api, _, _ = _ready_runtime(monkeypatch, tmp_path)
-    _message_counts(monkeypatch, plugin_api, {"busy": 3, "fresh": 0})
+    _hermes_sessions(monkeypatch, plugin_api, {
+        "busy": {"message_count": 3, "system_prompt": ""},
+        "frozen": {"message_count": 0, "system_prompt": "Hermes base"},
+        "fresh": {"message_count": 0, "system_prompt": None},
+    })
 
-    _assert_http_error(
-        lambda: plugin_api.bind_session({**_scope("busy"), "project_id": "p1"}),
-        409,
-        "session_has_messages",
-    )
-    assert _request_state(plugin_api).permissions.bound_scope("busy") is None
-    # A new chat, or one the database does not know, binds as before.
+    for session_id in ("busy", "frozen"):
+        _assert_http_error(
+            lambda: plugin_api.bind_session({**_scope(session_id), "project_id": "p1"}),
+            409,
+            "session_already_started",
+        )
+        assert _request_state(plugin_api).permissions.bound_scope(session_id) is None
+    # A chat Hermes has not started, or has not stored yet, binds as before.
     plugin_api.bind_session({**_scope("fresh"), "project_id": "p1"})
     plugin_api.bind_session({**_scope("unknown"), "project_id": "p1"})
 
 
-def test_a_bound_chat_can_be_rebound_after_it_has_messages(monkeypatch, tmp_path: Path) -> None:
+def test_a_chat_that_already_has_the_story_protocol_can_be_bound_again(
+    monkeypatch, tmp_path: Path
+) -> None:
+    plugin_api, _, _ = _ready_runtime(monkeypatch, tmp_path)
+    _hermes_sessions(monkeypatch, plugin_api, {
+        "unbound": {"message_count": 12, "system_prompt": STORY_PROMPT},
+    })
+
+    plugin_api.bind_session({**_scope("unbound"), "project_id": "p1"})
+
+    assert _request_state(plugin_api).permissions.bound_scope("unbound").project_id == "p1"
+
+
+def test_a_bound_chat_can_be_rebound_after_it_started(monkeypatch, tmp_path: Path) -> None:
     plugin_api, _, _ = _ready_runtime(monkeypatch, tmp_path)
     base = {"stored_session_id": "stored-1", "profile": "writer", "connection_id": "local", "project_id": "p1"}
     plugin_api.bind_session({**base, "runtime_session_id": "runtime-1"})
-    _message_counts(monkeypatch, plugin_api, {"stored-1": 5})
+    _hermes_sessions(monkeypatch, plugin_api, {"stored-1": {"message_count": 5, "system_prompt": "x"}})
 
     plugin_api.bind_session({**base, "runtime_session_id": "runtime-2"})
 
     assert _request_state(plugin_api).permissions.bound_scope("runtime-2").project_id == "p1"
+
+
+def test_an_unreadable_session_database_does_not_block_the_bind(monkeypatch, tmp_path: Path) -> None:
+    plugin_api, _, _ = _ready_runtime(monkeypatch, tmp_path)
+
+    def broken(_home, _session_id):
+        raise OSError("state.db is locked")
+
+    _hermes_sessions(monkeypatch, plugin_api, broken)
+
+    plugin_api.bind_session({**_scope("s1"), "project_id": "p1"})
 
 
 def test_profile_mismatch_is_rejected_for_read_bind_and_save(monkeypatch, tmp_path: Path) -> None:

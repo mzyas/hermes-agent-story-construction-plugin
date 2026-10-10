@@ -470,12 +470,17 @@ def bind_session(body: dict[str, Any]) -> dict[str, Any]:
 def _reject_late_binding(
     runtime: Any, state: Any, stored_session_id: str, profile: str, connection_id: str
 ) -> None:
-    """Refuse to bind a chat that already has messages.
+    """Refuse to bind a chat whose prompt was already frozen without Story.
 
-    Hermes freezes the Story prompt on a chat's first render, so a chat bound
-    after it started would never get the Story instructions. Re-binding a chat
-    that is already bound (a new runtime id after a resume) stays allowed, and
-    a session database that cannot be read does not block the bind.
+    Hermes freezes the Story section on a chat's first render, so a chat bound
+    after that would never get the Story instructions. A chat whose stored
+    prompt already carries the Story protocol (bound before, then unbound) can
+    be bound again. Re-binding a chat already bound under this profile and
+    connection (a new runtime id after a resume) stays allowed; the same chat
+    from another connection is a different binding and is checked like any
+    other. A chat Hermes has not stored yet (the "New writing session" flow
+    binds before the first turn) and a database that cannot be read do not
+    block the bind.
     """
 
     if state.sessions.get(
@@ -483,16 +488,22 @@ def _reject_late_binding(
     ) is not None:
         return
     try:
-        count = _component(runtime, "session_lineage").state_db_message_count(
+        row = _component(runtime, "session_lineage").state_db_session(
             state.hermes_home, stored_session_id
         )
+        marker = "# " + _component(runtime, "prompt_templates").STORY_AGENT_PROMPT_NAME
     except Exception:
         return
-    if count:
+    if row is None:
+        return
+    prompt = str(row.get("system_prompt") or "")
+    if marker in prompt:
+        return
+    if prompt or row.get("message_count"):
         raise HTTPException(
             status_code=409,
             detail={
-                "code": "session_has_messages",
+                "code": "session_already_started",
                 "message": "only a new writing session can be bound to a story project",
             },
         )

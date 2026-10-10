@@ -76,12 +76,30 @@ def test_a_session_rendered_before_its_binding_stays_without_it() -> None:
     assert _render(registry, "runtime-1").startswith(f"# {STORY_AGENT_PROMPT_VERSION}")
 
 
-def test_a_compressed_session_keeps_the_protocol() -> None:
-    lineage = SessionLineage(
-        {"c2": ("c1", False), "c1": ("stored-1", False)}.get
-    )
+def _walks(links: dict[str, dict[str, tuple[str, bool]]]) -> SessionLineage:
+    """A lineage whose database walk from each id returns the given links."""
+    return SessionLineage(lambda session_id: links.get(session_id, {}))
 
-    assert _render(_bound_registry(), "c2", lineage).startswith(f"# {STORY_AGENT_PROMPT_VERSION}")
+
+def test_a_compressed_session_keeps_the_protocol() -> None:
+    lineage = _walks({
+        "c2": {"c2": ("c1", False), "c1": ("stored-1", False)},
+        "chat-c1": {"chat-c1": ("chat", False)},
+    })
+    registry = _bound_registry()
+
+    assert _render(registry, "c2", lineage).startswith(f"# {STORY_AGENT_PROMPT_VERSION}")
+    # A compressed ordinary chat still gets nothing (not the error fallback).
+    assert _render(registry, "chat-c1", lineage) == ""
+
+
+def test_a_subagent_found_only_in_the_session_database_gets_the_read_only_section() -> None:
+    # The subagent_start hook was missed (e.g. after a plugin reload).
+    lineage = _walks({"sub": {"sub": ("runtime-1", True)}})
+
+    rendered = _render(_bound_registry(), "sub", lineage, platform="subagent")
+
+    assert rendered.startswith(f"# {STORY_SUBAGENT_PROMPT_VERSION}")
 
 
 def test_a_subagent_of_a_bound_session_gets_the_read_only_section() -> None:

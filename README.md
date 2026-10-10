@@ -102,9 +102,8 @@ License: Apache License 2.0.
 This unified plugin provides the backend and native Desktop halves of the story
 construction workspace. The Desktop half contributes a project-first page in
 the left navigation: it creates and selects projects, lists only the selected
-project's writing sessions, opens chapters in the editor, and keeps manual
-focused-session binding as a secondary action. Renderer code never scans or
-writes the Vault.
+project's writing sessions, and opens chapters in the editor. Renderer code
+never scans or writes the Vault.
 
 ## Install and configure
 
@@ -240,7 +239,7 @@ GET /projects/{project_id}/workspace                  the project's Hermes proje
 PUT /projects/{project_id}/workspace/link             remember the Hermes project for that folder
 POST /projects/{project_id}/volumes                  append a volume to a project
 POST /projects/{project_id}/volumes/{volume_id}/chapters   append an empty chapter to a volume
-POST /projects/{project_id}/sessions                bind a Hermes session to the project
+POST /sessions/bind                                 bind a new Hermes session to a project
 GET  /projects/{project_id}/sessions                list the project's bindings
 DELETE /projects/{project_id}/sessions/{stored_session_id}    remove a binding
 POST /projects/{project_id}/chapters/{chapter_id}/save        confirmed chapter save
@@ -380,7 +379,8 @@ existing chat cannot be bound to a project; start a “New writing session”
 instead. “Manage sessions” is the only way to delete:
 rows then get checkboxes and a Delete button, with Select all and Delete
 selected on top. Every deletion asks for confirmation first. The default is
-“Remove binding”, which keeps the Hermes session so it can be bound again;
+“Remove binding”, which keeps the Hermes session as an ordinary chat (it
+keeps the Story protocol it started with, but its Story tools stop working);
 ticking “Also permanently delete the session itself” calls Hermes
 `session.delete` and then removes the binding. The session currently open
 cannot be permanently deleted, because Hermes refuses it.
@@ -505,10 +505,16 @@ it into, and (as the read-only `StorySubagentPrompt`) the subagents it
 delegates. An ordinary chat in the Story Profile gets no Story section; if it
 calls `story.get_session_project`, the `session_not_bound` error tells it to
 carry on as an ordinary chat. When the binding file or the Hermes session
-database cannot be read, the full protocol is rendered rather than none. This is
-why only “New writing session” binds a chat (before its first render), and
-`POST /sessions/bind` refuses a chat that already has messages
-(`session_has_messages`) unless it is already bound. Request assembly
+database cannot be read, the full protocol is rendered rather than none, since
+Hermes drops a section whose renderer fails; an ordinary chat compressed while
+the database is unreadable can therefore gain the protocol. This is why only
+“New writing session” binds a chat (before its first render), and
+`POST /sessions/bind` refuses a chat Hermes already started without the Story
+protocol, that is one with messages or a stored prompt
+(`session_already_started`), unless it is already bound. A chat that was bound
+before and still carries the protocol can be bound again. A `/branch` of a
+bound session copies its prompt but is not bound, so its Story tools report
+`session_not_bound`. Request assembly
 still includes that stable System Prompt on every LLM request so Hermes and the
 provider can reuse their prompt-cache prefix. Neither template is written back
 to Session history. Live project records and Skill bodies arrive through the

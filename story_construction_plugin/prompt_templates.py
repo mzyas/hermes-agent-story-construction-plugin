@@ -17,7 +17,9 @@ from .subagent_policy import StoryWorkerContext, render_story_worker_context
 # Hermes drops a plugin prompt section longer than this (it is skipped whole, not cut),
 # so the Agent would get no Story instructions at all. A test keeps us well under it.
 STORY_PROMPT_MAX_CHARS = 4000
-STORY_AGENT_PROMPT_VERSION = "StoryConstructionAgentPrompt v11"
+# v11 has the v10 text; what changed is that only bound sessions receive it.
+STORY_AGENT_PROMPT_NAME = "StoryConstructionAgentPrompt"
+STORY_AGENT_PROMPT_VERSION = f"{STORY_AGENT_PROMPT_NAME} v11"
 STORY_SUBAGENT_PROMPT_VERSION = "StorySubagentPrompt v1"
 STORY_WORKER_PROMPT_VERSION = "StoryWorkerPrompt v1"
 
