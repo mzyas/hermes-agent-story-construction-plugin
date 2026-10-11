@@ -1,5 +1,5 @@
 name: story-construction
-version: 0.1.0
+version: 0.1.1
 description: "Obsidian-backed story construction workspace for Hermes Desktop."
 author: mzyas
 kind: backend
