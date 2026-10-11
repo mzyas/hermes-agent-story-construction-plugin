@@ -39,17 +39,17 @@ not something it has been tested for.
 the open record in the middle (here a character card the Agent wrote), the
 writing sessions on the right. *Undo the Agent's last write* sits at the top.
 
-![Project workspace](docs/image/workspace.png)
+![Project workspace](assets/images/workspace.png)
 
 **The Agent proposes, you approve in the chat**: Hermes' own approval prompt
 shows the record and what changes.
 
-![Approval prompt in the chat](docs/image/chat-approval.png)
+![Approval prompt in the chat](assets/images/chat-approval.png)
 
 **Read the diff**: the Story panel shows each proposed change with the
 differences highlighted. Approval itself happens in the chat.
 
-![Proposal diff in the Story panel](docs/image/proposal-diff.png)
+![Proposal diff in the Story panel](assets/images/proposal-diff.png)
 
 ## Quick start
 
