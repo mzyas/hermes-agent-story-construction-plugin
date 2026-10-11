@@ -178,7 +178,7 @@ class LiveStoryRuntime:
         state = self.current()
         if not state.ready:
             return ""
-        return state.sessions.render_system_prompt(session_info)
+        return state.sessions.render_system_prompt(session_info, self.lineage)
 
     def _key(self, settings: Mapping[str, object]) -> tuple[object, ...]:
         try:

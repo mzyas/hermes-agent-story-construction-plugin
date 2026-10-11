@@ -14,8 +14,10 @@ from . import _SKILLS
 from .prompt_templates import (
     STORY_AGENT_PROMPT_VERSION,
     STORY_PROMPT_MAX_CHARS,
+    STORY_SUBAGENT_PROMPT_VERSION,
     STORY_WORKER_PROMPT_VERSION,
     render_story_agent_system_prompt,
+    render_story_subagent_prompt,
     render_story_worker_prompt,
 )
 from .subagent_policy import StoryWorkerContext
@@ -26,7 +28,7 @@ _SKILLS_DIR = Path(__file__).resolve().parent / "skills"
 
 def build_story_guide(skills_dir: Path | None = None) -> dict[str, Any]:
     return {
-        "prompts": [_main_prompt(), _worker_prompt()],
+        "prompts": [_main_prompt(), _subagent_prompt(), _worker_prompt()],
         "skills": _skills(skills_dir or _SKILLS_DIR),
     }
 
@@ -36,6 +38,19 @@ def _main_prompt() -> dict[str, Any]:
     return {
         "id": "global",
         "version": STORY_AGENT_PROMPT_VERSION,
+        "text": text,
+        "chars": len(text),
+        "max_chars": STORY_PROMPT_MAX_CHARS,
+        "injected": True,
+    }
+
+
+def _subagent_prompt() -> dict[str, Any]:
+    # Given instead of the main prompt to a subagent delegated from a bound session.
+    text = render_story_subagent_prompt()
+    return {
+        "id": "subagent",
+        "version": STORY_SUBAGENT_PROMPT_VERSION,
         "text": text,
         "chars": len(text),
         "max_chars": STORY_PROMPT_MAX_CHARS,

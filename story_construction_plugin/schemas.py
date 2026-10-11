@@ -44,7 +44,8 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "arguments. Call this first when the user wants to write, continue, "
             "or check the story, to learn the project_id, volume_id, and "
             "chapter_id that the other story.* tools need. An error "
-            "session_not_bound means this is an ordinary chat."
+            "session_not_bound means this is an ordinary chat: answer it normally and do "
+            "not call other story.* tools."
         ),
         "parameters": _parameters({}, []),
     },

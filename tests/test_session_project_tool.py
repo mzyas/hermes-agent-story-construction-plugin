@@ -5,7 +5,10 @@ from __future__ import annotations
 import json
 
 from story_construction_plugin.permissions import SessionScope, StoryPermissionGate
-from story_construction_plugin.prompt_templates import render_story_agent_system_prompt
+from story_construction_plugin.prompt_templates import (
+    render_story_agent_system_prompt,
+    render_story_subagent_prompt,
+)
 from story_construction_plugin.schemas import TOOL_SCHEMAS
 from story_construction_plugin.tools import StoryToolService
 
@@ -141,5 +144,24 @@ def test_prompt_output_rule_applies_only_to_planning_and_drafting() -> None:
     assert "for the current request" not in rendered  # no blanket contract on every reply
 
 
+def test_unbound_error_and_description_keep_an_ordinary_chat_away_from_story_tools() -> None:
+    # An unbound chat has no Story section, so the tool itself draws the line.
+    message = _call(_service(bound=False))["error"]["message"]
+
+    assert "ordinary chat" in message and "do not call other story.* tools" in message
+    assert "do not search the disk" in message
+    assert "do not call other story.* tools" in TOOL_SCHEMAS[TOOL]["description"]
+
+
+def test_subagent_prompt_is_read_only_and_short() -> None:
+    rendered = render_story_subagent_prompt()
+
+    assert rendered.startswith("# StorySubagentPrompt v1")
+    assert "You can only read" in rendered
+    for tool in ("story.propose_edit", "story.apply_edit", TOOL):
+        assert tool in rendered
+    assert len(rendered) < 800
+
+
 def test_prompt_version_names_the_current_protocol() -> None:
-    assert render_story_agent_system_prompt().startswith("# StoryConstructionAgentPrompt v10")
+    assert render_story_agent_system_prompt().startswith("# StoryConstructionAgentPrompt v11")

@@ -12,6 +12,8 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from threading import RLock
 
+from .session_lineage import ResolvedSession, SessionLineage
+
 
 _SCHEMA_VERSION = 1
 
@@ -200,16 +202,48 @@ class StorySessionRegistry:
                 _reject_conflicting_aliases(bindings, key, binding)
                 bindings[key] = binding
 
-    def render_system_prompt(self, session_info: Mapping[str, object]) -> str:
-        """Return one frozen protocol for every session in the locked Profile."""
+    def render_system_prompt(
+        self, session_info: Mapping[str, object], lineage: SessionLineage | None = None
+    ) -> str:
+        """Return the frozen Story section for one session of the locked Profile.
 
-        from .prompt_templates import render_story_agent_system_prompt
+        A bound session (or one compressed from it) gets the full protocol, a
+        subagent delegated from it gets the read-only subagent section, and any
+        other chat gets nothing. Hermes renders this once per session, so when
+        the binding cannot be read the full protocol is safer than none.
+        """
+
+        from .prompt_templates import (
+            render_story_agent_system_prompt,
+            render_story_subagent_prompt,
+        )
 
         profile = str(
             session_info.get("profile_name") or session_info.get("profile") or ""
         ).strip()
         if not profile or profile != self.locked_profile:
             return ""
+        session_id = str(session_info.get("session_id") or "").strip()
+        try:
+            bound_ids = {
+                session
+                for binding in self.all()
+                if binding.profile == profile
+                for session in (binding.stored_session_id, binding.runtime_session_id)
+                if session
+            }
+            if lineage is None:
+                resolved = (
+                    ResolvedSession(session_id, False) if session_id in bound_ids else None
+                )
+            else:
+                resolved = lineage.resolve(session_id, bound_ids.__contains__, strict=True)
+        except Exception:
+            return render_story_agent_system_prompt()
+        if resolved is None:
+            return ""
+        if resolved.delegated:
+            return render_story_subagent_prompt()
         return render_story_agent_system_prompt()
 
     def _load(self) -> dict[tuple[str, str, str], StorySessionBinding]:

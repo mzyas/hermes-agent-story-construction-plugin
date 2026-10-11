@@ -98,9 +98,11 @@ def test_the_prompt_is_registered_with_the_limit_it_was_checked_against() -> Non
             self.calls.append((args, kwargs))
 
     ctx = Ctx()
-    register_story_prompt(ctx, StorySessionRegistry(locked_profile="writer"))
+    registry = StorySessionRegistry(locked_profile="writer")
+    registry.bind(stored_session_id="s1", profile="writer", project_id="novel")
+    register_story_prompt(ctx, registry)
 
     (args, kwargs), = ctx.calls
     assert kwargs["max_chars"] == STORY_PROMPT_MAX_CHARS
-    rendered = args[1]({"profile_name": "writer"})
+    rendered = args[1]({"profile_name": "writer", "session_id": "s1"})
     assert 0 < len(rendered.strip()) <= kwargs["max_chars"]

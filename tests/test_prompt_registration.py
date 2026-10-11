@@ -1,8 +1,13 @@
-"""Hermes prompt-section registration and profile/session binding contracts."""
+"""Hermes prompt-section registration and which sessions get the Story section."""
 
 from __future__ import annotations
 
 from story_construction_plugin import register_story_prompt
+from story_construction_plugin.prompt_templates import (
+    STORY_AGENT_PROMPT_VERSION,
+    STORY_SUBAGENT_PROMPT_VERSION,
+)
+from story_construction_plugin.session_lineage import SessionLineage
 from story_construction_plugin.session_store import StorySessionRegistry
 
 
@@ -14,8 +19,27 @@ class FakeContext:
         self.sections.append((args, kwargs))
 
 
+def _bound_registry(tmp_path=None) -> StorySessionRegistry:
+    path = tmp_path / "sessions.json" if tmp_path is not None else None
+    registry = StorySessionRegistry(path, locked_profile="writer")
+    registry.bind(
+        stored_session_id="stored-1",
+        runtime_session_id="runtime-1",
+        profile="writer",
+        connection_id="local",
+        project_id="novel",
+    )
+    return registry
+
+
+def _render(registry, session_id: str, lineage: SessionLineage | None = None, **info) -> str:
+    return registry.render_system_prompt(
+        {"session_id": session_id, "profile_name": "writer", **info}, lineage
+    )
+
+
 def test_registered_prompt_keeps_the_existing_section_contract() -> None:
-    registry = StorySessionRegistry(locked_profile="writer")
+    registry = _bound_registry()
     context = FakeContext()
     register_story_prompt(context, registry)
 
@@ -25,28 +49,79 @@ def test_registered_prompt_keeps_the_existing_section_contract() -> None:
     assert args[1]({"session_id": "runtime-1", "profile_name": "writer"})
 
 
-def test_unbound_locked_profile_gets_same_frozen_prompt_after_binding() -> None:
+def test_only_a_bound_session_gets_the_story_protocol() -> None:
+    registry = _bound_registry()
+
+    for session_id in ("stored-1", "runtime-1"):
+        assert _render(registry, session_id).startswith(f"# {STORY_AGENT_PROMPT_VERSION}")
+    # An ordinary chat in the Story Profile gets no Story section at all.
+    assert _render(registry, "chat") == ""
+    assert _render(registry, "") == ""
+    # Other Profiles never get it, bound or not.
+    assert registry.render_system_prompt({"session_id": "runtime-1", "profile_name": "reviewer"}) == ""
+    assert registry.render_system_prompt({"session_id": "runtime-1"}) == ""
+
+
+def test_a_session_rendered_before_its_binding_stays_without_it() -> None:
+    # Hermes freezes the first render, so a chat must be bound before it starts:
+    # "New writing session" binds first, and late binding is refused.
     registry = StorySessionRegistry(locked_profile="writer")
-    before = registry.render_system_prompt(
-        {"session_id": "runtime-1", "profile_name": "writer"}
-    )
+    before = _render(registry, "runtime-1")
     registry.bind(
-        stored_session_id="stored-1",
-        runtime_session_id="runtime-1",
-        profile="writer",
-        connection_id="local",
-        project_id="novel",
-    )
-    after = registry.render_system_prompt(
-        {"session_id": "runtime-1", "profile_name": "writer"}
+        stored_session_id="stored-1", runtime_session_id="runtime-1",
+        profile="writer", connection_id="local", project_id="novel",
     )
 
-    assert before == after
-    assert before
-    assert (
-        registry.render_system_prompt(
-            {"session_id": "other", "profile_name": "reviewer"}
-        )
-        == ""
+    assert before == ""
+    assert _render(registry, "runtime-1").startswith(f"# {STORY_AGENT_PROMPT_VERSION}")
+
+
+def _walks(links: dict[str, dict[str, tuple[str, bool]]]) -> SessionLineage:
+    """A lineage whose database walk from each id returns the given links."""
+    return SessionLineage(lambda session_id: links.get(session_id, {}))
+
+
+def test_a_compressed_session_keeps_the_protocol() -> None:
+    lineage = _walks({
+        "c2": {"c2": ("c1", False), "c1": ("stored-1", False)},
+        "chat-c1": {"chat-c1": ("chat", False)},
+    })
+    registry = _bound_registry()
+
+    assert _render(registry, "c2", lineage).startswith(f"# {STORY_AGENT_PROMPT_VERSION}")
+    # A compressed ordinary chat still gets nothing (not the error fallback).
+    assert _render(registry, "chat-c1", lineage) == ""
+
+
+def test_a_subagent_found_only_in_the_session_database_gets_the_read_only_section() -> None:
+    # The subagent_start hook was missed (e.g. after a plugin reload).
+    lineage = _walks({"sub": {"sub": ("runtime-1", True)}})
+
+    rendered = _render(_bound_registry(), "sub", lineage, platform="subagent")
+
+    assert rendered.startswith(f"# {STORY_SUBAGENT_PROMPT_VERSION}")
+
+
+def test_a_subagent_of_a_bound_session_gets_the_read_only_section() -> None:
+    lineage = SessionLineage()
+    lineage.note_subagent(parent_session_id="runtime-1", child_session_id="sub")
+    lineage.note_subagent(parent_session_id="chat", child_session_id="chat-sub")
+    registry = _bound_registry()
+
+    rendered = _render(registry, "sub", lineage, platform="subagent")
+
+    assert rendered.startswith(f"# {STORY_SUBAGENT_PROMPT_VERSION}")
+    assert "You can only read" in rendered
+    assert _render(registry, "chat-sub", lineage, platform="subagent") == ""
+
+
+def test_when_the_binding_cannot_be_read_the_full_protocol_is_safer(tmp_path) -> None:
+    def broken(_session_id):
+        raise OSError("state.db is locked")
+
+    registry = _bound_registry(tmp_path)
+    assert _render(registry, "chat", SessionLineage(broken)).startswith(
+        f"# {STORY_AGENT_PROMPT_VERSION}"
     )
-    assert registry.render_system_prompt({"session_id": "runtime-1"}) == ""
+    (tmp_path / "sessions.json").write_text("{not json", encoding="utf-8")
+    assert _render(registry, "chat").startswith(f"# {STORY_AGENT_PROMPT_VERSION}")
