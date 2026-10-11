@@ -366,7 +366,11 @@ sent. The Agent judges from the user's own words whether they want story work
 or just a chat; for story work it calls `story.get_session_project`, which
 returns the project bound to that session (the model cannot name another
 project), then confirms the chapter title, goal, and output scope as before.
-An unbound session gets `session_not_bound` and stays an ordinary chat. If a
+An unbound session gets `session_not_bound` and stays an ordinary chat. A bound
+session keeps its project after Hermes compresses it (each compression gives it
+a new id), and a subagent delegated from it can read the project but gets
+`subagent_read_only` from the proposal and apply tools: only the main Agent
+proposes changes. If a
 durable binding points to a deleted Hermes session, “Continue”
 shows “Remove stale binding”; removal occurs only after that explicit action.
 
