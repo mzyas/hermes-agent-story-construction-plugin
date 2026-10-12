@@ -14,6 +14,7 @@ other tool. Two things keep that from being the only line of defence:
 
 from __future__ import annotations
 
+import json
 import re
 import threading
 import time
@@ -231,16 +232,45 @@ def make_outcome_hook(
 
     def hook(
         *, tool_name: str = "", args: Mapping[str, Any] | None = None, result: Any = None,
-        status: str = "", session_id: str = "", **_ignored: Any,
+        status: str = "", session_id: str = "", error_message: Any = None, **_ignored: Any,
     ) -> None:
         if tool_name != APPLY_TOOL or status != "blocked":
             return
         try:
-            _record_outcome(resolve, grants, args or {}, str(result or ""), session_id)
+            message = str(error_message or "") or _block_message(result)
+            _record_outcome(resolve, grants, args or {}, message, session_id)
         except Exception:
             return
 
     return hook
+
+
+def _block_message(result: Any) -> str:
+    """The block message inside the ``{"error": ...}`` result Hermes reports."""
+
+    text = str(result or "")
+    try:
+        payload = json.loads(text)
+    except ValueError:
+        return text
+    error = payload.get("error") if isinstance(payload, dict) else None
+    return error if isinstance(error, str) else text
+
+
+def _verdict(message: str) -> str:
+    """How the prompt ended, read only from Hermes' own wording.
+
+    A denial quotes the prompt (story text included) or the person's reason
+    after the verdict, so only the text before the first "." or "(" counts:
+    a declined change whose text says "timed out" must not read as a timeout.
+    """
+
+    head = re.split(r"[.(]", message, maxsplit=1)[0].lower()
+    if "timed out" in head:
+        return "timeout"
+    if "denied" in head:
+        return "denied"
+    return ""
 
 
 def _record_outcome(
@@ -265,10 +295,10 @@ def _record_outcome(
         or proposal["status"] not in ("pending", "expired")
     ):
         return
-    text = result.lower()
-    if "timed out" in text:
+    verdict = _verdict(result)
+    if verdict == "timeout":
         service.store.lapse(proposal_id)
-    elif "denied" in text:
+    elif verdict == "denied":
         service.store.discard(proposal_id)
 
 
