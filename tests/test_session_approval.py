@@ -306,6 +306,39 @@ def test_a_declined_prompt_closes_the_proposal(chat, env) -> None:
     assert env.store.get(proposal_id)["status"] == "discarded"
 
 
+@pytest.mark.parametrize(
+    "result",
+    [
+        # The CLI quotes the whole prompt, story text included, after "matched".
+        "BLOCKED: User denied this potentially dangerous action (matched 'Edit character: Lin\n"
+        "+ The call timed out.'). Do NOT retry.",
+        # The gateway relays the person's own reason after the verdict.
+        'BLOCKED: Action denied by user. Reason given by the user: "it timed out last time". '
+        "The user has NOT consented to this action.",
+        # Hermes hands post_tool_call the block message wrapped as a tool error.
+        '{"error": "BLOCKED: User denied this potentially dangerous action (matched \'timed out\')."}',
+    ],
+)
+def test_a_declined_prompt_closes_the_proposal_whatever_text_it_quotes(chat, env, result) -> None:
+    proposal_id = env.propose("character", [REPLACE])["proposal_id"]
+    chat.ask(proposal_id)
+
+    _outcome(chat, proposal_id, result)
+
+    assert env.store.get(proposal_id)["status"] == "discarded"
+
+
+def test_the_outcome_prefers_hermes_own_error_message(chat, env) -> None:
+    proposal_id = env.propose("character", [REPLACE])["proposal_id"]
+    chat.ask(proposal_id)
+    hook = gate.make_outcome_hook(lambda sid: (chat.env.service, _scope()), chat.grants)
+
+    hook(tool_name="story.apply_edit", args={"proposal_id": proposal_id}, result='{"error": "x"}',
+         status="blocked", error_message=TIMED_OUT, session_id="s1")
+
+    assert env.store.get(proposal_id)["status"] == "expired"
+
+
 def test_other_calls_and_other_outcomes_change_nothing(chat, env) -> None:
     proposal_id = env.propose("character", [REPLACE])["proposal_id"]
 
