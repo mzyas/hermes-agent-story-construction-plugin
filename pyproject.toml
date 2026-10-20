@@ -12,6 +12,15 @@ test = ["pytest>=8.3,<10", "ruamel.yaml>=0.18.16,<1"]
 # Release quarantine: skip versions published in the last 14 days.
 exclude-newer = "14 days"
 
+[tool.ruff]
+target-version = "py311"
+# CI clones the Hermes source here for the integration tests.
+extend-exclude = ["hermes-agent"]
+
+[tool.ruff.lint]
+# Ruff's default rule set, pinned so a user-level config can't widen it.
+select = ["E4", "E7", "E9", "F"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]

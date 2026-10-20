@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 
-from story_construction_plugin.permissions import StoryPermissionGate
 from story_construction_plugin.subagent_policy import (
     StoryWorkerContext,
     validate_story_worker_result,

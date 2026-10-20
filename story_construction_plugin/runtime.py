@@ -12,7 +12,6 @@ from .paths import native_vault_path
 from .permissions import SessionScope, StoryPermissionGate
 from .session_store import (
     SessionBindingStoreError,
-    StorySessionBinding,
     StorySessionRegistry,
 )
 
