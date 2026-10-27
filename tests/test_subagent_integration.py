@@ -21,7 +21,9 @@ def test_parent_continues_after_validated_read_only_worker_result() -> None:
         source_refs=("chapters/ch1.md",),
         parent_session_id="parent-1",
     )
-    child_messages = [{"role": "system", "content": render_story_worker_context(context)}]
+    child_messages = [
+        {"role": "system", "content": render_story_worker_context(context)}
+    ]
     child_messages.append({"role": "user", "content": "Analyze the supplied chapter."})
     child_result = {
         "project_id": "p1",

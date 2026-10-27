@@ -28,7 +28,9 @@ class SessionScope:
 def scope_from_tool_kwargs(**kwargs: object) -> SessionScope:
     return SessionScope(
         session_id=str(kwargs.get("session_id") or "").strip(),
-        source=str(kwargs.get("source") or kwargs.get("platform") or "").strip().lower(),
+        source=str(kwargs.get("source") or kwargs.get("platform") or "")
+        .strip()
+        .lower(),
         profile=str(kwargs.get("profile") or kwargs.get("profile_name") or "").strip(),
         connection_id=str(kwargs.get("connection_id") or "").strip(),
         project_id=_optional_text(kwargs.get("project_id")),
@@ -53,7 +55,9 @@ class StoryPermissionGate:
         if not normalized:
             raise PermissionDenied("profile is required")
         if self._locked_profile is not None and normalized != self._locked_profile:
-            raise ProfileLockMismatch("session profile does not match the locked profile")
+            raise ProfileLockMismatch(
+                "session profile does not match the locked profile"
+            )
 
     def bind_session(self, scope: SessionScope, project_id: str) -> None:
         self._require_scope_identity(scope)
@@ -63,7 +67,9 @@ class StoryPermissionGate:
         if current is not None:
             self._require_same_scope(current, scope)
             if current.project_id != project_id:
-                raise PermissionDenied("a story session cannot be rebound to another project")
+                raise PermissionDenied(
+                    "a story session cannot be rebound to another project"
+                )
         self._require_owner(scope, project_id)
         self._session_scopes[scope.session_id] = SessionScope(
             session_id=scope.session_id,
@@ -127,7 +133,9 @@ class StoryPermissionGate:
         if bound.profile != request.profile:
             raise PermissionDenied("session profile does not match its story binding")
         if bound.connection_id != request.connection_id:
-            raise PermissionDenied("session connection does not match its story binding")
+            raise PermissionDenied(
+                "session connection does not match its story binding"
+            )
 
     def _require_owner(self, scope: SessionScope, project_id: str) -> None:
         if self._project_owners and project_id not in self._project_owners:

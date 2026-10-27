@@ -133,8 +133,14 @@ def _run_agent(agent: _AgentContext, op: str, request: dict) -> dict:
 
 def main(argv: list[str]) -> int:
     if len(argv) < 2 or argv[1] not in ("api", "agent"):
-        _emit({"op": "start", "code": "usage", "ok": False,
-               "detail": "usage: story_profile_probe.py <api|agent> [profile]"})
+        _emit(
+            {
+                "op": "start",
+                "code": "usage",
+                "ok": False,
+                "detail": "usage: story_profile_probe.py <api|agent> [profile]",
+            }
+        )
         return 2
     role = argv[1]
     profile_label = argv[2] if len(argv) > 2 else "default"
@@ -143,12 +149,14 @@ def main(argv: list[str]) -> int:
 
     hermes = ensure_hermes()
     if not hermes.available:
-        _emit({
-            "op": "start",
-            "code": "hermes_unavailable",
-            "ok": False,
-            "detail": "Hermes is not importable (set HERMES_SOURCE or install hermes)",
-        })
+        _emit(
+            {
+                "op": "start",
+                "code": "hermes_unavailable",
+                "ok": False,
+                "detail": "Hermes is not importable (set HERMES_SOURCE or install hermes)",
+            }
+        )
         return 2
 
     home = Path(os.environ["HERMES_HOME"]).expanduser().resolve()
@@ -166,8 +174,15 @@ def main(argv: list[str]) -> int:
         agent = _AgentContext(_story_settings(home))
         story_construction_plugin.register(agent)
 
-    _emit({"op": "ready", "code": "ready", "ok": True,
-           "role": role, "profile": profile_label})
+    _emit(
+        {
+            "op": "ready",
+            "code": "ready",
+            "ok": True,
+            "role": role,
+            "profile": profile_label,
+        }
+    )
 
     for line in sys.stdin:
         line = line.strip()
@@ -176,8 +191,15 @@ def main(argv: list[str]) -> int:
         try:
             request = json.loads(line)
         except json.JSONDecodeError as exc:
-            _emit({"op": "parse", "code": "invalid_request", "ok": False,
-                   "pid": os.getpid(), "detail": str(exc)})
+            _emit(
+                {
+                    "op": "parse",
+                    "code": "invalid_request",
+                    "ok": False,
+                    "pid": os.getpid(),
+                    "detail": str(exc),
+                }
+            )
             continue
         op = str(request.get("op") or "")
         try:
@@ -197,12 +219,17 @@ def main(argv: list[str]) -> int:
                 else:
                     code = f"http_{exc.status_code}"
                     body = {"detail": str(detail)}
-                _emit({"op": op, "code": code, "ok": False,
-                       "pid": os.getpid(), **body})
+                _emit({"op": op, "code": code, "ok": False, "pid": os.getpid(), **body})
             else:
-                _emit({"op": op, "code": "probe_error", "ok": False,
-                       "pid": os.getpid(),
-                       "detail": f"{type(exc).__name__}: {exc}"})
+                _emit(
+                    {
+                        "op": op,
+                        "code": "probe_error",
+                        "ok": False,
+                        "pid": os.getpid(),
+                        "detail": f"{type(exc).__name__}: {exc}",
+                    }
+                )
     return 0
 
 

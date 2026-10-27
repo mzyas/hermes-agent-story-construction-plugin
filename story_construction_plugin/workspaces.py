@@ -53,7 +53,9 @@ class WorkspaceLink:
     updated_at: str
 
 
-def resolve_workspace_base(profile_home: Path, raw_config: Mapping[str, object]) -> Path:
+def resolve_workspace_base(
+    profile_home: Path, raw_config: Mapping[str, object]
+) -> Path:
     """Folder that holds one subfolder per Story project.
 
     The Profile's ``terminal.cwd`` is used when it is an existing absolute
@@ -116,7 +118,9 @@ class WorkspaceLinkRegistry:
         self.path = Path(path)
         self._lock = RLock()
 
-    def get(self, *, profile: str, connection_id: str, project_id: str) -> WorkspaceLink | None:
+    def get(
+        self, *, profile: str, connection_id: str, project_id: str
+    ) -> WorkspaceLink | None:
         key = _key(profile, connection_id, project_id)
         with self._lock:
             return self._load().get(key)
@@ -149,7 +153,9 @@ class WorkspaceLinkRegistry:
             self._persist(rows)
             return link
 
-    def mark_archived(self, *, profile: str, connection_id: str, project_id: str) -> WorkspaceLink | None:
+    def mark_archived(
+        self, *, profile: str, connection_id: str, project_id: str
+    ) -> WorkspaceLink | None:
         key = _key(profile, connection_id, project_id)
         with self._lock, _file_lock(self.path):
             rows = self._load()
@@ -157,7 +163,11 @@ class WorkspaceLinkRegistry:
             if previous is None:
                 return None
             archived = WorkspaceLink(
-                **{**asdict(previous), "archived": True, "updated_at": datetime.now(timezone.utc).isoformat()}
+                **{
+                    **asdict(previous),
+                    "archived": True,
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }
             )
             rows[key] = archived
             self._persist(rows)
@@ -176,7 +186,9 @@ class WorkspaceLinkRegistry:
                     profile=_text(row["profile"], "profile"),
                     connection_id=_text(row["connection_id"], "connection_id"),
                     project_id=_text(row["project_id"], "project_id"),
-                    hermes_project_id=_text(row["hermes_project_id"], "hermes_project_id"),
+                    hermes_project_id=_text(
+                        row["hermes_project_id"], "hermes_project_id"
+                    ),
                     folder=_text(row["folder"], "folder"),
                     archived=bool(row["archived"]),
                     created_at=_text(row["created_at"], "created_at"),
@@ -184,8 +196,17 @@ class WorkspaceLinkRegistry:
                 )
                 rows[(link.profile, link.connection_id, link.project_id)] = link
             return rows
-        except (OSError, UnicodeError, ValueError, KeyError, TypeError, AttributeError) as exc:
-            raise WorkspaceLinkStoreError("persistent Story workspace state is invalid") from exc
+        except (
+            OSError,
+            UnicodeError,
+            ValueError,
+            KeyError,
+            TypeError,
+            AttributeError,
+        ) as exc:
+            raise WorkspaceLinkStoreError(
+                "persistent Story workspace state is invalid"
+            ) from exc
 
     def _persist(self, rows: Mapping[tuple[str, str, str], WorkspaceLink]) -> None:
         temporary: Path | None = None
@@ -196,8 +217,12 @@ class WorkspaceLinkRegistry:
                 "links": [asdict(link) for _key_, link in sorted(rows.items())],
             }
             with NamedTemporaryFile(
-                "w", encoding="utf-8", dir=self.path.parent,
-                prefix=f".{self.path.name}.", suffix=".tmp", delete=False,
+                "w",
+                encoding="utf-8",
+                dir=self.path.parent,
+                prefix=f".{self.path.name}.",
+                suffix=".tmp",
+                delete=False,
             ) as handle:
                 temporary = Path(handle.name)
                 json.dump(payload, handle, ensure_ascii=False, indent=2, sort_keys=True)
@@ -207,7 +232,9 @@ class WorkspaceLinkRegistry:
             os.replace(temporary, self.path)
             temporary = None
         except (OSError, TypeError, ValueError) as exc:
-            raise WorkspaceLinkStoreError("persistent Story workspace state is unwritable") from exc
+            raise WorkspaceLinkStoreError(
+                "persistent Story workspace state is unwritable"
+            ) from exc
         finally:
             if temporary is not None:
                 with suppress(OSError):

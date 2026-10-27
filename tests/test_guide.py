@@ -40,14 +40,21 @@ def test_guide_lists_main_and_worker_prompts_with_versions_and_limits() -> None:
 def test_guide_lists_every_packaged_skill_with_namespaced_name() -> None:
     skills = {item["id"]: item for item in build_story_guide()["skills"]}
 
-    assert {"chapter-drafting", "continuity-check", "obsidian-format", "record-format"} <= set(skills)
+    assert {
+        "chapter-drafting",
+        "continuity-check",
+        "obsidian-format",
+        "record-format",
+    } <= set(skills)
     drafting = skills["chapter-drafting"]
     assert drafting["name"] == "story-construction:chapter-drafting"
     assert drafting["description"]
     assert drafting["text"].startswith("---")
 
 
-def test_guide_skill_without_frontmatter_falls_back_to_folder_name(tmp_path: Path) -> None:
+def test_guide_skill_without_frontmatter_falls_back_to_folder_name(
+    tmp_path: Path,
+) -> None:
     skill = tmp_path / "plain" / "SKILL.md"
     skill.parent.mkdir()
     skill.write_text("# Plain\nbody", encoding="utf-8")
@@ -66,7 +73,9 @@ def test_guide_skills_match_what_is_registered_with_hermes() -> None:
         assert skills[name]["description"] == description
 
 
-def test_guide_prefers_the_registered_description_over_the_frontmatter(tmp_path: Path) -> None:
+def test_guide_prefers_the_registered_description_over_the_frontmatter(
+    tmp_path: Path,
+) -> None:
     folder, registered = _SKILLS[0]
     skill = tmp_path / folder / "SKILL.md"
     skill.parent.mkdir()

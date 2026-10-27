@@ -35,7 +35,9 @@ def test_missing_or_cross_project_scope_is_rejected(gate: StoryPermissionGate) -
 
     with pytest.raises(PermissionDenied, match="project_id"):
         gate.require_read(scope, "p2")
-    gate.require_read(SessionScope("session-1", "desktop", "default", "local", None), "p1")
+    gate.require_read(
+        SessionScope("session-1", "desktop", "default", "local", None), "p1"
+    )
 
 
 def test_unbound_session_is_rejected_even_when_request_names_project(
@@ -51,9 +53,13 @@ def test_profile_or_connection_mismatch_is_rejected(gate: StoryPermissionGate) -
     gate.bind_session(_bound_scope(), "p1")
 
     with pytest.raises(PermissionDenied, match="profile"):
-        gate.require_read(SessionScope("session-1", "desktop", "other", "local", "p1"), "p1")
+        gate.require_read(
+            SessionScope("session-1", "desktop", "other", "local", "p1"), "p1"
+        )
     with pytest.raises(PermissionDenied, match="connection"):
-        gate.require_read(SessionScope("session-1", "desktop", "default", "remote", "p1"), "p1")
+        gate.require_read(
+            SessionScope("session-1", "desktop", "default", "remote", "p1"), "p1"
+        )
 
 
 def test_rebinding_bound_session_with_mismatched_scope_is_rejected(
@@ -62,9 +68,15 @@ def test_rebinding_bound_session_with_mismatched_scope_is_rejected(
     gate.bind_session(_bound_scope(), "p1")
 
     with pytest.raises(PermissionDenied, match="profile"):
-        gate.bind_session(SessionScope("session-1", "desktop", "other", "local", "p1"), "p1")
+        gate.bind_session(
+            SessionScope("session-1", "desktop", "other", "local", "p1"), "p1"
+        )
     with pytest.raises(PermissionDenied, match="connection"):
-        gate.bind_session(SessionScope("session-1", "desktop", "default", "remote", "p1"), "p1")
+        gate.bind_session(
+            SessionScope("session-1", "desktop", "default", "remote", "p1"), "p1"
+        )
+
+
 def test_locked_profile_rejects_mismatch_before_session_binding() -> None:
     gate = StoryPermissionGate(
         {"p1": ("writer", "local")},

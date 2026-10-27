@@ -32,7 +32,9 @@ def _bound_registry(tmp_path=None) -> StorySessionRegistry:
     return registry
 
 
-def _render(registry, session_id: str, lineage: SessionLineage | None = None, **info) -> str:
+def _render(
+    registry, session_id: str, lineage: SessionLineage | None = None, **info
+) -> str:
     return registry.render_system_prompt(
         {"session_id": session_id, "profile_name": "writer", **info}, lineage
     )
@@ -53,12 +55,19 @@ def test_only_a_bound_session_gets_the_story_protocol() -> None:
     registry = _bound_registry()
 
     for session_id in ("stored-1", "runtime-1"):
-        assert _render(registry, session_id).startswith(f"# {STORY_AGENT_PROMPT_VERSION}")
+        assert _render(registry, session_id).startswith(
+            f"# {STORY_AGENT_PROMPT_VERSION}"
+        )
     # An ordinary chat in the Story Profile gets no Story section at all.
     assert _render(registry, "chat") == ""
     assert _render(registry, "") == ""
     # Other Profiles never get it, bound or not.
-    assert registry.render_system_prompt({"session_id": "runtime-1", "profile_name": "reviewer"}) == ""
+    assert (
+        registry.render_system_prompt(
+            {"session_id": "runtime-1", "profile_name": "reviewer"}
+        )
+        == ""
+    )
     assert registry.render_system_prompt({"session_id": "runtime-1"}) == ""
 
 
@@ -68,8 +77,11 @@ def test_a_session_rendered_before_its_binding_stays_without_it() -> None:
     registry = StorySessionRegistry(locked_profile="writer")
     before = _render(registry, "runtime-1")
     registry.bind(
-        stored_session_id="stored-1", runtime_session_id="runtime-1",
-        profile="writer", connection_id="local", project_id="novel",
+        stored_session_id="stored-1",
+        runtime_session_id="runtime-1",
+        profile="writer",
+        connection_id="local",
+        project_id="novel",
     )
 
     assert before == ""
@@ -82,18 +94,24 @@ def _walks(links: dict[str, dict[str, tuple[str, bool]]]) -> SessionLineage:
 
 
 def test_a_compressed_session_keeps_the_protocol() -> None:
-    lineage = _walks({
-        "c2": {"c2": ("c1", False), "c1": ("stored-1", False)},
-        "chat-c1": {"chat-c1": ("chat", False)},
-    })
+    lineage = _walks(
+        {
+            "c2": {"c2": ("c1", False), "c1": ("stored-1", False)},
+            "chat-c1": {"chat-c1": ("chat", False)},
+        }
+    )
     registry = _bound_registry()
 
-    assert _render(registry, "c2", lineage).startswith(f"# {STORY_AGENT_PROMPT_VERSION}")
+    assert _render(registry, "c2", lineage).startswith(
+        f"# {STORY_AGENT_PROMPT_VERSION}"
+    )
     # A compressed ordinary chat still gets nothing (not the error fallback).
     assert _render(registry, "chat-c1", lineage) == ""
 
 
-def test_a_subagent_found_only_in_the_session_database_gets_the_read_only_section() -> None:
+def test_a_subagent_found_only_in_the_session_database_gets_the_read_only_section() -> (
+    None
+):
     # The subagent_start hook was missed (e.g. after a plugin reload).
     lineage = _walks({"sub": {"sub": ("runtime-1", True)}})
 

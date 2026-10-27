@@ -65,6 +65,8 @@ def _safe_source_ref(ref: object) -> str:
     if not isinstance(ref, str) or not ref.strip():
         raise ValueError("source_refs must contain non-empty strings")
     value = ref.strip().replace("\\", "/")
-    if value.startswith("/") or any(part in {"", ".", ".."} for part in value.split("/")):
+    if value.startswith("/") or any(
+        part in {"", ".", ".."} for part in value.split("/")
+    ):
         raise ValueError("source_refs must stay within the project")
     return value

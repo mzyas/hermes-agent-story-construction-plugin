@@ -45,7 +45,9 @@ _LINE_DIFF_LIMIT = 40_000
 class EditError(ValueError):
     """An edit list that cannot be applied; ``code`` is stable for tool callers."""
 
-    def __init__(self, code: str, message: str, *, index: int | None = None, **details: Any) -> None:
+    def __init__(
+        self, code: str, message: str, *, index: int | None = None, **details: Any
+    ) -> None:
         super().__init__(message)
         self.code = code
         self.index = index
@@ -91,7 +93,9 @@ def text_digest(text: str) -> str:
 
 
 def edits_digest(edits: Iterable[Edit]) -> str:
-    payload = json.dumps([edit.as_dict() for edit in edits], ensure_ascii=False, sort_keys=True)
+    payload = json.dumps(
+        [edit.as_dict() for edit in edits], ensure_ascii=False, sort_keys=True
+    )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
@@ -108,7 +112,9 @@ def parse_edits(raw: object) -> tuple[Edit, ...]:
             raise EditError("invalid_edit", "each edit must be an object", index=index)
         op = row.get("op")
         if op not in _OPS:
-            raise EditError("invalid_edit", f"op must be one of {', '.join(_OPS)}", index=index)
+            raise EditError(
+                "invalid_edit", f"op must be one of {', '.join(_OPS)}", index=index
+            )
         values: dict[str, str] = {}
         for name in _FIELDS[op]:
             value = row.get(name)
@@ -116,13 +122,17 @@ def parse_edits(raw: object) -> tuple[Edit, ...]:
                 raise EditError("invalid_edit", f"{name} must be a string", index=index)
             value = normalize_newlines(value)
             if not value and (op, name) not in _ALLOW_EMPTY:
-                raise EditError("invalid_edit", f"{name} must not be empty", index=index)
+                raise EditError(
+                    "invalid_edit", f"{name} must not be empty", index=index
+                )
             if len(value) > MAX_TEXT_CHARS:
                 raise EditError("text_too_long", f"{name} is too long", index=index)
             values[name] = value
         edits.append(Edit(op=op, **values))
     if any(edit.op == "rewrite" for edit in edits) and len(edits) != 1:
-        raise EditError("rewrite_must_be_alone", "a rewrite cannot be combined with other edits")
+        raise EditError(
+            "rewrite_must_be_alone", "a rewrite cannot be combined with other edits"
+        )
     return tuple(edits)
 
 
@@ -196,7 +206,8 @@ _FOLD = {
     **dict.fromkeys("\u201c\u201d\u201e\u201f", '"'),
     **dict.fromkeys("\u2010\u2011\u2012\u2013\u2014\u2015\u2212", "-"),
     **dict.fromkeys(
-        "\u00a0\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u202f\u205f\u3000", " "
+        "\u00a0\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u202f\u205f\u3000",
+        " ",
     ),
 }
 # NFKC is deliberately not used: it would turn full-width CJK punctuation into
@@ -268,7 +279,9 @@ _FENCE = re.compile(r"\A\s*```[^\n]*\n(?P<body>.*?)\n?```\s*\Z", re.DOTALL)
 _HEADING = re.compile(r"^\s{0,3}#{1,6}\s+(?P<title>.+?)\s*#*\s*$")
 
 
-def clean_body(text: str, *, index: int = 0, title: str | None = None) -> tuple[str, list[BodyWarning]]:
+def clean_body(
+    text: str, *, index: int = 0, title: str | None = None
+) -> tuple[str, list[BodyWarning]]:
     """Strip a wrapping code fence, reject frontmatter and flag guidance text.
 
     Only the start and the end of the text are inspected, so ordinary prose in
@@ -295,7 +308,9 @@ def clean_body(text: str, *, index: int = 0, title: str | None = None) -> tuple[
             warnings.append(BodyWarning(index, "leading_guidance", first.strip()[:120]))
         if len(lines) > 1 or not _LEAD_IN.match(first):
             if _TRAILING.match(last):
-                warnings.append(BodyWarning(index, "trailing_guidance", last.strip()[:120]))
+                warnings.append(
+                    BodyWarning(index, "trailing_guidance", last.strip()[:120])
+                )
         heading = _HEADING.match(first)
         if heading and title and _same_title(heading.group("title"), title):
             warnings.append(BodyWarning(index, "duplicate_title", first.strip()[:120]))
@@ -307,7 +322,9 @@ def _same_title(heading: str, title: str) -> bool:
     return bool(left) and bool(right) and (left == right or right in left)
 
 
-def check_edits(edits: Sequence[Edit], *, title: str | None = None) -> tuple[tuple[Edit, ...], list[BodyWarning]]:
+def check_edits(
+    edits: Sequence[Edit], *, title: str | None = None
+) -> tuple[tuple[Edit, ...], list[BodyWarning]]:
     """Clean the text each edit would write and collect the warnings."""
 
     cleaned_edits: list[Edit] = []
@@ -331,7 +348,9 @@ def build_previews(base_text: str, edits: Sequence[Edit]) -> list[dict[str, Any]
     previews: list[dict[str, Any]] = []
     for index, edit in enumerate(edits):
         after = _apply_one(text, edit, index)
-        previews.append({"edit": index, "op": edit.op, "regions": _regions(text, after)})
+        previews.append(
+            {"edit": index, "op": edit.op, "regions": _regions(text, after)}
+        )
         text = after
     return previews
 
@@ -348,8 +367,8 @@ def _regions(before: str, after: str) -> list[dict[str, Any]]:
     tail = 0
     while tail < limit - head and old_lines[-1 - tail] == new_lines[-1 - tail]:
         tail += 1
-    old_mid = old_lines[head:len(old_lines) - tail]
-    new_mid = new_lines[head:len(new_lines) - tail]
+    old_mid = old_lines[head : len(old_lines) - tail]
+    new_mid = new_lines[head : len(new_lines) - tail]
     if not old_mid and not new_mid:
         return []
     if len(old_mid) * len(new_mid) > _LINE_DIFF_LIMIT:
@@ -361,12 +380,14 @@ def _regions(before: str, after: str) -> list[dict[str, Any]]:
     for _tag, a1, a2, b1, b2 in spans:
         old = "\n".join(old_mid[a1:a2])
         new = "\n".join(new_mid[b1:b2])
-        regions.append({
-            "old": old,
-            "new": new,
-            "line": head + a1 + 1,
-            "inline": _inline(old, new),
-        })
+        regions.append(
+            {
+                "old": old,
+                "new": new,
+                "line": head + a1 + 1,
+                "inline": _inline(old, new),
+            }
+        )
     return regions
 
 
@@ -405,7 +426,12 @@ def _merge_across_blanks(
     for index, span in enumerate(spans):
         tag, a1, a2, b1, b2 = span
         last = merged[-1] if merged else None
-        if tag == "equal" and last and last[0] != "equal" and 0 < index < len(spans) - 1:
+        if (
+            tag == "equal"
+            and last
+            and last[0] != "equal"
+            and 0 < index < len(spans) - 1
+        ):
             blank = all(word.isspace() for word in old_words[a1:a2])
             if blank and spans[index + 1][0] != "equal":
                 tag = "replace"
