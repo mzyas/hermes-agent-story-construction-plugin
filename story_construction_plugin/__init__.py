@@ -35,7 +35,9 @@ def register_story_skills(ctx) -> None:
     skill_root = Path(__file__).with_name("skills")
     for name, description in _SKILLS:
         path = skill_root / name / "SKILL.md"
-        ctx.register_skill(name, path, description, {"name": name, "description": description})
+        ctx.register_skill(
+            name, path, description, {"name": name, "description": description}
+        )
 
 
 def register_story_tools(
@@ -241,9 +243,14 @@ def register_story_backend(ctx) -> LiveStoryRuntime:
     hook_registrar = getattr(ctx, "register_hook", None)
     if callable(hook_registrar):
         # Sends story.apply_edit to Hermes' own approval prompt (see approval_gate).
-        hook_registrar("pre_tool_call", make_apply_hook(live.resolve_bound_proposals, live.grants))
+        hook_registrar(
+            "pre_tool_call", make_apply_hook(live.resolve_bound_proposals, live.grants)
+        )
         # Notes when that prompt timed out or was declined, so the panel can say so.
-        hook_registrar("post_tool_call", make_outcome_hook(live.resolve_bound_proposals, live.grants))
+        hook_registrar(
+            "post_tool_call",
+            make_outcome_hook(live.resolve_bound_proposals, live.grants),
+        )
         # Remembers which session a subagent came from, before its first turn.
         hook_registrar("subagent_start", live.lineage.note_subagent)
     return live

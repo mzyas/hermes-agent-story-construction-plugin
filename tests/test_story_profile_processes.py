@@ -143,9 +143,7 @@ class _ProfileLab:
             profile_home.mkdir(parents=True)
             # The named Profile's config.yaml doubles as its Hermes identity marker.
             (profile_home / "config.yaml").write_text(
-                "plugins:\n"
-                "  enabled:\n"
-                f"    - {PLUGIN_ID}\n",
+                f"plugins:\n  enabled:\n    - {PLUGIN_ID}\n",
                 encoding="utf-8",
             )
             _copy_package(PACKAGE_ROOT, profile_home / "plugins" / PLUGIN_ID)
@@ -215,8 +213,12 @@ def test_two_process_bind_unbind_and_a_b_a(profile_lab):
     project = api.request({"op": "create", "profile": "a", "name": "Novel"})["tree"][
         "project"
     ]["id"]
-    api.request({"op": "bind", "profile": "a", "session_id": "a-1", "project_id": project})
-    assert agent_a.request({"op": "tool", "session_id": "a-1", "project_id": project})["ok"]
+    api.request(
+        {"op": "bind", "profile": "a", "session_id": "a-1", "project_id": project}
+    )
+    assert agent_a.request({"op": "tool", "session_id": "a-1", "project_id": project})[
+        "ok"
+    ]
 
     # Restart durability after the first bind: fresh processes still authorize.
     api.stop()
@@ -226,32 +228,42 @@ def test_two_process_bind_unbind_and_a_b_a(profile_lab):
     agent_a = profile_lab.start("agent", "a")
     agent_b = profile_lab.start("agent", "b")
     assert len({api.pid, agent_a.pid, agent_b.pid}) == 3
-    assert agent_a.request({"op": "tool", "session_id": "a-1", "project_id": project})["ok"]
+    assert agent_a.request({"op": "tool", "session_id": "a-1", "project_id": project})[
+        "ok"
+    ]
 
     api.request({"op": "select", "profile": "b"})
-    assert not agent_b.request({"op": "tool", "session_id": "a-1", "project_id": project})[
+    assert not agent_b.request(
+        {"op": "tool", "session_id": "a-1", "project_id": project}
+    )["ok"]
+    api.request(
+        {"op": "bind", "profile": "b", "session_id": "b-1", "project_id": project}
+    )
+    assert agent_b.request({"op": "tool", "session_id": "b-1", "project_id": project})[
         "ok"
     ]
-    api.request({"op": "bind", "profile": "b", "session_id": "b-1", "project_id": project})
-    assert agent_b.request({"op": "tool", "session_id": "b-1", "project_id": project})["ok"]
     api.request({"op": "select", "profile": "a"})
-    api.request({"op": "unbind", "profile": "a", "session_id": "a-1", "project_id": project})
-    assert not agent_a.request({"op": "tool", "session_id": "a-1", "project_id": project})[
-        "ok"
-    ]
+    api.request(
+        {"op": "unbind", "profile": "a", "session_id": "a-1", "project_id": project}
+    )
+    assert not agent_a.request(
+        {"op": "tool", "session_id": "a-1", "project_id": project}
+    )["ok"]
 
     # Restart durability after the unbind: fresh processes still deny.
     agent_a.stop()
     agent_a = profile_lab.start("agent", "a")
-    assert not agent_a.request({"op": "tool", "session_id": "a-1", "project_id": project})[
-        "ok"
-    ]
+    assert not agent_a.request(
+        {"op": "tool", "session_id": "a-1", "project_id": project}
+    )["ok"]
     assert agent_a.poll() is None
 
 
 def test_concurrent_api_writers_keep_both_bindings(profile_lab):
     setup = profile_lab.start("api", "default")
-    setup.request({"op": "select", "profile": "a", "vault_root": str(profile_lab.vault)})
+    setup.request(
+        {"op": "select", "profile": "a", "vault_root": str(profile_lab.vault)}
+    )
     project = setup.request({"op": "create", "profile": "a", "name": "Novel"})["tree"][
         "project"
     ]["id"]
@@ -292,8 +304,12 @@ def test_concurrent_api_writers_keep_both_bindings(profile_lab):
 
     # Both rows survived the concurrent read-modify-write and authorize tools.
     agent = profile_lab.start("agent", "a")
-    assert agent.request({"op": "tool", "session_id": "w-1", "project_id": project})["ok"]
-    assert agent.request({"op": "tool", "session_id": "w-2", "project_id": project})["ok"]
+    assert agent.request({"op": "tool", "session_id": "w-1", "project_id": project})[
+        "ok"
+    ]
+    assert agent.request({"op": "tool", "session_id": "w-2", "project_id": project})[
+        "ok"
+    ]
 
 
 def test_dashboard_discovery_requires_the_default_install(target_only_lab, monkeypatch):

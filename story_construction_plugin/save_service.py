@@ -36,7 +36,9 @@ class SaveConflict(RuntimeError):
 
 
 class StorySaveService:
-    def __init__(self, repository: StoryRepository, permissions: StoryPermissionGate) -> None:
+    def __init__(
+        self, repository: StoryRepository, permissions: StoryPermissionGate
+    ) -> None:
         self.repository = repository
         self.permissions = permissions
 
@@ -61,14 +63,26 @@ class StorySaveService:
                 expected_version=request.expected_version,
             )
         except VersionConflictError as exc:
-            current = self.repository.get_chapter(request.project_id, request.chapter_id)
+            current = self.repository.get_chapter(
+                request.project_id, request.chapter_id
+            )
             raise SaveConflict(current, request.content) from exc
         return SaveResult(chapter=chapter)
 
 
 def _validate_request(request: SaveRequest) -> None:
-    for field in ("session_id", "profile", "connection_id", "project_id", "chapter_id", "expected_version"):
-        if not isinstance(getattr(request, field), str) or not getattr(request, field).strip():
+    for field in (
+        "session_id",
+        "profile",
+        "connection_id",
+        "project_id",
+        "chapter_id",
+        "expected_version",
+    ):
+        if (
+            not isinstance(getattr(request, field), str)
+            or not getattr(request, field).strip()
+        ):
             raise ValueError(f"{field} is required")
     if not isinstance(request.content, str):
         raise ValueError("content must be a string")

@@ -68,11 +68,7 @@ def homes(tmp_path: Path, monkeypatch):
 
     # The named Profile's config.yaml doubles as its Hermes identity marker.
     (target_home / "config.yaml").write_text(
-        "plugins:\n"
-        "  enabled:\n"
-        f"    - {PLUGIN_ID}\n"
-        "agent:\n"
-        "  max_turns: 12\n",
+        f"plugins:\n  enabled:\n    - {PLUGIN_ID}\nagent:\n  max_turns: 12\n",
         encoding="utf-8",
     )
     (default_home / "config.yaml").write_text(
@@ -89,25 +85,43 @@ def homes(tmp_path: Path, monkeypatch):
 
 def test_select_persists_only_story_settings(homes):
     default_home, target_home, vault, plugin_root = homes
-    result = select_story_target(plugin_root, default_home, 'writer', str(vault))
-    assert (result.profile, result.home, result.vault_root) == ('writer', target_home, vault.resolve())
-    default_raw = read_user_config_raw(default_home / 'config.yaml')
-    target_raw = read_user_config_raw(target_home / 'config.yaml')
-    assert default_raw['plugins']['entries']['story-construction']['settings']['selected_profile'] == 'writer'
-    assert target_raw['plugins']['entries']['story-construction']['settings']['locked_hermes_home'] == str(target_home.resolve())
-    assert target_raw['agent']['max_turns'] == 12
+    result = select_story_target(plugin_root, default_home, "writer", str(vault))
+    assert (result.profile, result.home, result.vault_root) == (
+        "writer",
+        target_home,
+        vault.resolve(),
+    )
+    default_raw = read_user_config_raw(default_home / "config.yaml")
+    target_raw = read_user_config_raw(target_home / "config.yaml")
+    assert (
+        default_raw["plugins"]["entries"]["story-construction"]["settings"][
+            "selected_profile"
+        ]
+        == "writer"
+    )
+    assert target_raw["plugins"]["entries"]["story-construction"]["settings"][
+        "locked_hermes_home"
+    ] == str(target_home.resolve())
+    assert target_raw["agent"]["max_turns"] == 12
 
 
 def test_bad_profile_and_conflicting_vault_do_not_switch(homes):
     default_home, _, vault, plugin_root = homes
     with pytest.raises(StorySetupError) as invalid:
-        select_story_target(plugin_root, default_home, '../writer', str(vault))
-    assert invalid.value.code == 'profile_invalid'
+        select_story_target(plugin_root, default_home, "../writer", str(vault))
+    assert invalid.value.code == "profile_invalid"
     with pytest.raises(StorySetupError) as conflict:
-        select_story_target(plugin_root, default_home, 'writer', str(vault / 'other'))
-    assert conflict.value.code in {'vault_not_directory', 'vault_mismatch'}
-    raw = read_user_config_raw(default_home / 'config.yaml')
-    assert raw.get('plugins', {}).get('entries', {}).get('story-construction', {}).get('settings', {}).get('selected_profile') is None
+        select_story_target(plugin_root, default_home, "writer", str(vault / "other"))
+    assert conflict.value.code in {"vault_not_directory", "vault_mismatch"}
+    raw = read_user_config_raw(default_home / "config.yaml")
+    assert (
+        raw.get("plugins", {})
+        .get("entries", {})
+        .get("story-construction", {})
+        .get("settings", {})
+        .get("selected_profile")
+        is None
+    )
 
 
 def test_select_normalizes_mixed_case_profile(homes):
@@ -115,7 +129,10 @@ def test_select_normalizes_mixed_case_profile(homes):
     result = select_story_target(plugin_root, default_home, "Writer", str(vault))
     assert result.profile == "writer"
     target_raw = read_user_config_raw(target_home / "config.yaml")
-    assert target_raw["plugins"]["entries"][PLUGIN_ID]["settings"]["locked_profile"] == "writer"
+    assert (
+        target_raw["plugins"]["entries"][PLUGIN_ID]["settings"]["locked_profile"]
+        == "writer"
+    )
 
 
 def test_select_rejects_invalid_and_unknown_profiles(homes):
@@ -182,8 +199,17 @@ def _arrange_code_drift(homes, monkeypatch):
 
 def _arrange_skill_drift(homes, monkeypatch):
     _, target_home, _, plugin_root = homes
-    for root, text in ((plugin_root, "Draft.\n"), (target_home / "plugins" / PLUGIN_ID, "Draft!\n")):
-        skill = root / "story_construction_plugin" / "skills" / "chapter-drafting" / "SKILL.md"
+    for root, text in (
+        (plugin_root, "Draft.\n"),
+        (target_home / "plugins" / PLUGIN_ID, "Draft!\n"),
+    ):
+        skill = (
+            root
+            / "story_construction_plugin"
+            / "skills"
+            / "chapter-drafting"
+            / "SKILL.md"
+        )
         skill.parent.mkdir(parents=True)
         skill.write_text(text, encoding="utf-8")
 
@@ -209,7 +235,13 @@ def _arrange_unreadable_package_sources(homes, monkeypatch):
 def test_select_ignores_line_endings_and_bytecode(homes):
     default_home, target_home, vault, plugin_root = homes
     _install_package_sources(homes, "VALUE = 1\n", "VALUE = 1\r\n")
-    cache = target_home / "plugins" / PLUGIN_ID / "story_construction_plugin" / "__pycache__"
+    cache = (
+        target_home
+        / "plugins"
+        / PLUGIN_ID
+        / "story_construction_plugin"
+        / "__pycache__"
+    )
     cache.mkdir()
     (cache / "tools.cpython-312.py").write_text("stale = True\n", encoding="utf-8")
     result = select_story_target(plugin_root, default_home, "writer", str(vault))
@@ -222,7 +254,9 @@ def test_resolve_rejects_code_drift_after_selection(homes):
     select_story_target(plugin_root, default_home, "writer", str(vault))
     assert resolve_story_target(plugin_root, default_home).profile == "writer"
 
-    tools = target_home / "plugins" / PLUGIN_ID / "story_construction_plugin" / "tools.py"
+    tools = (
+        target_home / "plugins" / PLUGIN_ID / "story_construction_plugin" / "tools.py"
+    )
     tools.write_bytes(b"VALUE = 22\n")
     with pytest.raises(StorySetupError) as exc:
         resolve_story_target(plugin_root, default_home)
@@ -262,7 +296,9 @@ def test_package_digest_is_cached_until_a_file_changes(homes, monkeypatch):
     assert reads == [tools, tools]
 
 
-@pytest.mark.skipif(os.name != "nt", reason="needs a real drive path spelled as /mnt/<drive>")
+@pytest.mark.skipif(
+    os.name != "nt", reason="needs a real drive path spelled as /mnt/<drive>"
+)
 def test_resolve_accepts_vault_stored_in_wsl_spelling(homes):
     default_home, target_home, vault, plugin_root = homes
     select_story_target(plugin_root, default_home, "writer", str(vault))
@@ -329,9 +365,12 @@ def _arrange_other_target_vault(homes, monkeypatch):
     other = default_home.parent / "other-vault"
     other.mkdir()
     raw = yaml.safe_load((target_home / "config.yaml").read_text(encoding="utf-8"))
-    settings = raw.setdefault("plugins", {}).setdefault("entries", {}).setdefault(
-        PLUGIN_ID, {}
-    ).setdefault("settings", {})
+    settings = (
+        raw.setdefault("plugins", {})
+        .setdefault("entries", {})
+        .setdefault(PLUGIN_ID, {})
+        .setdefault("settings", {})
+    )
     settings["vault_root"] = str(other)
     _write_yaml(target_home / "config.yaml", raw)
 
@@ -343,8 +382,16 @@ BROKEN_CASES = [
     ("version_mismatch", _arrange_version_mismatch, "version_mismatch"),
     ("code_drift", _arrange_code_drift, "version_mismatch"),
     ("skill_drift", _arrange_skill_drift, "version_mismatch"),
-    ("missing_package_sources", _arrange_missing_package_sources, "agent_not_installed"),
-    ("unreadable_package_sources", _arrange_unreadable_package_sources, "agent_not_installed"),
+    (
+        "missing_package_sources",
+        _arrange_missing_package_sources,
+        "agent_not_installed",
+    ),
+    (
+        "unreadable_package_sources",
+        _arrange_unreadable_package_sources,
+        "agent_not_installed",
+    ),
     ("malformed_target_yaml", _arrange_malformed_target_yaml, "config_invalid"),
     ("malformed_default_yaml", _arrange_malformed_default_yaml, "config_invalid"),
     ("managed_keys", _arrange_managed_keys, "managed_config"),
@@ -386,7 +433,9 @@ def test_vault_write_check_preserves_preexisting_probe_named_file(homes):
     assert user_file.read_text(encoding="utf-8") == "user data"
     assert after.st_mtime_ns == before.st_mtime_ns
     assert after.st_mode == before.st_mode
-    assert sorted(entry.name for entry in vault.iterdir()) == [".story-vault-write-probe"]
+    assert sorted(entry.name for entry in vault.iterdir()) == [
+        ".story-vault-write-probe"
+    ]
 
 
 def test_select_default_profile_reuses_one_home(homes):
@@ -508,7 +557,10 @@ def test_explicit_vault_replaces_the_stored_vault(homes, tmp_path):
     assert result.vault_root == new_vault.resolve()
     assert _vault_setting(target_home) == str(new_vault.resolve())
     assert _vault_setting(default_home) == str(new_vault.resolve())
-    assert resolve_story_target(plugin_root, default_home).vault_root == new_vault.resolve()
+    assert (
+        resolve_story_target(plugin_root, default_home).vault_root
+        == new_vault.resolve()
+    )
 
 
 def test_changing_the_vault_clears_stale_session_bindings(homes, tmp_path):
@@ -548,4 +600,3 @@ def test_omitted_vault_still_rejects_inconsistent_stored_settings(homes, monkeyp
         select_story_target(plugin_root, default_home, "writer")
 
     assert conflict.value.code == "vault_mismatch"
-

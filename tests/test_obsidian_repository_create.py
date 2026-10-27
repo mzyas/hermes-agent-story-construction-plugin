@@ -41,7 +41,9 @@ def test_new_volume_is_appended_after_the_existing_ones(repository, tmp_path) ->
     assert "project_id: novel" in written
 
 
-def test_new_chapter_is_empty_and_belongs_to_the_chosen_volume(repository, tmp_path) -> None:
+def test_new_chapter_is_empty_and_belongs_to_the_chosen_volume(
+    repository, tmp_path
+) -> None:
     second = repository.create_volume("novel", "第二卷")
 
     chapter = repository.create_chapter("novel", second.id, "雨夜")
@@ -52,11 +54,17 @@ def test_new_chapter_is_empty_and_belongs_to_the_chosen_volume(repository, tmp_p
     assert chapter.content == ""
     assert chapter.source_ref == "novel/volumes/volume-002/chapter-002.md"
     assert repository.get_chapter("novel", chapter.id) == chapter
-    assert [row.id for row in repository.list_chapters("novel", second.id)] == [chapter.id]
-    assert "volume_id: novel:volume-2" in _read(tmp_path / "novel" / "volumes" / "volume-002" / "chapter-002.md")
+    assert [row.id for row in repository.list_chapters("novel", second.id)] == [
+        chapter.id
+    ]
+    assert "volume_id: novel:volume-2" in _read(
+        tmp_path / "novel" / "volumes" / "volume-002" / "chapter-002.md"
+    )
 
 
-def test_numbering_continues_after_the_highest_id_even_with_gaps(repository, tmp_path) -> None:
+def test_numbering_continues_after_the_highest_id_even_with_gaps(
+    repository, tmp_path
+) -> None:
     gap = tmp_path / "novel" / "volumes" / "volume-001" / "chapter-007.md"
     gap.write_text(
         "---\ntype: chapter\nid: novel:chapter-7\nproject_id: novel\n"
@@ -74,7 +82,9 @@ def test_numbering_continues_after_the_highest_id_even_with_gaps(repository, tmp
     "title",
     ["", "   ", "x" * 121, "line\nbreak", "tab\there", "nul\x00"],
 )
-def test_unusable_titles_are_rejected_before_anything_is_written(repository, tmp_path, title) -> None:
+def test_unusable_titles_are_rejected_before_anything_is_written(
+    repository, tmp_path, title
+) -> None:
     before = sorted(path.name for path in (tmp_path / "novel").rglob("*.md"))
 
     with pytest.raises(DomainValidationError):
@@ -85,7 +95,9 @@ def test_unusable_titles_are_rejected_before_anything_is_written(repository, tmp
     assert sorted(path.name for path in (tmp_path / "novel").rglob("*.md")) == before
 
 
-def test_unknown_project_or_volume_is_not_found_and_writes_nothing(repository, tmp_path) -> None:
+def test_unknown_project_or_volume_is_not_found_and_writes_nothing(
+    repository, tmp_path
+) -> None:
     before = sorted(path.name for path in tmp_path.rglob("*.md"))
 
     with pytest.raises(NotFoundError):
@@ -96,10 +108,15 @@ def test_unknown_project_or_volume_is_not_found_and_writes_nothing(repository, t
     assert sorted(path.name for path in tmp_path.rglob("*.md")) == before
 
 
-def test_an_existing_file_at_the_target_path_is_never_overwritten(repository, tmp_path) -> None:
+def test_an_existing_file_at_the_target_path_is_never_overwritten(
+    repository, tmp_path
+) -> None:
     squatter = tmp_path / "novel" / "volumes" / "volume-002" / "volume-002.md"
     squatter.parent.mkdir()
-    squatter.write_text("---\ntype: note\nid: keep\nproject_id: novel\ntitle: Keep\n---\n\nmine\n", encoding="utf-8")
+    squatter.write_text(
+        "---\ntype: note\nid: keep\nproject_id: novel\ntitle: Keep\n---\n\nmine\n",
+        encoding="utf-8",
+    )
     before = squatter.read_bytes()
 
     with pytest.raises(RepositoryError):
@@ -121,20 +138,29 @@ def test_other_projects_are_untouched(tmp_path) -> None:
 
     repository.create_chapter("novel", "novel:volume-1", "Two")
 
-    assert {path: path.read_bytes() for path in (tmp_path / "other").rglob("*.md")} == before
+    assert {
+        path: path.read_bytes() for path in (tmp_path / "other").rglob("*.md")
+    } == before
     assert not list((tmp_path / "other" / "volumes").rglob("chapter-002.md"))
 
 
 def test_concurrent_creates_get_distinct_ids_and_files(repository, tmp_path) -> None:
     with ThreadPoolExecutor(max_workers=8) as pool:
-        chapters = list(pool.map(
-            lambda index: repository.create_chapter("novel", "novel:volume-1", f"Chapter {index}"),
-            range(8),
-        ))
+        chapters = list(
+            pool.map(
+                lambda index: repository.create_chapter(
+                    "novel", "novel:volume-1", f"Chapter {index}"
+                ),
+                range(8),
+            )
+        )
 
     ids = [chapter.id for chapter in chapters]
     assert len(set(ids)) == 8
-    assert len(list((tmp_path / "novel" / "volumes" / "volume-001").glob("chapter-*.md"))) == 9
+    assert (
+        len(list((tmp_path / "novel" / "volumes" / "volume-001").glob("chapter-*.md")))
+        == 9
+    )
     assert len(repository.get_project("novel").chapters) == 9
 
 
@@ -172,9 +198,13 @@ def test_trashing_a_missing_project_changes_nothing(repository, tmp_path) -> Non
 
 
 def test_a_new_chapter_can_start_with_its_text(repository, tmp_path) -> None:
-    chapter = repository.create_chapter("novel", "novel:volume-1", "第二章", "天亮了。\n\n雨停了。\n")
+    chapter = repository.create_chapter(
+        "novel", "novel:volume-1", "第二章", "天亮了。\n\n雨停了。\n"
+    )
 
     assert chapter.id == "novel:chapter-2" and chapter.content == "天亮了。\n\n雨停了。"
     written = _read(tmp_path / "novel" / "volumes" / "volume-001" / "chapter-002.md")
-    assert written.startswith("---\n") and written.endswith("---\n\n天亮了。\n\n雨停了。\n")
+    assert written.startswith("---\n") and written.endswith(
+        "---\n\n天亮了。\n\n雨停了。\n"
+    )
     assert repository.create_chapter("novel", "novel:volume-1", "空章").content == ""

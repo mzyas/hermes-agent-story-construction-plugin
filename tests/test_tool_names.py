@@ -38,7 +38,8 @@ def test_the_prompt_only_names_tools_that_exist() -> None:
 def test_tool_descriptions_only_point_to_tools_that_exist() -> None:
     for name, schema in TOOL_SCHEMAS.items():
         text = schema["description"] + " ".join(
-            str(prop.get("description", "")) for prop in schema["parameters"]["properties"].values()
+            str(prop.get("description", ""))
+            for prop in schema["parameters"]["properties"].values()
         )
         unknown = set(TOOL_NAME.findall(text)) - set(TOOL_SCHEMAS)
         assert not unknown, (name, sorted(unknown))
@@ -56,7 +57,10 @@ def test_every_required_argument_is_a_declared_property() -> None:
     for name, schema in TOOL_SCHEMAS.items():
         parameters = schema["parameters"]
         declared = set(parameters["properties"])
-        assert set(parameters["required"]) <= declared, (name, sorted(set(parameters["required"]) - declared))
+        assert set(parameters["required"]) <= declared, (
+            name,
+            sorted(set(parameters["required"]) - declared),
+        )
         assert parameters["additionalProperties"] is False
 
 
@@ -64,7 +68,9 @@ def test_the_record_tools_offer_the_same_kinds_of_record_the_service_accepts() -
     from story_construction_plugin.proposal_service import TARGET_TYPES
 
     for name in ("story.propose_edit", "story.propose_new"):
-        assert TOOL_SCHEMAS[name]["parameters"]["properties"]["target_type"]["enum"] == list(TARGET_TYPES)
+        assert TOOL_SCHEMAS[name]["parameters"]["properties"]["target_type"][
+            "enum"
+        ] == list(TARGET_TYPES)
     for name in ("story.list_records", "story.get_record"):
         offered = TOOL_SCHEMAS[name]["parameters"]["properties"]["target_type"]["enum"]
         assert offered == [kind for kind in TARGET_TYPES if kind != "chapter"]
@@ -74,5 +80,7 @@ def test_chapters_stay_the_default_so_older_calls_keep_working() -> None:
     edit = TOOL_SCHEMAS["story.propose_edit"]["parameters"]
     new = TOOL_SCHEMAS["story.propose_new"]["parameters"]
 
-    assert "target_type" not in edit["required"] and "target_type" not in new["required"]
+    assert (
+        "target_type" not in edit["required"] and "target_type" not in new["required"]
+    )
     assert "chapter_id" in edit["properties"]

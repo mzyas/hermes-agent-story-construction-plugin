@@ -53,13 +53,17 @@ def _environment(tmp_path: Path, monkeypatch) -> tuple[Path, Path]:
     return home, vault
 
 
-def test_selection_saved_after_load_enables_tools_and_prompt(tmp_path, monkeypatch) -> None:
+def test_selection_saved_after_load_enables_tools_and_prompt(
+    tmp_path, monkeypatch
+) -> None:
     home, vault = _environment(tmp_path, monkeypatch)
     context = RegistrationContext()
     register(context)
     check = context.tools[0]["check_fn"]
     (_name, render), _kwargs = context.sections[-1]
-    StorySessionRegistry(runtime._session_state_path(home), locked_profile="writer").bind(
+    StorySessionRegistry(
+        runtime._session_state_path(home), locked_profile="writer"
+    ).bind(
         stored_session_id="s1", profile="writer", connection_id="local", project_id="p1"
     )
     bound = {"profile": "writer", "session_id": "s1"}
@@ -102,7 +106,9 @@ def test_hermes_home_change_recomputes(tmp_path, monkeypatch) -> None:
     assert _call(context)["error"]["code"] == "hermes_home_mismatch"
 
 
-def test_ready_state_is_cached_and_not_ready_is_recomputed(tmp_path, monkeypatch) -> None:
+def test_ready_state_is_cached_and_not_ready_is_recomputed(
+    tmp_path, monkeypatch
+) -> None:
     home, vault = _environment(tmp_path, monkeypatch)
     calls = []
     real = runtime.prepare_story_runtime
@@ -137,7 +143,9 @@ def test_all_tools_share_one_check_fn(tmp_path, monkeypatch) -> None:
     assert len({id(tool["check_fn"]) for tool in context.tools}) == 1
 
 
-def test_check_fn_is_marked_uncached_when_host_helper_exists(tmp_path, monkeypatch) -> None:
+def test_check_fn_is_marked_uncached_when_host_helper_exists(
+    tmp_path, monkeypatch
+) -> None:
     _environment(tmp_path, monkeypatch)
     marked = []
     registry = types.ModuleType("tools.registry")
@@ -151,9 +159,13 @@ def test_check_fn_is_marked_uncached_when_host_helper_exists(tmp_path, monkeypat
     assert marked == [context.tools[0]["check_fn"]]
 
 
-def test_missing_host_helper_falls_back_to_plain_check_fn(tmp_path, monkeypatch) -> None:
+def test_missing_host_helper_falls_back_to_plain_check_fn(
+    tmp_path, monkeypatch
+) -> None:
     _environment(tmp_path, monkeypatch)
-    monkeypatch.setitem(sys.modules, "tools.registry", None)  # import raises ImportError
+    monkeypatch.setitem(
+        sys.modules, "tools.registry", None
+    )  # import raises ImportError
     context = RegistrationContext()
 
     register(context)

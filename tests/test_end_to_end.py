@@ -53,27 +53,38 @@ def test_normal_session_without_vault_does_not_receive_story_tools() -> None:
     assert context.sections
 
 
-def test_configured_vault_registers_only_story_toolset(tmp_path: Path, monkeypatch) -> None:
+def test_configured_vault_registers_only_story_toolset(
+    tmp_path: Path, monkeypatch
+) -> None:
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setattr(runtime, "get_hermes_home", lambda: home)
-    context = RegistrationContext({
-        "locked_profile": "writer",
-        "vault_root": str(tmp_path),
-        "locked_hermes_home": str(home),
-    })
+    context = RegistrationContext(
+        {
+            "locked_profile": "writer",
+            "vault_root": str(tmp_path),
+            "locked_hermes_home": str(home),
+        }
+    )
     register(context)
     assert context.tools
     assert {tool["toolset"] for tool in context.tools} == {"story"}
-    assert {tool["name"] for tool in context.tools} >= {"story.get_project", "story.get_chapter"}
+    assert {tool["name"] for tool in context.tools} >= {
+        "story.get_project",
+        "story.get_chapter",
+    }
 
 
-def test_unreachable_vault_is_unavailable_instead_of_falling_back(tmp_path: Path) -> None:
+def test_unreachable_vault_is_unavailable_instead_of_falling_back(
+    tmp_path: Path,
+) -> None:
     with pytest.raises(RepositoryError, match="Vault root does not exist"):
         ObsidianProjectRepository(tmp_path / "remote-vault")
 
 
-def test_project_session_lifecycle_and_confirmed_save_round_trip(tmp_path: Path) -> None:
+def test_project_session_lifecycle_and_confirmed_save_round_trip(
+    tmp_path: Path,
+) -> None:
     vault = tmp_path / "vault"
     hermes_home = tmp_path / "hermes-home"
     vault.mkdir()
@@ -90,12 +101,16 @@ def test_project_session_lifecycle_and_confirmed_save_round_trip(tmp_path: Path)
     }
 
     initial = runtime.prepare_story_runtime(
-        plugin_root, settings, current_home=hermes_home,
+        plugin_root,
+        settings,
+        current_home=hermes_home,
     )
     assert initial.ready is True
     initial_registry = initial.sessions
     state = runtime.prepare_story_runtime(
-        plugin_root, settings, current_home=hermes_home,
+        plugin_root,
+        settings,
+        current_home=hermes_home,
     )
     assert state.ready is True
     assert state.sessions is not initial_registry
@@ -116,7 +131,11 @@ def test_project_session_lifecycle_and_confirmed_save_round_trip(tmp_path: Path)
         assert session_id is not None
         state.permissions.bind_session(
             SessionScope(
-                session_id, "desktop", "writer", "desktop-1", project.id,
+                session_id,
+                "desktop",
+                "writer",
+                "desktop-1",
+                project.id,
             ),
             project.id,
         )
@@ -124,7 +143,9 @@ def test_project_session_lifecycle_and_confirmed_save_round_trip(tmp_path: Path)
         "Hermes base",
         state.sessions.render_system_prompt(session_info),
     )
-    assert stable_after_binding.startswith("Hermes base\n\n# StoryConstructionAgentPrompt")
+    assert stable_after_binding.startswith(
+        "Hermes base\n\n# StoryConstructionAgentPrompt"
+    )
     # The frozen section carries no live project data.
     assert project.id not in stable_after_binding
     assert chapter.id not in stable_after_binding
@@ -158,16 +179,18 @@ def test_project_session_lifecycle_and_confirmed_save_round_trip(tmp_path: Path)
     assert f"project_id: {project.id}" in messages[-1]["content"]
     assert f"chapter_id: {chapter.id}" in messages[-1]["content"]
 
-    saved = StorySaveService(state.repository, state.permissions).save(SaveRequest(
-        session_id="runtime-1",
-        profile="writer",
-        connection_id="desktop-1",
-        project_id=project.id,
-        chapter_id=chapter.id,
-        content="The opening scene begins with a memory oath.",
-        expected_version=chapter.version,
-        confirmed=True,
-    ))
+    saved = StorySaveService(state.repository, state.permissions).save(
+        SaveRequest(
+            session_id="runtime-1",
+            profile="writer",
+            connection_id="desktop-1",
+            project_id=project.id,
+            chapter_id=chapter.id,
+            content="The opening scene begins with a memory oath.",
+            expected_version=chapter.version,
+            confirmed=True,
+        )
+    )
     assert saved.chapter.content.startswith("The opening scene")
     raw = (vault / chapter.source_ref).read_text(encoding="utf-8")
     assert raw.startswith("---\nproject_id: novel\ntype: chapter")
@@ -177,7 +200,9 @@ def test_project_session_lifecycle_and_confirmed_save_round_trip(tmp_path: Path)
     assert "The opening scene begins with a memory oath." in raw
 
     restored = runtime.prepare_story_runtime(
-        plugin_root, settings, current_home=hermes_home,
+        plugin_root,
+        settings,
+        current_home=hermes_home,
     )
     restored_binding = restored.sessions.get(
         stored_session_id="stored-1",
@@ -196,13 +221,17 @@ def test_registered_tools_authorize_from_durable_bindings_without_reregistering(
     home.mkdir()
     vault = tmp_path / "vault"
     vault.mkdir()
-    project = ObsidianProjectRepository(vault).create_project("Novel", slug="novel").project
+    project = (
+        ObsidianProjectRepository(vault).create_project("Novel", slug="novel").project
+    )
     monkeypatch.setattr(runtime, "get_hermes_home", lambda: home)
-    context = RegistrationContext({
-        "locked_profile": "writer",
-        "vault_root": str(vault),
-        "locked_hermes_home": str(home),
-    })
+    context = RegistrationContext(
+        {
+            "locked_profile": "writer",
+            "vault_root": str(vault),
+            "locked_hermes_home": str(home),
+        }
+    )
     register(context)
     assert context.tools
     handlers = {tool["name"]: tool["handler"] for tool in context.tools}
@@ -222,15 +251,22 @@ def test_registered_tools_authorize_from_durable_bindings_without_reregistering(
         project_id=project.id,
     )
     kwargs = dict(
-        session_id="runtime-1", source="desktop", profile="writer", connection_id="local"
+        session_id="runtime-1",
+        source="desktop",
+        profile="writer",
+        connection_id="local",
     )
-    bound = json.loads(handlers["story.get_project"]({"project_id": project.id}, **kwargs))
+    bound = json.loads(
+        handlers["story.get_project"]({"project_id": project.id}, **kwargs)
+    )
     assert bound["ok"] is True
 
     # The section reads the durable binding too, without re-registering.
     assert render_section(session_info).startswith("# StoryConstructionAgentPrompt")
 
     writer.unbind(stored_session_id="stored-1", profile="writer", connection_id="local")
-    denied = json.loads(handlers["story.get_project"]({"project_id": project.id}, **kwargs))
+    denied = json.loads(
+        handlers["story.get_project"]({"project_id": project.id}, **kwargs)
+    )
     assert denied["ok"] is False
     assert render_section(session_info) == ""
