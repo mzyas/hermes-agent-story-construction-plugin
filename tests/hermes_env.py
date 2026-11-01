@@ -34,7 +34,9 @@ class HermesEnv:
     source: Path | None
 
 
-def discover_hermes(*, environ=None, roots=None, import_module=importlib.import_module) -> HermesEnv:
+def discover_hermes(
+    *, environ=None, roots=None, import_module=importlib.import_module
+) -> HermesEnv:
     """Resolve Hermes without raising; ``roots``/``import_module`` are test seams."""
 
     env = os.environ if environ is None else environ
@@ -43,7 +45,9 @@ def discover_hermes(*, environ=None, roots=None, import_module=importlib.import_
         source = Path(explicit)
         return HermesEnv(True, f"source:{source}", source)
     search_roots = (
-        list(Path(__file__).resolve().parents) if roots is None else [Path(r) for r in roots]
+        list(Path(__file__).resolve().parents)
+        if roots is None
+        else [Path(r) for r in roots]
     )
     for parent in search_roots:
         candidate = parent / "hermes-agent"

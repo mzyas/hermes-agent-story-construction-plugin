@@ -68,8 +68,7 @@ def test_request_assembly_keeps_templates_out_of_session_history() -> None:
     assert "project_id: p1" not in first[0]["content"]
     assert "chapter_id: ch1" not in first[0]["content"]
     assert all(
-        story_template not in str(message.get("content", ""))
-        for message in first[1:]
+        story_template not in str(message.get("content", "")) for message in first[1:]
     )
     assert "project_id: p1" in first[-1]["content"]
     assert "chapter_id: ch1" in first[-1]["content"]
@@ -102,7 +101,7 @@ def test_the_prompt_is_registered_with_the_limit_it_was_checked_against() -> Non
     registry.bind(stored_session_id="s1", profile="writer", project_id="novel")
     register_story_prompt(ctx, registry)
 
-    (args, kwargs), = ctx.calls
+    ((args, kwargs),) = ctx.calls
     assert kwargs["max_chars"] == STORY_PROMPT_MAX_CHARS
     rendered = args[1]({"profile_name": "writer", "session_id": "s1"})
     assert 0 < len(rendered.strip()) <= kwargs["max_chars"]

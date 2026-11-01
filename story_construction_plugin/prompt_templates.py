@@ -32,10 +32,10 @@ def render_story_agent_system_prompt() -> str:
         "- Judge from the user's own words whether this is story work (writing, continuing, "
         "revising or checking chapters, or asking about the story's world, characters or notes) "
         "or an ordinary conversation. Questions about the user's own code, repositories or software "
-        "(not things inside the story) are not story work, even when they say \"project\". Answer "
+        '(not things inside the story) are not story work, even when they say "project". Answer '
         "an ordinary conversation normally, without story.* tools. If it is unclear, ask one "
         "short question.\n"
-        "- Short or vague questions about the story project (\"the project\", \"this project\"), "
+        '- Short or vague questions about the story project ("the project", "this project"), '
         "its name, chapters, characters or world are story work unless the user's latest message "
         "is about code or software: call story.get_session_project right away (read-only, cheap) instead "
         "of asking or searching files. It gives the bound story project, volume and chapter IDs. "
@@ -109,9 +109,7 @@ def render_story_worker_prompt(request: StoryWorkerContext) -> str:
     )
 
 
-def compose_story_system_prompt(
-    hermes_system_prompt: str, story_prompt: str
-) -> str:
+def compose_story_system_prompt(hermes_system_prompt: str, story_prompt: str) -> str:
     """Compose the stable Hermes prompt and story section without live data."""
 
     base = _required(hermes_system_prompt, "hermes_system_prompt")

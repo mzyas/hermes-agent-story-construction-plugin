@@ -29,19 +29,51 @@ def _write(root: Path, relative: str, frontmatter: str, body: str) -> Path:
 
 @pytest.fixture
 def vault(tmp_path: Path) -> Path:
-    _write(tmp_path, "project.md", "project_id: p1\ntype: project\nid: p1\nname: Demo", "")
-    _write(tmp_path, "world/index.md", "project_id: p1\ntype: world_info\nid: w1\nname: World", "")
+    _write(
+        tmp_path, "project.md", "project_id: p1\ntype: project\nid: p1\nname: Demo", ""
+    )
+    _write(
+        tmp_path,
+        "world/index.md",
+        "project_id: p1\ntype: world_info\nid: w1\nname: World",
+        "",
+    )
     _write(
         tmp_path,
         "world/entry.md",
         "project_id: p1\ntype: world_info_entry\nid: e1\ntitle: Magic",
         "Magic has a price.",
     )
-    _write(tmp_path, "characters/hero.md", "type: character\nid: c1\nproject_id: p1\nname: Hero", "Brave")
-    _write(tmp_path, "notes/root.md", "type: note\nid: n1\nproject_id: p1\ntitle: Reference\nreference: true", "Use rain.")
-    _write(tmp_path, "notes/category.md", "type: note_category\nid: cat1\nproject_id: p1\nname: Lore", "")
-    _write(tmp_path, "notes/child.md", "type: note_category\nid: cat2\nproject_id: p1\nname: Places\nparent_id: cat1", "")
-    _write(tmp_path, "volumes/v1.md", "type: volume\nid: v1\nproject_id: p1\ntitle: Volume I", "")
+    _write(
+        tmp_path,
+        "characters/hero.md",
+        "type: character\nid: c1\nproject_id: p1\nname: Hero",
+        "Brave",
+    )
+    _write(
+        tmp_path,
+        "notes/root.md",
+        "type: note\nid: n1\nproject_id: p1\ntitle: Reference\nreference: true",
+        "Use rain.",
+    )
+    _write(
+        tmp_path,
+        "notes/category.md",
+        "type: note_category\nid: cat1\nproject_id: p1\nname: Lore",
+        "",
+    )
+    _write(
+        tmp_path,
+        "notes/child.md",
+        "type: note_category\nid: cat2\nproject_id: p1\nname: Places\nparent_id: cat1",
+        "",
+    )
+    _write(
+        tmp_path,
+        "volumes/v1.md",
+        "type: volume\nid: v1\nproject_id: p1\ntitle: Volume I",
+        "",
+    )
     _write(
         tmp_path,
         "volumes/ch1.md",
@@ -49,7 +81,12 @@ def vault(tmp_path: Path) -> Path:
         "Opening.",
     )
     _write(tmp_path, "other/project.md", "type: project\nid: p2\nname: Other", "")
-    _write(tmp_path, "other/note.md", "type: note\nid: n2\nproject_id: p2\ntitle: Secret", "Do not leak.")
+    _write(
+        tmp_path,
+        "other/note.md",
+        "type: note\nid: n2\nproject_id: p2\ntitle: Secret",
+        "Do not leak.",
+    )
     return tmp_path
 
 
@@ -69,13 +106,17 @@ def test_create_project_initializes_readable_minimum_tree(tmp_path: Path) -> Non
     assert (tmp_path / "星海-纪事" / "world" / "world.md").is_file()
     assert (tmp_path / "星海-纪事" / "characters").is_dir()
     assert (tmp_path / "星海-纪事" / "notes").is_dir()
-    assert (tmp_path / "星海-纪事" / "volumes" / "volume-001" / "volume-001.md").is_file()
+    assert (
+        tmp_path / "星海-纪事" / "volumes" / "volume-001" / "volume-001.md"
+    ).is_file()
     chapter_path = tmp_path / "星海-纪事" / "volumes" / "volume-001" / "chapter-001.md"
     assert chapter_path.is_file()
     assert not chapter_path.read_bytes().startswith(b"\xef\xbb\xbf")
 
 
-def test_a_project_starts_with_titles_in_the_language_it_was_created_in(tmp_path: Path) -> None:
+def test_a_project_starts_with_titles_in_the_language_it_was_created_in(
+    tmp_path: Path,
+) -> None:
     repository = ObsidianProjectRepository(tmp_path)
 
     chinese = repository.create_project("星海", slug="xinghai", locale="zh-CN")
@@ -89,7 +130,9 @@ def test_a_project_starts_with_titles_in_the_language_it_was_created_in(tmp_path
     assert [row.title for row in unspecified.chapters] == ["Chapter 1"]
 
 
-def test_create_project_rejects_existing_project_id_before_publish(tmp_path: Path) -> None:
+def test_create_project_rejects_existing_project_id_before_publish(
+    tmp_path: Path,
+) -> None:
     _write(
         tmp_path,
         "legacy/project.md",
@@ -228,7 +271,9 @@ def test_create_project_cleans_staging_when_document_write_fails(
     repository = ObsidianProjectRepository(tmp_path)
     write_document = obsidian_repository._write_story_document
 
-    def fail_on_chapter(path: Path, metadata: dict[str, object], content: str = "") -> None:
+    def fail_on_chapter(
+        path: Path, metadata: dict[str, object], content: str = ""
+    ) -> None:
         if path.name == "chapter-001.md":
             raise OSError("injected chapter write failure")
         write_document(path, metadata, content)
@@ -252,7 +297,9 @@ def test_create_project_cleans_staging_when_tree_validation_fails(
 
     monkeypatch.setattr(ObsidianProjectRepository, "get_project", fail_validation)
 
-    with pytest.raises(DomainValidationError, match="injected project tree validation failure"):
+    with pytest.raises(
+        DomainValidationError, match="injected project tree validation failure"
+    ):
         repository.create_project("Novel", slug="novel")
 
     assert not (tmp_path / "novel").exists()
@@ -279,19 +326,25 @@ def test_project_scoped_search_does_not_leak_other_project(vault: Path) -> None:
 
     assert [entry.id for entry in repository.search_world_info("p1", "price")] == ["e1"]
     assert repository.search_notes("p1", "secret") == ()
-    assert [note.id for note in repository.search_reference_notes("p1", "rain")] == ["n1"]
+    assert [note.id for note in repository.search_reference_notes("p1", "rain")] == [
+        "n1"
+    ]
 
 
 def test_chapter_write_requires_current_version_and_is_atomic(vault: Path) -> None:
     repository = ObsidianProjectRepository(vault)
     original = repository.get_chapter("p1", "ch1")
 
-    updated = repository.save_chapter("p1", "ch1", "Rewritten.", expected_version=original.version)
+    updated = repository.save_chapter(
+        "p1", "ch1", "Rewritten.", expected_version=original.version
+    )
 
     assert updated.content == "Rewritten."
     assert repository.get_chapter("p1", "ch1").content == "Rewritten."
     with pytest.raises(VersionConflictError):
-        repository.save_chapter("p1", "ch1", "Stale.", expected_version=original.version)
+        repository.save_chapter(
+            "p1", "ch1", "Stale.", expected_version=original.version
+        )
 
 
 def test_source_ref_cannot_escape_configured_vault(vault: Path) -> None:
@@ -341,7 +394,9 @@ def test_external_edit_add_and_delete_invalidate_the_cache(vault: Path) -> None:
     )
     assert repository.get_chapter("p1", "ch1").content == "Rewritten elsewhere."
 
-    _write(vault, "notes/new.md", "type: note\nid: n9\nproject_id: p1\ntitle: New", "fresh")
+    _write(
+        vault, "notes/new.md", "type: note\nid: n9\nproject_id: p1\ntitle: New", "fresh"
+    )
     assert {note.id for note in repository.get_project("p1").notes} == {"n1", "n9"}
 
     (vault / "notes" / "new.md").unlink()
@@ -358,6 +413,7 @@ def test_same_size_edit_is_detected_when_metadata_changes(vault: Path) -> None:
     stat = chapter.stat()
     chapter.write_text(text, encoding="utf-8")
     import os
+
     os.utime(chapter, ns=(stat.st_atime_ns, stat.st_mtime_ns + 5_000_000))
 
     assert repository.get_chapter("p1", "ch1").content == "Opened!!"
@@ -367,7 +423,9 @@ def test_save_chapter_result_is_visible_to_next_read(vault: Path) -> None:
     repository = ObsidianProjectRepository(vault)
     chapter = repository.get_chapter("p1", "ch1")
 
-    saved = repository.save_chapter("p1", "ch1", "Saved text", expected_version=chapter.version)
+    saved = repository.save_chapter(
+        "p1", "ch1", "Saved text", expected_version=chapter.version
+    )
 
     assert saved.content == "Saved text"
     assert repository.get_chapter("p1", "ch1").content == "Saved text"

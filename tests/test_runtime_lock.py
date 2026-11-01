@@ -60,7 +60,9 @@ def test_register_rejects_incomplete_configuration(tmp_path: Path, monkeypatch) 
     vault = tmp_path / "vault"
     vault.mkdir()
     monkeypatch.setattr(runtime, "get_hermes_home", lambda: home)
-    context = RegistrationContext({"locked_profile": "writer", "vault_root": str(vault)})
+    context = RegistrationContext(
+        {"locked_profile": "writer", "vault_root": str(vault)}
+    )
 
     register(context)
 
@@ -205,11 +207,14 @@ def test_runtime_bindings_restore_from_each_profile_home_a_b_a(tmp_path: Path) -
     assert restored_a.sessions.path == (
         home_a / "plugin-data" / "story-construction" / "sessions.json"
     )
-    assert restored_a.sessions.get(
-        stored_session_id="stored-a",
-        profile="writer-a",
-        connection_id="local",
-    ).project_id == "novel-a"
+    assert (
+        restored_a.sessions.get(
+            stored_session_id="stored-a",
+            profile="writer-a",
+            connection_id="local",
+        ).project_id
+        == "novel-a"
+    )
     assert (
         restored_a.sessions.get(
             stored_session_id="stored-b",
@@ -324,9 +329,7 @@ def test_corrupt_binding_state_fails_closed_without_rewriting(tmp_path: Path) ->
     profile_home = tmp_path / "home"
     vault = tmp_path / "vault"
     vault.mkdir()
-    binding_path = (
-        profile_home / "plugin-data" / "story-construction" / "sessions.json"
-    )
+    binding_path = profile_home / "plugin-data" / "story-construction" / "sessions.json"
     binding_path.parent.mkdir(parents=True)
     binding_path.write_text("{broken", encoding="utf-8")
 

@@ -15,7 +15,6 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 
 
-
 _PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 router = APIRouter()
 
@@ -121,13 +120,18 @@ def create_volume(project_id: str, body: dict[str, Any]) -> dict[str, Any]:
     _required_body(body, "connection_id")
     title = _required_body(body, "title")
     volume = _create_record(
-        runtime, state, profile, lambda: state.repository.create_volume(project_id, title)
+        runtime,
+        state,
+        profile,
+        lambda: state.repository.create_volume(project_id, title),
     )
     return {"volume": asdict(volume)}
 
 
 @router.post("/projects/{project_id}/volumes/{volume_id}/chapters")
-def create_chapter(project_id: str, volume_id: str, body: dict[str, Any]) -> dict[str, Any]:
+def create_chapter(
+    project_id: str, volume_id: str, body: dict[str, Any]
+) -> dict[str, Any]:
     runtime, state = _require_runtime()
     profile = _required_body(body, "profile")
     _required_body(body, "connection_id")
@@ -163,7 +167,9 @@ def delete_project(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     # The typed name is checked here as well, so no client can skip the confirmation.
     if (confirm_name or "").strip() != project.name.strip():
-        raise HTTPException(status_code=422, detail="confirm_name must match the project name")
+        raise HTTPException(
+            status_code=422, detail="confirm_name must match the project name"
+        )
     try:
         with _selected_target_guard(state):
             destination = state.repository.trash_project(project.id)
@@ -198,11 +204,15 @@ def ensure_project_workspace(project_id: str, body: dict[str, Any]) -> dict[str,
     try:
         with _selected_target_guard(state):
             folder, created = workspaces.ensure_project_folder(base, project.id)
-        link = registry.get(profile=profile, connection_id=connection_id, project_id=project.id)
+        link = registry.get(
+            profile=profile, connection_id=connection_id, project_id=project.id
+        )
     except workspaces.WorkspaceError as exc:
         raise HTTPException(status_code=409, detail={"code": exc.code}) from exc
     except workspaces.WorkspaceLinkStoreError as exc:
-        raise HTTPException(status_code=503, detail={"code": "workspace_state_invalid"}) from exc
+        raise HTTPException(
+            status_code=503, detail={"code": "workspace_state_invalid"}
+        ) from exc
     return {
         "folder": str(folder),
         "created": created,
@@ -224,10 +234,14 @@ def get_project_workspace(
     registry = _workspace_registry(runtime, state)
     try:
         link = registry.get(
-            profile=normalized_profile, connection_id=normalized_connection, project_id=project.id
+            profile=normalized_profile,
+            connection_id=normalized_connection,
+            project_id=project.id,
         )
     except workspaces.WorkspaceLinkStoreError as exc:
-        raise HTTPException(status_code=503, detail={"code": "workspace_state_invalid"}) from exc
+        raise HTTPException(
+            status_code=503, detail={"code": "workspace_state_invalid"}
+        ) from exc
     return {"link": asdict(link) if link else None}
 
 
@@ -247,7 +261,9 @@ def link_project_workspace(project_id: str, body: dict[str, Any]) -> dict[str, A
         # cannot point a project at an arbitrary directory.
         expected = (base / workspaces.project_folder_name(project.id)).resolve()
         if Path(folder_text).resolve() != expected or not expected.is_dir():
-            raise HTTPException(status_code=422, detail={"code": "workspace_folder_mismatch"})
+            raise HTTPException(
+                status_code=422, detail={"code": "workspace_folder_mismatch"}
+            )
         with _selected_target_guard(state):
             link = registry.link(
                 profile=profile,
@@ -259,7 +275,9 @@ def link_project_workspace(project_id: str, body: dict[str, Any]) -> dict[str, A
     except workspaces.WorkspaceError as exc:
         raise HTTPException(status_code=409, detail={"code": exc.code}) from exc
     except workspaces.WorkspaceLinkStoreError as exc:
-        raise HTTPException(status_code=503, detail={"code": "workspace_state_invalid"}) from exc
+        raise HTTPException(
+            status_code=503, detail={"code": "workspace_state_invalid"}
+        ) from exc
     return {"link": asdict(link)}
 
 
@@ -275,9 +293,14 @@ def list_proposals(
     normalized_profile = _required_value(profile, "profile")
     normalized_connection = _required_value(connection_id, "connection_id")
     proposals = _proposal_call(
-        runtime, state, project_id, normalized_profile,
+        runtime,
+        state,
+        project_id,
+        normalized_profile,
         lambda service: service.list_open(
-            project_id=project_id, profile=normalized_profile, connection_id=normalized_connection
+            project_id=project_id,
+            profile=normalized_profile,
+            connection_id=normalized_connection,
         ),
     )
     return {"proposals": proposals}
@@ -294,10 +317,15 @@ def discard_proposal(
     normalized_profile = _required_value(profile, "profile")
     normalized_connection = _required_value(connection_id, "connection_id")
     proposal = _proposal_call(
-        runtime, state, project_id, normalized_profile,
+        runtime,
+        state,
+        project_id,
+        normalized_profile,
         lambda service: service.discard(
-            project_id=project_id, proposal_id=proposal_id,
-            profile=normalized_profile, connection_id=normalized_connection,
+            project_id=project_id,
+            proposal_id=proposal_id,
+            profile=normalized_profile,
+            connection_id=normalized_connection,
         ),
         write=True,
     )
@@ -305,7 +333,9 @@ def discard_proposal(
 
 
 @router.post("/projects/{project_id}/chapters/{chapter_id}/undo")
-def undo_agent_write(project_id: str, chapter_id: str, body: dict[str, Any]) -> dict[str, Any]:
+def undo_agent_write(
+    project_id: str, chapter_id: str, body: dict[str, Any]
+) -> dict[str, Any]:
     """Put a record back the way it was before the Agent's last write.
 
     The path says ``chapters`` for history's sake; ``target_type`` in the body
@@ -317,8 +347,13 @@ def undo_agent_write(project_id: str, chapter_id: str, body: dict[str, Any]) -> 
     _required_body(body, "connection_id")
     target_type = _optional_body(body, "target_type") or "chapter"
     result = _proposal_call(
-        runtime, state, project_id, profile,
-        lambda service: service.undo(project_id=project_id, target_id=chapter_id, target_type=target_type),
+        runtime,
+        state,
+        project_id,
+        profile,
+        lambda service: service.undo(
+            project_id=project_id, target_id=chapter_id, target_type=target_type
+        ),
         write=True,
     )
     return {"restored": result}
@@ -334,7 +369,10 @@ def list_agent_writes(
     normalized_profile = _required_value(profile, "profile")
     _required_value(connection_id, "connection_id")
     writes = _proposal_call(
-        runtime, state, project_id, normalized_profile,
+        runtime,
+        state,
+        project_id,
+        normalized_profile,
         lambda service: service.writes(project_id=project_id),
     )
     return {"writes": writes}
@@ -348,7 +386,9 @@ def get_project_tree(
     connection_id: str | None = None,
 ) -> dict[str, Any]:
     runtime, state = _require_runtime()
-    scope = _request_scope(runtime, session_id, profile, connection_id, project_id=project_id)
+    scope = _request_scope(
+        runtime, session_id, profile, connection_id, project_id=project_id
+    )
     try:
         state.permissions.require_read(scope, project_id)
         tree = state.repository.get_project(project_id)
@@ -368,7 +408,9 @@ def get_chapter(
     connection_id: str | None = None,
 ) -> dict[str, Any]:
     runtime, state = _require_runtime()
-    scope = _request_scope(runtime, session_id, profile, connection_id, project_id=project_id)
+    scope = _request_scope(
+        runtime, session_id, profile, connection_id, project_id=project_id
+    )
     try:
         state.permissions.require_read(scope, project_id)
         chapter = state.repository.get_chapter(project_id, chapter_id)
@@ -394,9 +436,14 @@ def get_record(
     """One character, world entry or note, with its text (the tree omits it)."""
 
     if target_type not in _RECORD_TYPES:
-        raise HTTPException(status_code=422, detail=f"target_type must be one of {', '.join(_RECORD_TYPES)}")
+        raise HTTPException(
+            status_code=422,
+            detail=f"target_type must be one of {', '.join(_RECORD_TYPES)}",
+        )
     runtime, state = _require_runtime()
-    scope = _request_scope(runtime, session_id, profile, connection_id, project_id=project_id)
+    scope = _request_scope(
+        runtime, session_id, profile, connection_id, project_id=project_id
+    )
     getter = {
         "character": state.repository.get_character,
         "world_entry": state.repository.get_world_entry,
@@ -483,9 +530,14 @@ def _reject_late_binding(
     block the bind.
     """
 
-    if state.sessions.get(
-        stored_session_id=stored_session_id, profile=profile, connection_id=connection_id
-    ) is not None:
+    if (
+        state.sessions.get(
+            stored_session_id=stored_session_id,
+            profile=profile,
+            connection_id=connection_id,
+        )
+        is not None
+    ):
         return
     try:
         row = _component(runtime, "session_lineage").state_db_session(
@@ -558,7 +610,9 @@ def delete_project_session(
         connection_id=normalized_connection,
     )
     if binding is None or binding.project_id != project_id:
-        raise HTTPException(status_code=404, detail="Story session binding was not found")
+        raise HTTPException(
+            status_code=404, detail="Story session binding was not found"
+        )
     with _selected_target_guard(state):
         removed = state.sessions.unbind(
             stored_session_id=normalized_stored_id,
@@ -566,12 +620,16 @@ def delete_project_session(
             connection_id=normalized_connection,
         )
         if removed is None:
-            raise HTTPException(status_code=404, detail="Story session binding was not found")
+            raise HTTPException(
+                status_code=404, detail="Story session binding was not found"
+            )
     return {"removed": True, "stored_session_id": removed.stored_session_id}
 
 
 @router.post("/projects/{project_id}/chapters/{chapter_id}/save")
-def save_chapter(project_id: str, chapter_id: str, body: dict[str, Any]) -> dict[str, Any]:
+def save_chapter(
+    project_id: str, chapter_id: str, body: dict[str, Any]
+) -> dict[str, Any]:
     runtime, state = _require_runtime()
     save_module = _component(runtime, "save_service")
     repository_module = _component(runtime, "repository")
@@ -607,14 +665,27 @@ def save_chapter(project_id: str, chapter_id: str, body: dict[str, Any]) -> dict
     return {"chapter": asdict(result.chapter)}
 
 
-_PROPOSAL_CONFLICT_CODES = frozenset({
-    "version_changed", "conflict", "chapter_changed", "snapshot_missing",
-    "nothing_to_undo", "already_applied", "proposal_closed",
-})
+_PROPOSAL_CONFLICT_CODES = frozenset(
+    {
+        "version_changed",
+        "conflict",
+        "chapter_changed",
+        "snapshot_missing",
+        "nothing_to_undo",
+        "already_applied",
+        "proposal_closed",
+    }
+)
 
 
 def _proposal_call(
-    runtime: Any, state: Any, project_id: str, profile: str, call: Any, *, write: bool = False
+    runtime: Any,
+    state: Any,
+    project_id: str,
+    profile: str,
+    call: Any,
+    *,
+    write: bool = False,
 ) -> Any:
     """Run one proposal operation with the Profile lock and error mapping."""
 
@@ -639,7 +710,9 @@ def _proposal_call(
         status = 409 if exc.code in _PROPOSAL_CONFLICT_CODES else 422
         raise HTTPException(status_code=status, detail=exc.as_dict()) from exc
     except store_module.ProposalStoreError as exc:
-        raise HTTPException(status_code=503, detail={"code": "proposal_state_invalid"}) from exc
+        raise HTTPException(
+            status_code=503, detail={"code": "proposal_state_invalid"}
+        ) from exc
     except repository_module.RepositoryError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
@@ -672,7 +745,9 @@ def _workspace_project(runtime: Any, state: Any, project_id: str, profile: str) 
 def _workspace_registry(runtime: Any, state: Any) -> Any:
     workspaces = _component(runtime, "workspaces")
     runtime_module = _component(runtime, "runtime")
-    return workspaces.WorkspaceLinkRegistry(runtime_module.workspace_state_path(state.hermes_home))
+    return workspaces.WorkspaceLinkRegistry(
+        runtime_module.workspace_state_path(state.hermes_home)
+    )
 
 
 def _workspace_context(runtime: Any, state: Any) -> tuple[Any, Path, Any]:
@@ -686,7 +761,9 @@ def _workspace_context(runtime: Any, state: Any) -> tuple[Any, Path, Any]:
     except workspaces.WorkspaceError as exc:
         raise HTTPException(status_code=409, detail={"code": exc.code}) from exc
     except profile_config.StorySetupError as exc:
-        raise HTTPException(status_code=503, detail=_uninitialized_status(exc.code)) from exc
+        raise HTTPException(
+            status_code=503, detail=_uninitialized_status(exc.code)
+        ) from exc
     return workspaces, base, _workspace_registry(runtime, state)
 
 
@@ -729,17 +806,21 @@ class _SetupFailure(Exception):
 
 
 def load_api_backend(plugin_root: Path) -> ModuleType:
-    package_dir = plugin_root / 'story_construction_plugin'
-    name = 'hermes_story_api_' + sha256(str(plugin_root.resolve()).encode()).hexdigest()[:16]
+    package_dir = plugin_root / "story_construction_plugin"
+    name = (
+        "hermes_story_api_"
+        + sha256(str(plugin_root.resolve()).encode()).hexdigest()[:16]
+    )
     existing = sys.modules.get(name)
     if existing is not None:
         return existing
     spec = importlib.util.spec_from_file_location(
-        name, package_dir / '__init__.py',
+        name,
+        package_dir / "__init__.py",
         submodule_search_locations=[str(package_dir)],
     )
     if spec is None or spec.loader is None:
-        raise RuntimeError('Story API package cannot be loaded')
+        raise RuntimeError("Story API package cannot be loaded")
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module
     try:
@@ -851,6 +932,7 @@ def _permission_detail(exc: PermissionError) -> str | dict[str, str]:
         return {"code": code, "message": str(exc)}
     return str(exc)
 
+
 # PUT /settings alone maps known setup failures onto HTTP semantics while
 # keeping detail.code stable: invalid request input -> 422, conflict with the
 # existing configuration or selection -> 409, service/target not ready -> 503.
@@ -893,7 +975,9 @@ def _tree_payload(tree: Any) -> dict[str, Any]:
     return {
         "project": asdict(tree.project),
         "world_info": asdict(tree.world_info) if tree.world_info else None,
-        "world_info_entries": [_summary(row, "content") for row in tree.world_info_entries],
+        "world_info_entries": [
+            _summary(row, "content") for row in tree.world_info_entries
+        ],
         "characters": [_summary(row, "content") for row in tree.characters],
         "categories": [asdict(row) for row in tree.categories],
         "notes": [_summary(row, "content") for row in tree.notes],

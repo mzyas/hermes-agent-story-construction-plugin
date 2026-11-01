@@ -52,10 +52,17 @@ class ProposalStore:
     # ------------------------------------------------------------- reading
     def get(self, proposal_id: str) -> dict[str, Any] | None:
         with self._lock:
-            return self._view(next((row for row in self._load() if row["id"] == proposal_id), None))
+            return self._view(
+                next((row for row in self._load() if row["id"] == proposal_id), None)
+            )
 
     def list_for_project(
-        self, *, project_id: str, profile: str, connection_id: str, include_finished: bool = False
+        self,
+        *,
+        project_id: str,
+        profile: str,
+        connection_id: str,
+        include_finished: bool = False,
     ) -> list[dict[str, Any]]:
         with self._lock:
             rows = [
@@ -75,7 +82,8 @@ class ProposalStore:
     ) -> dict[str, Any] | None:
         with self._lock:
             rows = [
-                row for row in self._load()
+                row
+                for row in self._load()
                 if row["project_id"] == project_id
                 and row["status"] == "applied"
                 and row.get("applied")
@@ -93,11 +101,16 @@ class ProposalStore:
 
         return self.mutate(proposal_id, change)
 
-    def recent_applied(self, *, project_id: str, limit: int = 20) -> list[dict[str, Any]]:
+    def recent_applied(
+        self, *, project_id: str, limit: int = 20
+    ) -> list[dict[str, Any]]:
         with self._lock:
             rows = [
-                row for row in self._load()
-                if row["project_id"] == project_id and row["status"] == "applied" and row.get("applied")
+                row
+                for row in self._load()
+                if row["project_id"] == project_id
+                and row["status"] == "applied"
+                and row.get("applied")
             ]
         rows.sort(key=lambda row: row["applied"]["at"], reverse=True)
         return [self._view(row) for row in rows[:limit]]
@@ -126,12 +139,17 @@ class ProposalStore:
             self._persist(self._prune(rows, now))
         return self._view(row)
 
-    def mutate(self, proposal_id: str, change: Callable[[dict[str, Any]], None]) -> dict[str, Any] | None:
+    def mutate(
+        self, proposal_id: str, change: Callable[[dict[str, Any]], None]
+    ) -> dict[str, Any] | None:
         """Apply ``change`` to one stored proposal under the file lock."""
 
         with self._lock, _file_lock(self.path):
             rows = self._load()
-            row = next((candidate for candidate in rows if candidate["id"] == proposal_id), None)
+            row = next(
+                (candidate for candidate in rows if candidate["id"] == proposal_id),
+                None,
+            )
             if row is None:
                 return None
             change(row)
@@ -139,7 +157,9 @@ class ProposalStore:
             self._persist(rows)
             return self._view(row)
 
-    def approve(self, proposal_id: str, approval: Mapping[str, Any]) -> dict[str, Any] | None:
+    def approve(
+        self, proposal_id: str, approval: Mapping[str, Any]
+    ) -> dict[str, Any] | None:
         now = self._now()
 
         def change(row: dict[str, Any]) -> None:
@@ -173,7 +193,9 @@ class ProposalStore:
 
         return self.mutate(proposal_id, change)
 
-    def mark_applied(self, proposal_id: str, applied: Mapping[str, Any]) -> dict[str, Any] | None:
+    def mark_applied(
+        self, proposal_id: str, applied: Mapping[str, Any]
+    ) -> dict[str, Any] | None:
         now = self._now()
 
         def change(row: dict[str, Any]) -> None:
@@ -216,7 +238,11 @@ class ProposalStore:
             return None
         view = json.loads(json.dumps(row))
         approval = view.get("approval")
-        if view["status"] == "approved" and approval and approval["expires_at"] <= _iso(self._now()):
+        if (
+            view["status"] == "approved"
+            and approval
+            and approval["expires_at"] <= _iso(self._now())
+        ):
             view["status"] = "expired"
         elif view["status"] == "pending" and view.get("lapsed"):
             view["status"] = "expired"
@@ -225,12 +251,15 @@ class ProposalStore:
     def _prune(self, rows: list[dict[str, Any]], now: datetime) -> list[dict[str, Any]]:
         cutoff = _iso(now - timedelta(days=KEEP_FINISHED_DAYS))
         kept = [
-            row for row in rows
+            row
+            for row in rows
             if row["status"] in OPEN_STATUSES or row["updated_at"] >= cutoff
         ]
         open_rows = [row for row in kept if row["status"] in OPEN_STATUSES]
         if len(open_rows) > MAX_PENDING:
-            for row in sorted(open_rows, key=lambda candidate: candidate["created_at"])[: len(open_rows) - MAX_PENDING]:
+            for row in sorted(open_rows, key=lambda candidate: candidate["created_at"])[
+                : len(open_rows) - MAX_PENDING
+            ]:
                 row["status"] = "superseded"
         return kept
 
@@ -243,15 +272,34 @@ class ProposalStore:
                 raise ValueError("unsupported version")
             rows = payload["proposals"]
             for row in rows:
-                for field in ("id", "project_id", "profile", "connection_id", "status", "created_at", "updated_at"):
+                for field in (
+                    "id",
+                    "project_id",
+                    "profile",
+                    "connection_id",
+                    "status",
+                    "created_at",
+                    "updated_at",
+                ):
                     if not isinstance(row[field], str) or not row[field]:
                         raise ValueError(field)
             return rows
-        except (OSError, UnicodeError, ValueError, KeyError, TypeError, AttributeError) as exc:
-            raise ProposalStoreError("persistent Story proposal state is invalid") from exc
+        except (
+            OSError,
+            UnicodeError,
+            ValueError,
+            KeyError,
+            TypeError,
+            AttributeError,
+        ) as exc:
+            raise ProposalStoreError(
+                "persistent Story proposal state is invalid"
+            ) from exc
 
     def _persist(self, rows: list[dict[str, Any]]) -> None:
-        _write_json(self.path, {"version": _SCHEMA_VERSION, "proposals": rows}, "proposal")
+        _write_json(
+            self.path, {"version": _SCHEMA_VERSION, "proposals": rows}, "proposal"
+        )
 
 
 def _target_type(row: Mapping[str, Any]) -> str:
@@ -290,8 +338,12 @@ def _write_json(path: Path, payload: Mapping[str, Any], label: str) -> None:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         with NamedTemporaryFile(
-            "w", encoding="utf-8", dir=path.parent,
-            prefix=f".{path.name}.", suffix=".tmp", delete=False,
+            "w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
         ) as handle:
             temporary = Path(handle.name)
             json.dump(payload, handle, ensure_ascii=False, indent=2, sort_keys=True)
@@ -301,7 +353,9 @@ def _write_json(path: Path, payload: Mapping[str, Any], label: str) -> None:
         os.replace(temporary, path)
         temporary = None
     except (OSError, TypeError, ValueError) as exc:
-        raise ProposalStoreError(f"persistent Story {label} state is unwritable") from exc
+        raise ProposalStoreError(
+            f"persistent Story {label} state is unwritable"
+        ) from exc
     finally:
         if temporary is not None:
             with suppress(OSError):
@@ -327,13 +381,26 @@ class ChapterHistory:
         self.keep = keep
         self._lock = RLock()
 
-    def save(self, *, project_id: str, target_id: str, text: str, version: str, proposal_id: str) -> str:
+    def save(
+        self,
+        *,
+        project_id: str,
+        target_id: str,
+        text: str,
+        version: str,
+        proposal_id: str,
+    ) -> str:
         folder = self._folder(project_id, target_id)
         snapshot_id = f"{_iso(_now()).replace(':', '').replace('+', 'Z')}-{proposal_id}"
         with self._lock:
             _write_json(
                 folder / f"{snapshot_id}.json",
-                {"id": snapshot_id, "version": version, "proposal_id": proposal_id, "text": text},
+                {
+                    "id": snapshot_id,
+                    "version": version,
+                    "proposal_id": proposal_id,
+                    "text": text,
+                },
                 "snapshot",
             )
             files = sorted(folder.glob("*.json"))
@@ -348,7 +415,9 @@ class ChapterHistory:
         with self._lock:
             shutil.rmtree(self.root / _segment(project_id), ignore_errors=True)
 
-    def load(self, *, project_id: str, target_id: str, snapshot_id: str) -> dict[str, Any] | None:
+    def load(
+        self, *, project_id: str, target_id: str, snapshot_id: str
+    ) -> dict[str, Any] | None:
         path = self._folder(project_id, target_id) / f"{_segment(snapshot_id)}.json"
         try:
             return json.loads(path.read_text(encoding="utf-8"))

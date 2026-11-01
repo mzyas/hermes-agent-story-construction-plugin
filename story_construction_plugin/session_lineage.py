@@ -52,7 +52,11 @@ class SessionLineage:
         self._known_parents: dict[str, ParentLink] = {}
 
     def note_subagent(
-        self, *, parent_session_id: Any = "", child_session_id: Any = "", **_ignored: Any
+        self,
+        *,
+        parent_session_id: Any = "",
+        child_session_id: Any = "",
+        **_ignored: Any,
     ) -> None:
         """The ``subagent_start`` hook: remember which session a subagent came from."""
 
@@ -103,7 +107,9 @@ class SessionLineage:
         except Exception:
             if strict:
                 raise
-            logger.debug("Story session lineage lookup failed for %s", session_id, exc_info=True)
+            logger.debug(
+                "Story session lineage lookup failed for %s", session_id, exc_info=True
+            )
             return None
         with self._lock:
             for child, link in links.items():
@@ -188,12 +194,18 @@ def _row_link(db: Any, row: Mapping[str, Any]) -> tuple[str, bool, Any] | None:
     return None
 
 
-def _starts_own_conversation(row: Mapping[str, Any], config: Mapping[str, Any], parent: str) -> bool:
+def _starts_own_conversation(
+    row: Mapping[str, Any], config: Mapping[str, Any], parent: str
+) -> bool:
     # Mirrors Hermes' _is_explicit_fork_child_row(include_reset=True): a tool
     # child, or a branch, delegate or reset marker pointing at this parent.
     if row.get("source") == "tool":
         return True
-    markers = (config.get("_branched_from"), config.get("_delegate_from"), config.get("_reset_from"))
+    markers = (
+        config.get("_branched_from"),
+        config.get("_delegate_from"),
+        config.get("_reset_from"),
+    )
     return parent in markers
 
 

@@ -7,12 +7,18 @@ import pytest
 from story_construction_plugin.domain import Chapter
 from story_construction_plugin.permissions import SessionScope, StoryPermissionGate
 from story_construction_plugin.repository import VersionConflictError
-from story_construction_plugin.save_service import SaveConflict, SaveRequest, StorySaveService
+from story_construction_plugin.save_service import (
+    SaveConflict,
+    SaveRequest,
+    StorySaveService,
+)
 
 
 class FakeRepository:
     def __init__(self) -> None:
-        self.chapter = Chapter("ch1", "p1", "v1", "Opening", "original", "chapters/ch1.md", "v1")
+        self.chapter = Chapter(
+            "ch1", "p1", "v1", "Opening", "original", "chapters/ch1.md", "v1"
+        )
         self.mode = "ok"
 
     def get_chapter(self, project_id, chapter_id):
@@ -21,23 +27,41 @@ class FakeRepository:
 
     def save_chapter(self, project_id, chapter_id, content, *, expected_version):
         if self.mode == "conflict":
-            self.chapter = Chapter("ch1", "p1", "v1", "Opening", "changed by another editor", "chapters/ch1.md", "v2")
+            self.chapter = Chapter(
+                "ch1",
+                "p1",
+                "v1",
+                "Opening",
+                "changed by another editor",
+                "chapters/ch1.md",
+                "v2",
+            )
             raise VersionConflictError("stale")
         assert expected_version == "v1"
-        self.chapter = Chapter("ch1", "p1", "v1", "Opening", content, "chapters/ch1.md", "v2")
+        self.chapter = Chapter(
+            "ch1", "p1", "v1", "Opening", content, "chapters/ch1.md", "v2"
+        )
         return self.chapter
 
 
 def _service(repository):
     permissions = StoryPermissionGate()
-    permissions.bind_session(SessionScope("s1", "desktop", "writer", "local", "p1"), "p1")
+    permissions.bind_session(
+        SessionScope("s1", "desktop", "writer", "local", "p1"), "p1"
+    )
     return StorySaveService(repository, permissions)
 
 
 def _request(content="draft"):
     return SaveRequest(
-        session_id="s1", profile="writer", connection_id="local", project_id="p1",
-        chapter_id="ch1", content=content, expected_version="v1", confirmed=True,
+        session_id="s1",
+        profile="writer",
+        connection_id="local",
+        project_id="p1",
+        chapter_id="ch1",
+        content=content,
+        expected_version="v1",
+        confirmed=True,
     )
 
 

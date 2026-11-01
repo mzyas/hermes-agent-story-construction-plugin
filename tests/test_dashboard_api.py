@@ -19,7 +19,15 @@ from fastapi import HTTPException
 
 from hermes_env import read_user_config_raw  # lazy real-SDK passthrough
 
-from story_construction_plugin.domain import Chapter, Character, Note, Project, Volume, WorldInfo, WorldInfoEntry
+from story_construction_plugin.domain import (
+    Chapter,
+    Character,
+    Note,
+    Project,
+    Volume,
+    WorldInfo,
+    WorldInfoEntry,
+)
 from story_construction_plugin.profile_config import select_story_target
 
 pytestmark = pytest.mark.hermes_integration
@@ -38,8 +46,13 @@ class FakeRepository:
         self._repository_module = repository_module
         self.project = Project(id="p1", name="Novel")
         self.chapter = Chapter(
-            id="ch1", project_id="p1", volume_id="v1", title="Opening",
-            content="full chapter body", source_ref="chapters/ch1.md", version="v1",
+            id="ch1",
+            project_id="p1",
+            volume_id="v1",
+            title="Opening",
+            content="full chapter body",
+            source_ref="chapters/ch1.md",
+            version="v1",
         )
         self.created: list[tuple[str, str | None]] = []
         self.created_records: list[tuple[str, ...]] = []
@@ -50,8 +63,12 @@ class FakeRepository:
         repository = self._repository_module
         project_id = repository.normalize_project_slug(name, slug)
         if project_id == self.project.id or project_id in self._created_projects:
-            raise repository.ProjectAlreadyExistsError(f"project {project_id!r} already exists")
-        project, volumes = repository.create_project_with_default_volume(project_id, name.strip())
+            raise repository.ProjectAlreadyExistsError(
+                f"project {project_id!r} already exists"
+            )
+        project, volumes = repository.create_project_with_default_volume(
+            project_id, name.strip()
+        )
         tree = repository.ProjectTree(project, None, (), (), (), (), volumes, ())
         self.created.append((name, slug))
         self._created_projects[project_id] = tree
@@ -66,8 +83,14 @@ class FakeRepository:
             return self._repository_module.ProjectTree(
                 project=self.project,
                 world_info=WorldInfo(id="w1", name="World", project_id="p1"),
-                world_info_entries=(WorldInfoEntry(id="e1", project_id="p1", title="Rule", content="secret"),),
-                characters=(Character(id="c1", project_id="p1", name="Hero", content="secret"),),
+                world_info_entries=(
+                    WorldInfoEntry(
+                        id="e1", project_id="p1", title="Rule", content="secret"
+                    ),
+                ),
+                characters=(
+                    Character(id="c1", project_id="p1", name="Hero", content="secret"),
+                ),
                 categories=(),
                 notes=(Note(id="n1", project_id="p1", title="Ref", content="secret"),),
                 volumes=(Volume(id="v1", project_id="p1", title="Volume I"),),
@@ -76,23 +99,34 @@ class FakeRepository:
         try:
             return self._created_projects[project_id]
         except KeyError as exc:
-            raise self._repository_module.NotFoundError(f"project {project_id!r} was not found") from exc
+            raise self._repository_module.NotFoundError(
+                f"project {project_id!r} was not found"
+            ) from exc
 
     def create_volume(self, project_id, title):
         self.get_project(project_id)
         if not title.strip():
-            raise self._repository_module.DomainValidationError("volume title is required")
+            raise self._repository_module.DomainValidationError(
+                "volume title is required"
+            )
         self.created_records.append(("volume", project_id, title))
-        return Volume(id=f"{project_id}:volume-2", project_id=project_id, title=title.strip())
+        return Volume(
+            id=f"{project_id}:volume-2", project_id=project_id, title=title.strip()
+        )
 
     def create_chapter(self, project_id, volume_id, title):
         tree = self.get_project(project_id)
         if volume_id not in {row.id for row in tree.volumes}:
-            raise self._repository_module.NotFoundError(f"volume {volume_id!r} was not found")
+            raise self._repository_module.NotFoundError(
+                f"volume {volume_id!r} was not found"
+            )
         self.created_records.append(("chapter", project_id, volume_id, title))
         return Chapter(
-            id=f"{project_id}:chapter-2", project_id=project_id, volume_id=volume_id,
-            title=title.strip(), content="",
+            id=f"{project_id}:chapter-2",
+            project_id=project_id,
+            volume_id=volume_id,
+            title=title.strip(),
+            content="",
         )
 
     def trash_project(self, project_id):
@@ -107,7 +141,9 @@ class FakeRepository:
     def save_chapter(self, project_id, chapter_id, content, *, expected_version):
         assert (project_id, chapter_id) == ("p1", "ch1")
         assert expected_version == self.chapter.version
-        self.chapter = Chapter("ch1", "p1", "v1", "Opening", content, "chapters/ch1.md", "v2")
+        self.chapter = Chapter(
+            "ch1", "p1", "v1", "Opening", content, "chapters/ch1.md", "v2"
+        )
         return self.chapter
 
 
@@ -134,9 +170,7 @@ def _build_profile_lab(monkeypatch, tmp_path: Path, api_package_root: Path):
     for profile_home in (target_home, other_home):
         # The named Profile's config.yaml doubles as its Hermes identity marker.
         (profile_home / "config.yaml").write_text(
-            "plugins:\n"
-            "  enabled:\n"
-            f"    - {PLUGIN_ID}\n",
+            f"plugins:\n  enabled:\n    - {PLUGIN_ID}\n",
             encoding="utf-8",
         )
     (default_home / "config.yaml").write_text("agent: {}\n", encoding="utf-8")
@@ -195,7 +229,9 @@ def _request_state(plugin_api):
     return state
 
 
-def test_uninitialized_runtime_rejects_dashboard_read_and_write(monkeypatch, tmp_path: Path) -> None:
+def test_uninitialized_runtime_rejects_dashboard_read_and_write(
+    monkeypatch, tmp_path: Path
+) -> None:
     from dashboard import plugin_api
 
     home = tmp_path / "uninitialized-home"
@@ -208,15 +244,23 @@ def test_uninitialized_runtime_rejects_dashboard_read_and_write(monkeypatch, tmp
 
     status = plugin_api.status()
     assert status["code"] == "profile_not_selected"
-    _assert_http_error(lambda: plugin_api.list_projects(**scope), 503, "profile_not_selected")
     _assert_http_error(
-        lambda: plugin_api.save_chapter("p1", "ch1", {**scope, "content": "x", "expected_version": "v1", "confirmed": True}),
+        lambda: plugin_api.list_projects(**scope), 503, "profile_not_selected"
+    )
+    _assert_http_error(
+        lambda: plugin_api.save_chapter(
+            "p1",
+            "ch1",
+            {**scope, "content": "x", "expected_version": "v1", "confirmed": True},
+        ),
         503,
         "profile_not_selected",
     )
 
 
-def test_dashboard_status_is_ready_without_returning_vault_path(monkeypatch, tmp_path: Path) -> None:
+def test_dashboard_status_is_ready_without_returning_vault_path(
+    monkeypatch, tmp_path: Path
+) -> None:
     plugin_api, _, _ = _ready_runtime(monkeypatch, tmp_path)
 
     status = plugin_api.status()
@@ -226,7 +270,9 @@ def test_dashboard_status_is_ready_without_returning_vault_path(monkeypatch, tmp
     assert str(tmp_path / "vault") not in repr(status)
 
 
-def test_guide_route_needs_no_selected_profile_or_ready_runtime(monkeypatch, tmp_path: Path) -> None:
+def test_guide_route_needs_no_selected_profile_or_ready_runtime(
+    monkeypatch, tmp_path: Path
+) -> None:
     from dashboard import plugin_api
 
     home = tmp_path / "uninitialized-home"
@@ -244,7 +290,8 @@ def test_guide_route_needs_no_selected_profile_or_ready_runtime(monkeypatch, tmp
 
 
 def test_project_discovery_requires_locked_profile_but_not_a_session(
-    monkeypatch, tmp_path: Path,
+    monkeypatch,
+    tmp_path: Path,
 ) -> None:
     plugin_api, _, repository = _ready_runtime(monkeypatch, tmp_path)
 
@@ -253,25 +300,37 @@ def test_project_discovery_requires_locked_profile_but_not_a_session(
     assert projects == {"projects": [asdict(repository.project)]}
 
 
-def test_create_project_requires_locked_profile_but_not_a_session(monkeypatch, tmp_path: Path) -> None:
+def test_create_project_requires_locked_profile_but_not_a_session(
+    monkeypatch, tmp_path: Path
+) -> None:
     plugin_api, _, repository = _ready_runtime(monkeypatch, tmp_path)
 
-    created = plugin_api.create_project({
-        "name": "New Novel", "slug": "new-novel",
-        "profile": "writer", "connection_id": "local",
-    })
+    created = plugin_api.create_project(
+        {
+            "name": "New Novel",
+            "slug": "new-novel",
+            "profile": "writer",
+            "connection_id": "local",
+        }
+    )
 
     assert created["tree"]["project"]["id"] == "new-novel"
     assert repository.created == [("New Novel", "new-novel")]
 
 
-def test_create_project_rejects_locked_profile_mismatch(monkeypatch, tmp_path: Path) -> None:
+def test_create_project_rejects_locked_profile_mismatch(
+    monkeypatch, tmp_path: Path
+) -> None:
     plugin_api, _, _ = _ready_runtime(monkeypatch, tmp_path)
 
     _assert_http_error(
-        lambda: plugin_api.create_project({
-            "name": "New Novel", "profile": "other", "connection_id": "local",
-        }),
+        lambda: plugin_api.create_project(
+            {
+                "name": "New Novel",
+                "profile": "other",
+                "connection_id": "local",
+            }
+        ),
         403,
         "profile_lock_mismatch",
     )
@@ -280,59 +339,94 @@ def test_create_project_rejects_locked_profile_mismatch(monkeypatch, tmp_path: P
 def test_create_project_maps_duplicate_to_conflict(monkeypatch, tmp_path: Path) -> None:
     plugin_api, _, _ = _ready_runtime(monkeypatch, tmp_path)
     body = {
-        "name": "New Novel", "slug": "new-novel",
-        "profile": "writer", "connection_id": "local",
+        "name": "New Novel",
+        "slug": "new-novel",
+        "profile": "writer",
+        "connection_id": "local",
     }
     plugin_api.create_project(body)
 
     _assert_http_error(lambda: plugin_api.create_project(body), 409)
 
 
-def test_create_project_maps_invalid_slug_to_unprocessable(monkeypatch, tmp_path: Path) -> None:
+def test_create_project_maps_invalid_slug_to_unprocessable(
+    monkeypatch, tmp_path: Path
+) -> None:
     plugin_api, _, _ = _ready_runtime(monkeypatch, tmp_path)
 
     _assert_http_error(
-        lambda: plugin_api.create_project({
-            "name": "New Novel", "slug": "../new-novel",
-            "profile": "writer", "connection_id": "local",
-        }),
+        lambda: plugin_api.create_project(
+            {
+                "name": "New Novel",
+                "slug": "../new-novel",
+                "profile": "writer",
+                "connection_id": "local",
+            }
+        ),
         422,
     )
 
 
-def test_create_volume_requires_locked_profile_but_not_a_session(monkeypatch, tmp_path: Path) -> None:
+def test_create_volume_requires_locked_profile_but_not_a_session(
+    monkeypatch, tmp_path: Path
+) -> None:
     plugin_api, _, repository = _ready_runtime(monkeypatch, tmp_path)
 
-    created = plugin_api.create_volume("p1", {
-        "title": " Volume II ", "profile": "writer", "connection_id": "local",
-    })
+    created = plugin_api.create_volume(
+        "p1",
+        {
+            "title": " Volume II ",
+            "profile": "writer",
+            "connection_id": "local",
+        },
+    )
 
-    assert created == {"volume": {"id": "p1:volume-2", "project_id": "p1", "title": "Volume II"}}
+    assert created == {
+        "volume": {"id": "p1:volume-2", "project_id": "p1", "title": "Volume II"}
+    }
     assert repository.created_records == [("volume", "p1", "Volume II")]
 
 
-def test_create_chapter_lands_in_the_requested_volume(monkeypatch, tmp_path: Path) -> None:
+def test_create_chapter_lands_in_the_requested_volume(
+    monkeypatch, tmp_path: Path
+) -> None:
     plugin_api, _, repository = _ready_runtime(monkeypatch, tmp_path)
 
-    created = plugin_api.create_chapter("p1", "v1", {
-        "title": "Two", "profile": "writer", "connection_id": "local",
-    })
+    created = plugin_api.create_chapter(
+        "p1",
+        "v1",
+        {
+            "title": "Two",
+            "profile": "writer",
+            "connection_id": "local",
+        },
+    )
 
     assert created["chapter"]["id"] == "p1:chapter-2"
     assert created["chapter"]["volume_id"] == "v1"
     assert repository.created_records == [("chapter", "p1", "v1", "Two")]
 
 
-def test_create_volume_and_chapter_reject_locked_profile_mismatch(monkeypatch, tmp_path: Path) -> None:
+def test_create_volume_and_chapter_reject_locked_profile_mismatch(
+    monkeypatch, tmp_path: Path
+) -> None:
     plugin_api, _, repository = _ready_runtime(monkeypatch, tmp_path)
     body = {"title": "X", "profile": "other", "connection_id": "local"}
 
-    _assert_http_error(lambda: plugin_api.create_volume("p1", body), 403, "profile_lock_mismatch")
-    _assert_http_error(lambda: plugin_api.create_chapter("p1", "v1", body), 403, "profile_lock_mismatch")
+    _assert_http_error(
+        lambda: plugin_api.create_volume("p1", body), 403, "profile_lock_mismatch"
+    )
+    _assert_http_error(
+        lambda: plugin_api.create_chapter("p1", "v1", body),
+        403,
+        "profile_lock_mismatch",
+    )
     assert repository.created_records == []
 
 
-def test_create_volume_and_chapter_map_missing_targets_to_not_found(monkeypatch, tmp_path: Path) -> None:
+def test_create_volume_and_chapter_map_missing_targets_to_not_found(
+    monkeypatch, tmp_path: Path
+) -> None:
     plugin_api, _, _ = _ready_runtime(monkeypatch, tmp_path)
     body = {"title": "X", "profile": "writer", "connection_id": "local"}
 
@@ -340,24 +434,38 @@ def test_create_volume_and_chapter_map_missing_targets_to_not_found(monkeypatch,
     _assert_http_error(lambda: plugin_api.create_chapter("p1", "missing", body), 404)
 
 
-def test_create_volume_and_chapter_reject_blank_title_and_missing_scope(monkeypatch, tmp_path: Path) -> None:
+def test_create_volume_and_chapter_reject_blank_title_and_missing_scope(
+    monkeypatch, tmp_path: Path
+) -> None:
     plugin_api, _, repository = _ready_runtime(monkeypatch, tmp_path)
     scope = {"profile": "writer", "connection_id": "local"}
 
-    _assert_http_error(lambda: plugin_api.create_volume("p1", {**scope, "title": "   "}), 422)
-    _assert_http_error(lambda: plugin_api.create_chapter("p1", "v1", {**scope, "title": ""}), 422)
-    _assert_http_error(lambda: plugin_api.create_volume("p1", {"title": "X", "profile": "writer"}), 422)
+    _assert_http_error(
+        lambda: plugin_api.create_volume("p1", {**scope, "title": "   "}), 422
+    )
+    _assert_http_error(
+        lambda: plugin_api.create_chapter("p1", "v1", {**scope, "title": ""}), 422
+    )
+    _assert_http_error(
+        lambda: plugin_api.create_volume("p1", {"title": "X", "profile": "writer"}), 422
+    )
     assert repository.created_records == []
 
 
-def test_create_project_rejects_non_string_optional_slug(monkeypatch, tmp_path: Path) -> None:
+def test_create_project_rejects_non_string_optional_slug(
+    monkeypatch, tmp_path: Path
+) -> None:
     plugin_api, _, _ = _ready_runtime(monkeypatch, tmp_path)
 
     _assert_http_error(
-        lambda: plugin_api.create_project({
-            "name": "New Novel", "slug": 7,
-            "profile": "writer", "connection_id": "local",
-        }),
+        lambda: plugin_api.create_project(
+            {
+                "name": "New Novel",
+                "slug": 7,
+                "profile": "writer",
+                "connection_id": "local",
+            }
+        ),
         422,
     )
 
@@ -371,14 +479,19 @@ def test_project_tree_requires_a_bound_session(monkeypatch, tmp_path: Path) -> N
     )
 
 
-def test_dashboard_rejects_locked_profile_mismatch_before_binding(monkeypatch, tmp_path: Path) -> None:
+def test_dashboard_rejects_locked_profile_mismatch_before_binding(
+    monkeypatch, tmp_path: Path
+) -> None:
     plugin_api, _, _ = _ready_runtime(monkeypatch, tmp_path)
 
     _assert_http_error(
-        lambda: plugin_api.bind_session({**_scope(profile="other"), "project_id": "p1"}),
+        lambda: plugin_api.bind_session(
+            {**_scope(profile="other"), "project_id": "p1"}
+        ),
         403,
         "profile_lock_mismatch",
     )
+
 
 def _hermes_sessions(monkeypatch, plugin_api, rows) -> None:
     """Stand in for Hermes' session rows; a callable stands in for a failing read."""
@@ -391,13 +504,19 @@ def _hermes_sessions(monkeypatch, plugin_api, rows) -> None:
 STORY_PROMPT = "Hermes base\n\n# StoryConstructionAgentPrompt v10\n..."
 
 
-def test_a_chat_that_already_started_cannot_be_bound(monkeypatch, tmp_path: Path) -> None:
+def test_a_chat_that_already_started_cannot_be_bound(
+    monkeypatch, tmp_path: Path
+) -> None:
     plugin_api, _, _ = _ready_runtime(monkeypatch, tmp_path)
-    _hermes_sessions(monkeypatch, plugin_api, {
-        "busy": {"message_count": 3, "system_prompt": ""},
-        "frozen": {"message_count": 0, "system_prompt": "Hermes base"},
-        "fresh": {"message_count": 0, "system_prompt": None},
-    })
+    _hermes_sessions(
+        monkeypatch,
+        plugin_api,
+        {
+            "busy": {"message_count": 3, "system_prompt": ""},
+            "frozen": {"message_count": 0, "system_prompt": "Hermes base"},
+            "fresh": {"message_count": 0, "system_prompt": None},
+        },
+    )
 
     for session_id in ("busy", "frozen"):
         _assert_http_error(
@@ -415,27 +534,49 @@ def test_a_chat_that_already_has_the_story_protocol_can_be_bound_again(
     monkeypatch, tmp_path: Path
 ) -> None:
     plugin_api, _, _ = _ready_runtime(monkeypatch, tmp_path)
-    _hermes_sessions(monkeypatch, plugin_api, {
-        "unbound": {"message_count": 12, "system_prompt": STORY_PROMPT},
-    })
+    _hermes_sessions(
+        monkeypatch,
+        plugin_api,
+        {
+            "unbound": {"message_count": 12, "system_prompt": STORY_PROMPT},
+        },
+    )
 
     plugin_api.bind_session({**_scope("unbound"), "project_id": "p1"})
 
-    assert _request_state(plugin_api).permissions.bound_scope("unbound").project_id == "p1"
+    assert (
+        _request_state(plugin_api).permissions.bound_scope("unbound").project_id == "p1"
+    )
 
 
-def test_a_bound_chat_can_be_rebound_after_it_started(monkeypatch, tmp_path: Path) -> None:
+def test_a_bound_chat_can_be_rebound_after_it_started(
+    monkeypatch, tmp_path: Path
+) -> None:
     plugin_api, _, _ = _ready_runtime(monkeypatch, tmp_path)
-    base = {"stored_session_id": "stored-1", "profile": "writer", "connection_id": "local", "project_id": "p1"}
+    base = {
+        "stored_session_id": "stored-1",
+        "profile": "writer",
+        "connection_id": "local",
+        "project_id": "p1",
+    }
     plugin_api.bind_session({**base, "runtime_session_id": "runtime-1"})
-    _hermes_sessions(monkeypatch, plugin_api, {"stored-1": {"message_count": 5, "system_prompt": "x"}})
+    _hermes_sessions(
+        monkeypatch,
+        plugin_api,
+        {"stored-1": {"message_count": 5, "system_prompt": "x"}},
+    )
 
     plugin_api.bind_session({**base, "runtime_session_id": "runtime-2"})
 
-    assert _request_state(plugin_api).permissions.bound_scope("runtime-2").project_id == "p1"
+    assert (
+        _request_state(plugin_api).permissions.bound_scope("runtime-2").project_id
+        == "p1"
+    )
 
 
-def test_an_unreadable_session_database_does_not_block_the_bind(monkeypatch, tmp_path: Path) -> None:
+def test_an_unreadable_session_database_does_not_block_the_bind(
+    monkeypatch, tmp_path: Path
+) -> None:
     plugin_api, _, _ = _ready_runtime(monkeypatch, tmp_path)
 
     def broken(_home, _session_id):
@@ -446,7 +587,9 @@ def test_an_unreadable_session_database_does_not_block_the_bind(monkeypatch, tmp
     plugin_api.bind_session({**_scope("s1"), "project_id": "p1"})
 
 
-def test_profile_mismatch_is_rejected_for_read_bind_and_save(monkeypatch, tmp_path: Path) -> None:
+def test_profile_mismatch_is_rejected_for_read_bind_and_save(
+    monkeypatch, tmp_path: Path
+) -> None:
     plugin_api, _, _ = _ready_runtime(monkeypatch, tmp_path)
     plugin_api.bind_session({**_scope(), "project_id": "p1"})
 
@@ -455,31 +598,48 @@ def test_profile_mismatch_is_rejected_for_read_bind_and_save(monkeypatch, tmp_pa
         403,
     )
     _assert_http_error(
-        lambda: plugin_api.bind_session({**_scope(profile="other"), "project_id": "p1"}),
-        403,
-    )
-    _assert_http_error(
-        lambda: plugin_api.save_chapter(
-            "p1",
-            "ch1",
-            {**_scope(profile="other"), "content": "x", "expected_version": "v1", "confirmed": True},
+        lambda: plugin_api.bind_session(
+            {**_scope(profile="other"), "project_id": "p1"}
         ),
         403,
     )
     _assert_http_error(
-        lambda: plugin_api.bind_session({**_scope(connection_id="remote"), "project_id": "p1"}),
+        lambda: plugin_api.save_chapter(
+            "p1",
+            "ch1",
+            {
+                **_scope(profile="other"),
+                "content": "x",
+                "expected_version": "v1",
+                "confirmed": True,
+            },
+        ),
+        403,
+    )
+    _assert_http_error(
+        lambda: plugin_api.bind_session(
+            {**_scope(connection_id="remote"), "project_id": "p1"}
+        ),
         403,
     )
     _assert_http_error(
         lambda: plugin_api.save_chapter(
             "p1",
             "ch1",
-            {**_scope(connection_id="remote"), "content": "x", "expected_version": "v1", "confirmed": True},
+            {
+                **_scope(connection_id="remote"),
+                "content": "x",
+                "expected_version": "v1",
+                "confirmed": True,
+            },
         ),
         403,
     )
 
-def test_connection_mismatch_is_rejected_for_bound_read(monkeypatch, tmp_path: Path) -> None:
+
+def test_connection_mismatch_is_rejected_for_bound_read(
+    monkeypatch, tmp_path: Path
+) -> None:
     plugin_api, _, _ = _ready_runtime(monkeypatch, tmp_path)
     plugin_api.bind_session({**_scope(), "project_id": "p1"})
 
@@ -490,15 +650,20 @@ def test_connection_mismatch_is_rejected_for_bound_read(monkeypatch, tmp_path: P
 
 
 def test_bind_persists_stored_identity_and_lists_only_project_scope(
-    monkeypatch, tmp_path: Path,
+    monkeypatch,
+    tmp_path: Path,
 ) -> None:
     plugin_api, state, _ = _ready_runtime(monkeypatch, tmp_path)
 
-    result = plugin_api.bind_session({
-        **_scope("stored-1"), "runtime_session_id": "runtime-1",
-        "stored_session_id": "stored-1", "project_id": "p1",
-        "title": "Story: Novel",
-    })
+    result = plugin_api.bind_session(
+        {
+            **_scope("stored-1"),
+            "runtime_session_id": "runtime-1",
+            "stored_session_id": "stored-1",
+            "project_id": "p1",
+            "title": "Story: Novel",
+        }
+    )
     state.sessions.bind(
         stored_session_id="other-project",
         profile="writer",
@@ -519,10 +684,15 @@ def test_bind_persists_stored_identity_and_lists_only_project_scope(
     assert result["context"]["chapters"][0]["id"] == "ch1"
     assert "content" not in result["context"]["chapters"][0]
     assert [row["stored_session_id"] for row in listed["sessions"]] == ["stored-1"]
-    assert _request_state(plugin_api).permissions.bound_scope("runtime-1").project_id == "p1"
+    assert (
+        _request_state(plugin_api).permissions.bound_scope("runtime-1").project_id
+        == "p1"
+    )
 
 
-def test_project_session_list_returns_missing_project(monkeypatch, tmp_path: Path) -> None:
+def test_project_session_list_returns_missing_project(
+    monkeypatch, tmp_path: Path
+) -> None:
     plugin_api, _, _ = _ready_runtime(monkeypatch, tmp_path)
 
     _assert_http_error(
@@ -533,11 +703,17 @@ def test_project_session_list_returns_missing_project(monkeypatch, tmp_path: Pat
     )
 
 
-def test_delete_stale_binding_does_not_create_replacement(monkeypatch, tmp_path: Path) -> None:
+def test_delete_stale_binding_does_not_create_replacement(
+    monkeypatch, tmp_path: Path
+) -> None:
     plugin_api, state, _ = _ready_runtime(monkeypatch, tmp_path)
-    plugin_api.bind_session({
-        **_scope("stored-1"), "stored_session_id": "stored-1", "project_id": "p1",
-    })
+    plugin_api.bind_session(
+        {
+            **_scope("stored-1"),
+            "stored_session_id": "stored-1",
+            "project_id": "p1",
+        }
+    )
     # Sibling row sharing stored-1 as its runtime alias must survive the delete
     # untouched (same profile and connection so per-request preparation can
     # represent both rows in the permission gate).
@@ -570,12 +746,17 @@ def test_delete_stale_binding_does_not_create_replacement(monkeypatch, tmp_path:
 
 
 def test_conflicting_stored_id_across_connections_fails_closed(
-    monkeypatch, tmp_path: Path,
+    monkeypatch,
+    tmp_path: Path,
 ) -> None:
     plugin_api, state, _ = _ready_runtime(monkeypatch, tmp_path)
-    plugin_api.bind_session({
-        **_scope("stored-1"), "stored_session_id": "stored-1", "project_id": "p1",
-    })
+    plugin_api.bind_session(
+        {
+            **_scope("stored-1"),
+            "stored_session_id": "stored-1",
+            "project_id": "p1",
+        }
+    )
     first = state.sessions.get(
         stored_session_id="stored-1",
         profile="writer",
@@ -619,12 +800,18 @@ def test_conflicting_stored_id_across_connections_fails_closed(
     )
 
 
-def test_delete_session_unbinds_stored_and_runtime_ids(monkeypatch, tmp_path: Path) -> None:
+def test_delete_session_unbinds_stored_and_runtime_ids(
+    monkeypatch, tmp_path: Path
+) -> None:
     plugin_api, state, _ = _ready_runtime(monkeypatch, tmp_path)
-    plugin_api.bind_session({
-        **_scope("stored-1"), "stored_session_id": "stored-1",
-        "runtime_session_id": "runtime-1", "project_id": "p1",
-    })
+    plugin_api.bind_session(
+        {
+            **_scope("stored-1"),
+            "stored_session_id": "stored-1",
+            "runtime_session_id": "runtime-1",
+            "project_id": "p1",
+        }
+    )
 
     plugin_api.delete_project_session(
         "p1", "stored-1", profile="writer", connection_id="local"
@@ -636,7 +823,8 @@ def test_delete_session_unbinds_stored_and_runtime_ids(monkeypatch, tmp_path: Pa
 
 
 def test_rebinding_then_delete_revokes_superseded_runtime_alias(
-    monkeypatch, tmp_path: Path,
+    monkeypatch,
+    tmp_path: Path,
 ) -> None:
     plugin_api, state, _ = _ready_runtime(monkeypatch, tmp_path)
     base = {
@@ -651,7 +839,10 @@ def test_rebinding_then_delete_revokes_superseded_runtime_alias(
     permissions = _request_state(plugin_api).permissions
     assert permissions.bound_scope("runtime-1") is None
     assert permissions.bound_scope("runtime-2").project_id == "p1"
-    assert plugin_api.get_project_tree("p1", **_scope("runtime-2"))["project"]["id"] == "p1"
+    assert (
+        plugin_api.get_project_tree("p1", **_scope("runtime-2"))["project"]["id"]
+        == "p1"
+    )
     _assert_http_error(
         lambda: plugin_api.get_project_tree("p1", **_scope("runtime-1")),
         403,
@@ -668,7 +859,8 @@ def test_rebinding_then_delete_revokes_superseded_runtime_alias(
 
 
 def test_rebinding_keeps_alias_referenced_by_another_durable_record(
-    monkeypatch, tmp_path: Path,
+    monkeypatch,
+    tmp_path: Path,
 ) -> None:
     plugin_api, state, _ = _ready_runtime(monkeypatch, tmp_path)
     common = {
@@ -676,21 +868,27 @@ def test_rebinding_keeps_alias_referenced_by_another_durable_record(
         "connection_id": "local",
         "project_id": "p1",
     }
-    plugin_api.bind_session({
-        **common,
-        "stored_session_id": "stored-1",
-        "runtime_session_id": "runtime-old",
-    })
-    plugin_api.bind_session({
-        **common,
-        "stored_session_id": "stored-2",
-        "runtime_session_id": "runtime-shared",
-    })
-    plugin_api.bind_session({
-        **common,
-        "stored_session_id": "stored-1",
-        "runtime_session_id": "runtime-shared",
-    })
+    plugin_api.bind_session(
+        {
+            **common,
+            "stored_session_id": "stored-1",
+            "runtime_session_id": "runtime-old",
+        }
+    )
+    plugin_api.bind_session(
+        {
+            **common,
+            "stored_session_id": "stored-2",
+            "runtime_session_id": "runtime-shared",
+        }
+    )
+    plugin_api.bind_session(
+        {
+            **common,
+            "stored_session_id": "stored-1",
+            "runtime_session_id": "runtime-shared",
+        }
+    )
 
     permissions = _request_state(plugin_api).permissions
     assert permissions.bound_scope("runtime-old") is None
@@ -700,9 +898,10 @@ def test_rebinding_keeps_alias_referenced_by_another_durable_record(
         "p1", "stored-1", profile="writer", connection_id="local"
     )
 
-    assert _request_state(plugin_api).permissions.bound_scope(
-        "runtime-shared"
-    ).project_id == "p1"
+    assert (
+        _request_state(plugin_api).permissions.bound_scope("runtime-shared").project_id
+        == "p1"
+    )
 
     plugin_api.delete_project_session(
         "p1", "stored-2", profile="writer", connection_id="local"
@@ -712,7 +911,8 @@ def test_rebinding_keeps_alias_referenced_by_another_durable_record(
 
 
 def test_registry_persist_failure_does_not_leave_permission_aliases(
-    monkeypatch, tmp_path: Path,
+    monkeypatch,
+    tmp_path: Path,
 ) -> None:
     plugin_api, state, _ = _ready_runtime(monkeypatch, tmp_path)
     # Patch the class: every request re-prepares fresh registry/gate instances.
@@ -723,27 +923,35 @@ def test_registry_persist_failure_does_not_leave_permission_aliases(
 
     monkeypatch.setattr(type(state.sessions), "_persist", fail_persist)
 
-    with pytest.raises(store_module.SessionBindingStoreError, match="injected persistence failure"):
-        plugin_api.bind_session({
-            "stored_session_id": "stored-1",
-            "runtime_session_id": "runtime-1",
-            "profile": "writer",
-            "connection_id": "local",
-            "project_id": "p1",
-        })
+    with pytest.raises(
+        store_module.SessionBindingStoreError, match="injected persistence failure"
+    ):
+        plugin_api.bind_session(
+            {
+                "stored_session_id": "stored-1",
+                "runtime_session_id": "runtime-1",
+                "profile": "writer",
+                "connection_id": "local",
+                "project_id": "p1",
+            }
+        )
 
-    assert state.sessions.get(
-        stored_session_id="stored-1",
-        profile="writer",
-        connection_id="local",
-    ) is None
+    assert (
+        state.sessions.get(
+            stored_session_id="stored-1",
+            profile="writer",
+            connection_id="local",
+        )
+        is None
+    )
     permissions = _request_state(plugin_api).permissions
     assert permissions.bound_scope("stored-1") is None
     assert permissions.bound_scope("runtime-1") is None
 
 
 def test_permission_validation_failure_leaves_registry_unchanged(
-    monkeypatch, tmp_path: Path,
+    monkeypatch,
+    tmp_path: Path,
 ) -> None:
     plugin_api, state, _ = _ready_runtime(monkeypatch, tmp_path)
     gate_type = type(state.permissions)
@@ -757,28 +965,34 @@ def test_permission_validation_failure_leaves_registry_unchanged(
     monkeypatch.setattr(gate_type, "require_bound_scope", fail_runtime_alias)
 
     _assert_http_error(
-        lambda: plugin_api.bind_session({
-            "stored_session_id": "stored-1",
-            "runtime_session_id": "runtime-1",
-            "profile": "writer",
-            "connection_id": "local",
-            "project_id": "p1",
-        }),
+        lambda: plugin_api.bind_session(
+            {
+                "stored_session_id": "stored-1",
+                "runtime_session_id": "runtime-1",
+                "profile": "writer",
+                "connection_id": "local",
+                "project_id": "p1",
+            }
+        ),
         403,
     )
 
-    assert state.sessions.get(
-        stored_session_id="stored-1",
-        profile="writer",
-        connection_id="local",
-    ) is None
+    assert (
+        state.sessions.get(
+            stored_session_id="stored-1",
+            profile="writer",
+            connection_id="local",
+        )
+        is None
+    )
     permissions = _request_state(plugin_api).permissions
     assert permissions.bound_scope("stored-1") is None
     assert permissions.bound_scope("runtime-1") is None
 
 
 def test_failed_rebind_restores_exact_previous_binding_and_aliases(
-    monkeypatch, tmp_path: Path,
+    monkeypatch,
+    tmp_path: Path,
 ) -> None:
     plugin_api, state, _ = _ready_runtime(monkeypatch, tmp_path)
     common = {
@@ -805,18 +1019,23 @@ def test_failed_rebind_restores_exact_previous_binding_and_aliases(
     )
 
     _assert_http_error(
-        lambda: plugin_api.bind_session({
-            **common,
-            "runtime_session_id": "runtime-new",
-        }),
+        lambda: plugin_api.bind_session(
+            {
+                **common,
+                "runtime_session_id": "runtime-new",
+            }
+        ),
         403,
     )
 
-    assert state.sessions.get(
-        stored_session_id="stored-1",
-        profile="writer",
-        connection_id="local",
-    ) == previous
+    assert (
+        state.sessions.get(
+            stored_session_id="stored-1",
+            profile="writer",
+            connection_id="local",
+        )
+        == previous
+    )
     permissions = _request_state(plugin_api).permissions
     assert permissions.bound_scope("stored-1").project_id == "p1"
     assert permissions.bound_scope("runtime-old").project_id == "p1"
@@ -825,12 +1044,17 @@ def test_failed_rebind_restores_exact_previous_binding_and_aliases(
 
 
 def test_new_request_state_sees_bind_and_unbind_immediately(
-    monkeypatch, tmp_path: Path,
+    monkeypatch,
+    tmp_path: Path,
 ) -> None:
     plugin_api, state, _ = _ready_runtime(monkeypatch, tmp_path)
-    plugin_api.bind_session({
-        **_scope("stored-1"), "stored_session_id": "stored-1", "project_id": "p1",
-    })
+    plugin_api.bind_session(
+        {
+            **_scope("stored-1"),
+            "stored_session_id": "stored-1",
+            "project_id": "p1",
+        }
+    )
 
     # A held registry instance and every later request both reload the file.
     assert (
@@ -866,7 +1090,9 @@ def test_new_request_state_sees_bind_and_unbind_immediately(
     )
 
 
-def test_locked_scope_allows_bind_summary_lazy_read_and_confirmed_save(monkeypatch, tmp_path: Path) -> None:
+def test_locked_scope_allows_bind_summary_lazy_read_and_confirmed_save(
+    monkeypatch, tmp_path: Path
+) -> None:
     plugin_api, _, repository = _ready_runtime(monkeypatch, tmp_path)
     scope = _scope()
 
@@ -877,7 +1103,12 @@ def test_locked_scope_allows_bind_summary_lazy_read_and_confirmed_save(monkeypat
     saved = plugin_api.save_chapter(
         "p1",
         "ch1",
-        {**scope, "content": "confirmed draft", "expected_version": "v1", "confirmed": True},
+        {
+            **scope,
+            "content": "confirmed draft",
+            "expected_version": "v1",
+            "confirmed": True,
+        },
     )
 
     assert projects == {"projects": [asdict(repository.project)]}
@@ -896,7 +1127,12 @@ def test_unbound_save_is_rejected(monkeypatch, tmp_path: Path) -> None:
         lambda: plugin_api.save_chapter(
             "p1",
             "ch1",
-            {**_scope("unbound"), "content": "x", "expected_version": "v1", "confirmed": True},
+            {
+                **_scope("unbound"),
+                "content": "x",
+                "expected_version": "v1",
+                "confirmed": True,
+            },
         ),
         403,
     )
@@ -923,9 +1159,12 @@ def _write_yaml(path: Path, data: dict) -> None:
 
 
 def _settings_node(raw: dict) -> dict:
-    node = raw.setdefault("plugins", {}).setdefault("entries", {}).setdefault(
-        PLUGIN_ID, {}
-    ).setdefault("settings", {})
+    node = (
+        raw.setdefault("plugins", {})
+        .setdefault("entries", {})
+        .setdefault(PLUGIN_ID, {})
+        .setdefault("settings", {})
+    )
     return node
 
 
@@ -947,10 +1186,12 @@ def prepared_homes(monkeypatch, tmp_path: Path):
     lab = _build_profile_lab(monkeypatch, tmp_path, copy_root)
     select_story_target(copy_root, lab.default_home, "writer", str(lab.vault))
     api_name = f"hermes_dashboard_plugin_story-construction-prepare-{tmp_path.name}"
-    lab.dashboard = _load_file_module(api_name, copy_root / "dashboard" / "plugin_api.py")
-    lab.backend_name = "hermes_story_api_" + sha256(
-        str(copy_root.resolve()).encode()
-    ).hexdigest()[:16]
+    lab.dashboard = _load_file_module(
+        api_name, copy_root / "dashboard" / "plugin_api.py"
+    )
+    lab.backend_name = (
+        "hermes_story_api_" + sha256(str(copy_root.resolve()).encode()).hexdigest()[:16]
+    )
     yield lab
     sys.modules.pop(api_name, None)
     for name in tuple(sys.modules):
@@ -961,23 +1202,29 @@ def prepared_homes(monkeypatch, tmp_path: Path):
 def test_dashboard_prepares_without_gateway_register(prepared_homes):
     dashboard, vault = prepared_homes.dashboard, prepared_homes.vault
     before = tuple(sys.path)
-    assert dashboard.status()['code'] == 'ready'
-    response = dashboard.create_project({
-        'profile': 'writer', 'connection_id': 'local', 'name': 'Novel', 'slug': 'novel'
-    })
-    assert response['tree']['project']['id'] == 'novel'
-    assert (vault / 'novel').is_dir()
+    assert dashboard.status()["code"] == "ready"
+    response = dashboard.create_project(
+        {
+            "profile": "writer",
+            "connection_id": "local",
+            "name": "Novel",
+            "slug": "novel",
+        }
+    )
+    assert response["tree"]["project"]["id"] == "novel"
+    assert (vault / "novel").is_dir()
     assert tuple(sys.path) == before
 
 
 def test_status_reports_specific_missing_agent(prepared_homes):
     shutil.rmtree(prepared_homes.target_plugin_root)
-    assert prepared_homes.dashboard.status()['code'] == 'agent_not_installed'
+    assert prepared_homes.dashboard.status()["code"] == "agent_not_installed"
     _assert_http_error(
-        lambda: prepared_homes.dashboard.create_project({
-            'profile': 'writer', 'connection_id': 'local', 'name': 'Novel'
-        }),
-        503, 'agent_not_installed',
+        lambda: prepared_homes.dashboard.create_project(
+            {"profile": "writer", "connection_id": "local", "name": "Novel"}
+        ),
+        503,
+        "agent_not_installed",
     )
 
 
@@ -1020,7 +1267,7 @@ def _arrange_unreadable_package_sources(homes, monkeypatch):
 
 def _arrange_missing_settings(homes, monkeypatch):
     (homes.target_home / "config.yaml").write_text(
-        "plugins:\n  enabled:\n" f"    - {PLUGIN_ID}\n", encoding="utf-8"
+        f"plugins:\n  enabled:\n    - {PLUGIN_ID}\n", encoding="utf-8"
     )
 
 
@@ -1054,7 +1301,11 @@ SETUP_CASES = [
     ("not_enabled", _arrange_not_enabled, "agent_not_enabled"),
     ("version_mismatch", _arrange_version_mismatch, "version_mismatch"),
     ("code_drift", _arrange_code_drift, "version_mismatch"),
-    ("missing_package_sources", _arrange_missing_package_sources, "agent_not_installed"),
+    (
+        "missing_package_sources",
+        _arrange_missing_package_sources,
+        "agent_not_installed",
+    ),
     ("missing_settings", _arrange_missing_settings, "configuration_incomplete"),
     ("missing_shared_vault", _arrange_missing_shared_vault, "configuration_incomplete"),
     ("vault_mismatch", _arrange_vault_mismatch, "vault_mismatch"),
@@ -1067,25 +1318,36 @@ SETUP_CASES = [
     "name, arrange, code", SETUP_CASES, ids=[case[0] for case in SETUP_CASES]
 )
 def test_status_reports_specific_setup_failures(
-    prepared_homes, monkeypatch, name, arrange, code,
+    prepared_homes,
+    monkeypatch,
+    name,
+    arrange,
+    code,
 ):
     arrange(prepared_homes, monkeypatch)
     assert prepared_homes.dashboard.status()["code"] == code
     _assert_http_error(
-        lambda: prepared_homes.dashboard.create_project({
-            "profile": "writer", "connection_id": "local", "name": "Novel",
-        }),
-        503, code,
+        lambda: prepared_homes.dashboard.create_project(
+            {
+                "profile": "writer",
+                "connection_id": "local",
+                "name": "Novel",
+            }
+        ),
+        503,
+        code,
     )
 
 
 def test_put_settings_updates_config_without_accepting_hermes_home(prepared_homes):
     dashboard = prepared_homes.dashboard
-    response = dashboard.update_settings({
-        "profile": "other",
-        "vault_root": str(prepared_homes.vault),
-        "hermes_home": str(prepared_homes.default_home.parent / "evil-home"),
-    })
+    response = dashboard.update_settings(
+        {
+            "profile": "other",
+            "vault_root": str(prepared_homes.vault),
+            "hermes_home": str(prepared_homes.default_home.parent / "evil-home"),
+        }
+    )
 
     assert response["ready"] is True
     assert response["locked_profile"] == "other"
@@ -1117,32 +1379,90 @@ def _arrange_managed_system(homes, monkeypatch):
 SETTINGS_ERROR_CASES = [
     # PUT /settings error semantics: invalid input -> 422, config or
     # profile-switch conflict -> 409, service/target not ready -> 503.
-    ("invalid_profile_name", 422, "profile_invalid", None,
-     lambda homes, tmp_path: {"profile": "../writer"}),
-    ("first_selection_without_vault", 422, "configuration_incomplete", _arrange_no_stored_vault,
-     lambda homes, tmp_path: {"profile": "writer"}),
-    ("installed_versions_conflict", 409, "version_mismatch",
-     lambda homes, monkeypatch, tmp_path: _arrange_version_mismatch(homes, monkeypatch),
-     lambda homes, tmp_path: {"profile": "writer", "vault_root": str(homes.vault)}),
-    ("installed_code_conflict", 409, "version_mismatch",
-     lambda homes, monkeypatch, tmp_path: _arrange_code_drift(homes, monkeypatch),
-     lambda homes, tmp_path: {"profile": "writer", "vault_root": str(homes.vault)}),
-    ("package_sources_missing", 503, "agent_not_installed",
-     lambda homes, monkeypatch, tmp_path: _arrange_missing_package_sources(homes, monkeypatch),
-     lambda homes, tmp_path: {"profile": "writer", "vault_root": str(homes.vault)}),
-    ("package_sources_unreadable", 503, "agent_not_installed",
-     lambda homes, monkeypatch, tmp_path: _arrange_unreadable_package_sources(homes, monkeypatch),
-     lambda homes, tmp_path: {"profile": "writer", "vault_root": str(homes.vault)}),
-    ("managed_config_conflict", 409, "managed_config",
-     lambda homes, monkeypatch, tmp_path: _arrange_managed_system(homes, monkeypatch),
-     lambda homes, tmp_path: {"profile": "writer", "vault_root": str(homes.vault)}),
-    ("unknown_profile_not_ready", 503, "profile_not_found", None,
-     lambda homes, tmp_path: {"profile": "ghost-profile", "vault_root": str(homes.vault)}),
-    ("agent_disabled_not_ready", 503, "agent_not_enabled",
-     lambda homes, monkeypatch, tmp_path: _arrange_not_enabled(homes, monkeypatch),
-     lambda homes, tmp_path: {"profile": "writer", "vault_root": str(homes.vault)}),
-    ("vault_directory_missing", 503, "vault_not_directory", None,
-     lambda homes, tmp_path: {"profile": "other", "vault_root": str(tmp_path / "no-such-vault")}),
+    (
+        "invalid_profile_name",
+        422,
+        "profile_invalid",
+        None,
+        lambda homes, tmp_path: {"profile": "../writer"},
+    ),
+    (
+        "first_selection_without_vault",
+        422,
+        "configuration_incomplete",
+        _arrange_no_stored_vault,
+        lambda homes, tmp_path: {"profile": "writer"},
+    ),
+    (
+        "installed_versions_conflict",
+        409,
+        "version_mismatch",
+        lambda homes, monkeypatch, tmp_path: _arrange_version_mismatch(
+            homes, monkeypatch
+        ),
+        lambda homes, tmp_path: {"profile": "writer", "vault_root": str(homes.vault)},
+    ),
+    (
+        "installed_code_conflict",
+        409,
+        "version_mismatch",
+        lambda homes, monkeypatch, tmp_path: _arrange_code_drift(homes, monkeypatch),
+        lambda homes, tmp_path: {"profile": "writer", "vault_root": str(homes.vault)},
+    ),
+    (
+        "package_sources_missing",
+        503,
+        "agent_not_installed",
+        lambda homes, monkeypatch, tmp_path: _arrange_missing_package_sources(
+            homes, monkeypatch
+        ),
+        lambda homes, tmp_path: {"profile": "writer", "vault_root": str(homes.vault)},
+    ),
+    (
+        "package_sources_unreadable",
+        503,
+        "agent_not_installed",
+        lambda homes, monkeypatch, tmp_path: _arrange_unreadable_package_sources(
+            homes, monkeypatch
+        ),
+        lambda homes, tmp_path: {"profile": "writer", "vault_root": str(homes.vault)},
+    ),
+    (
+        "managed_config_conflict",
+        409,
+        "managed_config",
+        lambda homes, monkeypatch, tmp_path: _arrange_managed_system(
+            homes, monkeypatch
+        ),
+        lambda homes, tmp_path: {"profile": "writer", "vault_root": str(homes.vault)},
+    ),
+    (
+        "unknown_profile_not_ready",
+        503,
+        "profile_not_found",
+        None,
+        lambda homes, tmp_path: {
+            "profile": "ghost-profile",
+            "vault_root": str(homes.vault),
+        },
+    ),
+    (
+        "agent_disabled_not_ready",
+        503,
+        "agent_not_enabled",
+        lambda homes, monkeypatch, tmp_path: _arrange_not_enabled(homes, monkeypatch),
+        lambda homes, tmp_path: {"profile": "writer", "vault_root": str(homes.vault)},
+    ),
+    (
+        "vault_directory_missing",
+        503,
+        "vault_not_directory",
+        None,
+        lambda homes, tmp_path: {
+            "profile": "other",
+            "vault_root": str(tmp_path / "no-such-vault"),
+        },
+    ),
 ]
 
 
@@ -1152,23 +1472,39 @@ SETTINGS_ERROR_CASES = [
     ids=[case[0] for case in SETTINGS_ERROR_CASES],
 )
 def test_put_settings_maps_setup_errors_to_http_semantics(
-    prepared_homes, monkeypatch, tmp_path, name, status, code, arrange, body,
+    prepared_homes,
+    monkeypatch,
+    tmp_path,
+    name,
+    status,
+    code,
+    arrange,
+    body,
 ):
     if arrange is not None:
         arrange(prepared_homes, monkeypatch, tmp_path)
     _assert_http_error(
-        lambda: prepared_homes.dashboard.update_settings(body(prepared_homes, tmp_path)),
-        status, code,
+        lambda: prepared_homes.dashboard.update_settings(
+            body(prepared_homes, tmp_path)
+        ),
+        status,
+        code,
     )
 
 
-def test_put_settings_failure_keeps_status_as_status_object(prepared_homes, monkeypatch):
+def test_put_settings_failure_keeps_status_as_status_object(
+    prepared_homes, monkeypatch
+):
     _arrange_version_mismatch(prepared_homes, monkeypatch)
     _assert_http_error(
-        lambda: prepared_homes.dashboard.update_settings({
-            "profile": "writer", "vault_root": str(prepared_homes.vault),
-        }),
-        409, "version_mismatch",
+        lambda: prepared_homes.dashboard.update_settings(
+            {
+                "profile": "writer",
+                "vault_root": str(prepared_homes.vault),
+            }
+        ),
+        409,
+        "version_mismatch",
     )
     # GET /status keeps returning its status object for the known setup error.
     status = prepared_homes.dashboard.status()
@@ -1204,9 +1540,14 @@ def test_switch_cannot_commit_while_create_holds_guard(prepared_homes, monkeypat
     def run_create() -> None:
         try:
             barrier.wait(timeout=10)
-            results["create"] = dashboard.create_project({
-                "profile": "writer", "connection_id": "local", "name": "Novel", "slug": "novel",
-            })
+            results["create"] = dashboard.create_project(
+                {
+                    "profile": "writer",
+                    "connection_id": "local",
+                    "name": "Novel",
+                    "slug": "novel",
+                }
+            )
         except BaseException as exc:  # noqa: BLE001  re-raised on the main thread
             errors.append(exc)
         finally:
@@ -1241,7 +1582,8 @@ def test_switch_cannot_commit_while_create_holds_guard(prepared_homes, monkeypat
 
 
 def test_guard_rejects_write_when_selection_already_switched(
-    monkeypatch, tmp_path: Path,
+    monkeypatch,
+    tmp_path: Path,
 ) -> None:
     plugin_api, state, repository = _ready_runtime(monkeypatch, tmp_path)
     default_home = tmp_path / "hermes"
@@ -1257,49 +1599,79 @@ def test_guard_rejects_write_when_selection_already_switched(
     monkeypatch.setattr(gate_type, "require_profile", require_then_switch)
 
     _assert_http_error(
-        lambda: plugin_api.create_project({
-            "profile": "writer", "connection_id": "local", "name": "Novel", "slug": "novel",
-        }),
+        lambda: plugin_api.create_project(
+            {
+                "profile": "writer",
+                "connection_id": "local",
+                "name": "Novel",
+                "slug": "novel",
+            }
+        ),
         503,
         "profile_switched",
     )
     assert repository.created == []
 
 
-def test_delete_project_needs_the_typed_name_and_unbinds_every_session(monkeypatch, tmp_path: Path) -> None:
+def test_delete_project_needs_the_typed_name_and_unbinds_every_session(
+    monkeypatch, tmp_path: Path
+) -> None:
     plugin_api, state, repository = _ready_runtime(monkeypatch, tmp_path)
-    for stored, project, connection in (("a", "p1", "local"), ("b", "p1", "remote"), ("c", "p2", "local")):
+    for stored, project, connection in (
+        ("a", "p1", "local"),
+        ("b", "p1", "remote"),
+        ("c", "p2", "local"),
+    ):
         state.sessions.bind(
-            stored_session_id=stored, profile="writer", connection_id=connection, project_id=project
+            stored_session_id=stored,
+            profile="writer",
+            connection_id=connection,
+            project_id=project,
         )
     scope = {"profile": "writer", "connection_id": "local"}
 
     _assert_http_error(lambda: plugin_api.delete_project("p1", **scope), 422)
-    _assert_http_error(lambda: plugin_api.delete_project("p1", **scope, confirm_name="Other"), 422)
+    _assert_http_error(
+        lambda: plugin_api.delete_project("p1", **scope, confirm_name="Other"), 422
+    )
     assert repository.trashed == []
 
     result = plugin_api.delete_project("p1", **scope, confirm_name=" Novel ")
 
     assert result == {
-        "trashed": True, "project_id": "p1",
-        "trash_folder": "p1-20260101-000000", "unbound_sessions": 2,
-        "hermes_project_id": None, "closed_proposals": 0,
+        "trashed": True,
+        "project_id": "p1",
+        "trash_folder": "p1-20260101-000000",
+        "unbound_sessions": 2,
+        "hermes_project_id": None,
+        "closed_proposals": 0,
     }
     assert repository.trashed == ["p1"]
     assert [row.stored_session_id for row in state.sessions.all()] == ["c"]
 
 
-def test_delete_project_checks_profile_scope_and_existence(monkeypatch, tmp_path: Path) -> None:
+def test_delete_project_checks_profile_scope_and_existence(
+    monkeypatch, tmp_path: Path
+) -> None:
     plugin_api, _, repository = _ready_runtime(monkeypatch, tmp_path)
 
     _assert_http_error(
-        lambda: plugin_api.delete_project("p1", profile="other", connection_id="local", confirm_name="Novel"),
-        403, "profile_lock_mismatch",
+        lambda: plugin_api.delete_project(
+            "p1", profile="other", connection_id="local", confirm_name="Novel"
+        ),
+        403,
+        "profile_lock_mismatch",
     )
     _assert_http_error(
-        lambda: plugin_api.delete_project("missing", profile="writer", connection_id="local", confirm_name="x"), 404
+        lambda: plugin_api.delete_project(
+            "missing", profile="writer", connection_id="local", confirm_name="x"
+        ),
+        404,
     )
-    _assert_http_error(lambda: plugin_api.delete_project("p1", profile="writer", confirm_name="Novel"), 422)
+    _assert_http_error(
+        lambda: plugin_api.delete_project("p1", profile="writer", confirm_name="Novel"),
+        422,
+    )
     assert repository.trashed == []
 
 
@@ -1311,7 +1683,9 @@ def _set_terminal(state, text: str) -> None:
     config.write_text(config.read_text(encoding="utf-8") + text, encoding="utf-8")
 
 
-def test_workspace_folder_is_created_under_the_profile_when_nothing_is_configured(monkeypatch, tmp_path: Path) -> None:
+def test_workspace_folder_is_created_under_the_profile_when_nothing_is_configured(
+    monkeypatch, tmp_path: Path
+) -> None:
     plugin_api, state, _ = _ready_runtime(monkeypatch, tmp_path)
 
     result = plugin_api.ensure_project_workspace("p1", dict(SCOPE))
@@ -1323,7 +1697,9 @@ def test_workspace_folder_is_created_under_the_profile_when_nothing_is_configure
     assert again["created"] is False and again["folder"] == str(expected)
 
 
-def test_workspace_folder_follows_the_profile_terminal_cwd(monkeypatch, tmp_path: Path) -> None:
+def test_workspace_folder_follows_the_profile_terminal_cwd(
+    monkeypatch, tmp_path: Path
+) -> None:
     plugin_api, state, _ = _ready_runtime(monkeypatch, tmp_path)
     work = tmp_path / "work"
     work.mkdir()
@@ -1334,29 +1710,47 @@ def test_workspace_folder_follows_the_profile_terminal_cwd(monkeypatch, tmp_path
     assert result["folder"] == str((work / "story" / "p1").resolve())
 
 
-def test_workspace_refuses_an_ssh_terminal_without_creating_anything(monkeypatch, tmp_path: Path) -> None:
+def test_workspace_refuses_an_ssh_terminal_without_creating_anything(
+    monkeypatch, tmp_path: Path
+) -> None:
     plugin_api, state, _ = _ready_runtime(monkeypatch, tmp_path)
     _set_terminal(state, "terminal:\n  backend: ssh\n  cwd: /home/me\n")
 
     _assert_http_error(
-        lambda: plugin_api.ensure_project_workspace("p1", dict(SCOPE)), 409, "workspace_unsupported_backend"
+        lambda: plugin_api.ensure_project_workspace("p1", dict(SCOPE)),
+        409,
+        "workspace_unsupported_backend",
     )
     assert not (state.hermes_home / "story-workspaces").exists()
 
 
-def test_workspace_requests_check_scope_and_project(monkeypatch, tmp_path: Path) -> None:
+def test_workspace_requests_check_scope_and_project(
+    monkeypatch, tmp_path: Path
+) -> None:
     plugin_api, state, _ = _ready_runtime(monkeypatch, tmp_path)
 
     _assert_http_error(
-        lambda: plugin_api.ensure_project_workspace("p1", {**SCOPE, "profile": "other"}), 403, "profile_lock_mismatch"
+        lambda: plugin_api.ensure_project_workspace(
+            "p1", {**SCOPE, "profile": "other"}
+        ),
+        403,
+        "profile_lock_mismatch",
     )
-    _assert_http_error(lambda: plugin_api.ensure_project_workspace("missing", dict(SCOPE)), 404)
-    _assert_http_error(lambda: plugin_api.ensure_project_workspace("p1", {"profile": "writer"}), 422)
-    _assert_http_error(lambda: plugin_api.get_project_workspace("p1", profile="writer"), 422)
+    _assert_http_error(
+        lambda: plugin_api.ensure_project_workspace("missing", dict(SCOPE)), 404
+    )
+    _assert_http_error(
+        lambda: plugin_api.ensure_project_workspace("p1", {"profile": "writer"}), 422
+    )
+    _assert_http_error(
+        lambda: plugin_api.get_project_workspace("p1", profile="writer"), 422
+    )
     assert not (state.hermes_home / "story-workspaces").exists()
 
 
-def test_linking_remembers_the_hermes_project_and_survives_a_reread(monkeypatch, tmp_path: Path) -> None:
+def test_linking_remembers_the_hermes_project_and_survives_a_reread(
+    monkeypatch, tmp_path: Path
+) -> None:
     plugin_api, _, _ = _ready_runtime(monkeypatch, tmp_path)
     folder = plugin_api.ensure_project_workspace("p1", dict(SCOPE))["folder"]
 
@@ -1366,38 +1760,61 @@ def test_linking_remembers_the_hermes_project_and_survives_a_reread(monkeypatch,
     )["link"]
 
     assert linked["hermes_project_id"] == "p_abc" and linked["folder"] == folder
-    assert plugin_api.get_project_workspace("p1", **SCOPE)["link"]["hermes_project_id"] == "p_abc"
-    assert plugin_api.ensure_project_workspace("p1", dict(SCOPE))["link"]["hermes_project_id"] == "p_abc"
-    assert plugin_api.get_project_workspace("p1", profile="writer", connection_id="remote") == {"link": None}
+    assert (
+        plugin_api.get_project_workspace("p1", **SCOPE)["link"]["hermes_project_id"]
+        == "p_abc"
+    )
+    assert (
+        plugin_api.ensure_project_workspace("p1", dict(SCOPE))["link"][
+            "hermes_project_id"
+        ]
+        == "p_abc"
+    )
+    assert plugin_api.get_project_workspace(
+        "p1", profile="writer", connection_id="remote"
+    ) == {"link": None}
 
 
-def test_linking_only_accepts_the_projects_own_existing_folder(monkeypatch, tmp_path: Path) -> None:
+def test_linking_only_accepts_the_projects_own_existing_folder(
+    monkeypatch, tmp_path: Path
+) -> None:
     plugin_api, state, _ = _ready_runtime(monkeypatch, tmp_path)
     plugin_api.ensure_project_workspace("p1", dict(SCOPE))
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
     missing = state.hermes_home / "story-workspaces" / "other-project"
 
-    for folder in (str(elsewhere), str(missing), str(state.hermes_home / "story-workspaces")):
+    for folder in (
+        str(elsewhere),
+        str(missing),
+        str(state.hermes_home / "story-workspaces"),
+    ):
         _assert_http_error(
             lambda folder=folder: plugin_api.link_project_workspace(
                 "p1", {**SCOPE, "hermes_project_id": "p_abc", "folder": folder}
             ),
-            422, "workspace_folder_mismatch",
+            422,
+            "workspace_folder_mismatch",
         )
     assert plugin_api.get_project_workspace("p1", **SCOPE) == {"link": None}
 
 
-def test_deleting_a_project_archives_its_link_and_reports_the_hermes_project(monkeypatch, tmp_path: Path) -> None:
+def test_deleting_a_project_archives_its_link_and_reports_the_hermes_project(
+    monkeypatch, tmp_path: Path
+) -> None:
     plugin_api, _, _ = _ready_runtime(monkeypatch, tmp_path)
     folder = plugin_api.ensure_project_workspace("p1", dict(SCOPE))["folder"]
-    plugin_api.link_project_workspace("p1", {**SCOPE, "hermes_project_id": "p_abc", "folder": folder})
+    plugin_api.link_project_workspace(
+        "p1", {**SCOPE, "hermes_project_id": "p_abc", "folder": folder}
+    )
 
     result = plugin_api.delete_project("p1", **SCOPE, confirm_name="Novel")
 
     assert result["hermes_project_id"] == "p_abc"
     assert Path(folder).is_dir()  # drafts in the workspace are never touched
-    link = _request_workspace_registry(plugin_api).get(profile="writer", connection_id="local", project_id="p1")
+    link = _request_workspace_registry(plugin_api).get(
+        profile="writer", connection_id="local", project_id="p1"
+    )
     assert link is not None and link.archived is True
 
 

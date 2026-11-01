@@ -105,7 +105,9 @@ def workspace_state_path(hermes_home: Path) -> Path:
     return hermes_home / "plugin-data" / "story-construction" / "workspaces.json"
 
 
-def runtime_state_for(plugin_root: str | Path, hermes_home: str | Path) -> StoryRuntimeState | None:
+def runtime_state_for(
+    plugin_root: str | Path, hermes_home: str | Path
+) -> StoryRuntimeState | None:
     key = _runtime_key(plugin_root, hermes_home)
     with _RUNTIME_STATES_LOCK:
         return _RUNTIME_STATES.get(key)
@@ -123,7 +125,9 @@ def prepare_story_runtime(
     plugin_path = canonical_path(plugin_root)
     home_error = False
     try:
-        current_path = canonical_path(current_home if current_home is not None else get_hermes_home())
+        current_path = canonical_path(
+            current_home if current_home is not None else get_hermes_home()
+        )
     except (ImportError, OSError, RuntimeError, TypeError, ValueError):
         current_path = plugin_path / ".runtime-home-unavailable"
         home_error = True
@@ -164,19 +168,27 @@ def prepare_story_runtime(
         "home_matches": False,
     }
     if not locked_profile or not vault_text or not locked_home_text:
-        state.reset(StoryRuntimeStatus(code="configuration_incomplete", ready=False, **base))
+        state.reset(
+            StoryRuntimeStatus(code="configuration_incomplete", ready=False, **base)
+        )
         return _publish_state(key, state)
     if home_error:
-        state.reset(StoryRuntimeStatus(code="runtime_home_unavailable", ready=False, **base))
+        state.reset(
+            StoryRuntimeStatus(code="runtime_home_unavailable", ready=False, **base)
+        )
         return _publish_state(key, state)
 
     try:
         locked_home = canonical_path(locked_home_text)
     except (OSError, TypeError, ValueError):
-        state.reset(StoryRuntimeStatus(code="configuration_incomplete", ready=False, **base))
+        state.reset(
+            StoryRuntimeStatus(code="configuration_incomplete", ready=False, **base)
+        )
         return _publish_state(key, state)
     if locked_home != current_path:
-        state.reset(StoryRuntimeStatus(code="hermes_home_mismatch", ready=False, **base))
+        state.reset(
+            StoryRuntimeStatus(code="hermes_home_mismatch", ready=False, **base)
+        )
         return _publish_state(key, state)
     base["home_matches"] = True
     if vault_path is None or not vault_is_directory:

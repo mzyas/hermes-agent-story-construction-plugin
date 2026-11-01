@@ -10,7 +10,12 @@ from typing import Any, Callable, Mapping
 from .approval_gate import SessionGrants
 from .edits import EditError
 from .permissions import SessionScope, StoryPermissionGate, scope_from_tool_kwargs
-from .proposal_service import ProposalError, StoryProposalService, read_record, record_summaries
+from .proposal_service import (
+    ProposalError,
+    StoryProposalService,
+    read_record,
+    record_summaries,
+)
 from .proposal_store import ProposalStoreError
 from .repository import NotFoundError, RepositoryError, StoryRepository
 from .session_lineage import ResolvedSession, SessionLineage
@@ -28,13 +33,25 @@ GET_RECORD_TOOL = "story.get_record"
 # The project of these tools comes from the session's binding, never from the model.
 SESSION_RESOLVED_TOOLS = frozenset(
     {
-        SESSION_PROJECT_TOOL, PROPOSE_EDIT_TOOL, PROPOSE_NEW_TOOL, APPLY_EDIT_TOOL,
-        PROPOSE_RENAME_TOOL, PROPOSE_DELETE_TOOL, LIST_RECORDS_TOOL, GET_RECORD_TOOL,
+        SESSION_PROJECT_TOOL,
+        PROPOSE_EDIT_TOOL,
+        PROPOSE_NEW_TOOL,
+        APPLY_EDIT_TOOL,
+        PROPOSE_RENAME_TOOL,
+        PROPOSE_DELETE_TOOL,
+        LIST_RECORDS_TOOL,
+        GET_RECORD_TOOL,
     }
 )
 # A delegated subagent may read the project but never propose or apply a change.
 WRITE_TOOLS = frozenset(
-    {PROPOSE_EDIT_TOOL, PROPOSE_NEW_TOOL, PROPOSE_RENAME_TOOL, PROPOSE_DELETE_TOOL, APPLY_EDIT_TOOL}
+    {
+        PROPOSE_EDIT_TOOL,
+        PROPOSE_NEW_TOOL,
+        PROPOSE_RENAME_TOOL,
+        PROPOSE_DELETE_TOOL,
+        APPLY_EDIT_TOOL,
+    }
 )
 DEFAULT_SEARCH_LIMIT = 20
 MAX_SEARCH_LIMIT = 50
@@ -58,7 +75,9 @@ class StoryToolService:
         self._permissions_provider = permissions_provider
         self._proposals_provider = proposals_provider
 
-    def handle(self, name: str, args: Mapping[str, Any] | None = None, **kwargs: Any) -> str:
+    def handle(
+        self, name: str, args: Mapping[str, Any] | None = None, **kwargs: Any
+    ) -> str:
         payload = dict(args or {})
         project_id = str(payload.get("project_id") or "").strip()
         resolve_from_session = name in SESSION_RESOLVED_TOOLS
@@ -72,7 +91,9 @@ class StoryToolService:
                 else self.permissions
             )
             # A compressed or delegated session acts as the session it came from.
-            resolved = resolve_session(self.lineage, gate, scope_kwargs.get("session_id"))
+            resolved = resolve_session(
+                self.lineage, gate, scope_kwargs.get("session_id")
+            )
             if resolved is not None:
                 scope_kwargs["session_id"] = resolved.session_id
                 if resolved.delegated and name in WRITE_TOOLS:
@@ -109,7 +130,9 @@ class StoryToolService:
         except RepositoryError as exc:
             return _error("repository_error", str(exc), project_id=project_id)
         except (ProposalError, EditError) as exc:
-            extra = {k: v for k, v in exc.as_dict().items() if k not in ("code", "message")}
+            extra = {
+                k: v for k, v in exc.as_dict().items() if k not in ("code", "message")
+            }
             return _error(exc.code, str(exc), project_id=project_id, **extra)
         except ProposalStoreError:
             return _error(
@@ -118,7 +141,11 @@ class StoryToolService:
         except (KeyError, TypeError, ValueError) as exc:
             return _error("invalid_request", str(exc), project_id=project_id)
         except Exception as exc:  # Tool handlers must return structured failures.
-            return _error("internal_error", f"story tool failed: {type(exc).__name__}", project_id=project_id)
+            return _error(
+                "internal_error",
+                f"story tool failed: {type(exc).__name__}",
+                project_id=project_id,
+            )
 
     def handler(self, name: str) -> Callable[..., str]:
         return partial(self.handle, name)
@@ -127,15 +154,23 @@ class StoryToolService:
         self, name: str, project_id: str, payload: dict[str, Any], scope: SessionScope
     ) -> Any:
         if name in (
-            PROPOSE_EDIT_TOOL, PROPOSE_NEW_TOOL, PROPOSE_RENAME_TOOL, PROPOSE_DELETE_TOOL, APPLY_EDIT_TOOL
+            PROPOSE_EDIT_TOOL,
+            PROPOSE_NEW_TOOL,
+            PROPOSE_RENAME_TOOL,
+            PROPOSE_DELETE_TOOL,
+            APPLY_EDIT_TOOL,
         ):
             return self._proposal_tool(name, project_id, payload, scope)
         if name == LIST_RECORDS_TOOL:
-            return record_summaries(self.repository, project_id, _required(payload, "target_type"))
+            return record_summaries(
+                self.repository, project_id, _required(payload, "target_type")
+            )
         if name == GET_RECORD_TOOL:
             return read_record(
-                self.repository, project_id,
-                _required(payload, "target_type"), _required(payload, "target_id"),
+                self.repository,
+                project_id,
+                _required(payload, "target_type"),
+                _required(payload, "target_id"),
             )
         if name == SESSION_PROJECT_TOOL:
             tree = self.repository.get_project(project_id)
@@ -154,24 +189,34 @@ class StoryToolService:
                 self.repository.search_world_info(project_id, _query(payload)), payload
             )
         if name == "story.get_character":
-            return self.repository.get_character(project_id, _required(payload, "character_id"))
+            return self.repository.get_character(
+                project_id, _required(payload, "character_id")
+            )
         if name == "story.list_volumes":
             return self.repository.list_volumes(project_id)
         if name == "story.list_chapters":
-            chapters = self.repository.list_chapters(project_id, payload.get("volume_id") or None)
+            chapters = self.repository.list_chapters(
+                project_id, payload.get("volume_id") or None
+            )
             return [_chapter_summary(chapter) for chapter in chapters]
         if name == "story.get_chapter":
-            return self.repository.get_chapter(project_id, _required(payload, "chapter_id"))
+            return self.repository.get_chapter(
+                project_id, _required(payload, "chapter_id")
+            )
         if name == "story.search_notes":
-            return _bounded(self.repository.search_notes(project_id, _query(payload)), payload)
+            return _bounded(
+                self.repository.search_notes(project_id, _query(payload)), payload
+            )
         if name == "story.search_reference_notes":
             return _bounded(
-                self.repository.search_reference_notes(project_id, _query(payload)), payload
+                self.repository.search_reference_notes(project_id, _query(payload)),
+                payload,
             )
         raise ValueError(f"unknown story tool: {name}")
 
-
-    def _approve_in_chat(self, service: StoryProposalService, proposal_id: str, common: dict[str, Any]) -> None:
+    def _approve_in_chat(
+        self, service: StoryProposalService, proposal_id: str, common: dict[str, Any]
+    ) -> None:
         """Record the approval the person just gave in the chat.
 
         The pre_tool_call hook leaves a one-time grant when it sends this call to
@@ -193,7 +238,9 @@ class StoryToolService:
         self, name: str, project_id: str, payload: dict[str, Any], scope: SessionScope
     ) -> Any:
         if self._proposals_provider is None:
-            raise ProposalError("proposals_unavailable", "chapter proposals are not available")
+            raise ProposalError(
+                "proposals_unavailable", "chapter proposals are not available"
+            )
         service = self._proposals_provider()
         common = {
             "project_id": project_id,
@@ -209,9 +256,14 @@ class StoryToolService:
             target = _required(payload, "target_id")
             target_type = payload.get("target_type") or "chapter"
             if name == PROPOSE_DELETE_TOOL:
-                return service.propose_delete(target_type=target_type, target_id=target, **common)
+                return service.propose_delete(
+                    target_type=target_type, target_id=target, **common
+                )
             return service.propose_rename(
-                target_type=target_type, target_id=target, new_title=payload.get("new_title"), **common
+                target_type=target_type,
+                target_id=target,
+                new_title=payload.get("new_title"),
+                **common,
             )
         if name == PROPOSE_NEW_TOOL:
             return service.propose_new(
@@ -222,7 +274,9 @@ class StoryToolService:
                 content=payload.get("content"),
                 **common,
             )
-        target = str(payload.get("target_id") or payload.get("chapter_id") or "").strip()
+        target = str(
+            payload.get("target_id") or payload.get("chapter_id") or ""
+        ).strip()
         if not target:
             raise ValueError("target_id is required")
         return service.propose_edit(
@@ -243,8 +297,12 @@ def resolve_session(
     if not sid:
         return None
     if lineage is None:
-        return ResolvedSession(sid, False) if gate.bound_scope(sid) is not None else None
-    return lineage.resolve(sid, lambda candidate: gate.bound_scope(candidate) is not None)
+        return (
+            ResolvedSession(sid, False) if gate.bound_scope(sid) is not None else None
+        )
+    return lineage.resolve(
+        sid, lambda candidate: gate.bound_scope(candidate) is not None
+    )
 
 
 def _scope_from_gate(gate: StoryPermissionGate, **kwargs: Any) -> SessionScope:
@@ -299,11 +357,17 @@ def _chapter_summary(chapter: Any) -> dict[str, Any]:
 
 
 def _success(project_id: str, data: Any) -> str:
-    return json.dumps({"ok": True, "project_id": project_id, "data": _jsonable(data)}, ensure_ascii=False)
+    return json.dumps(
+        {"ok": True, "project_id": project_id, "data": _jsonable(data)},
+        ensure_ascii=False,
+    )
 
 
 def _error(code: str, message: str, **extra: Any) -> str:
-    return json.dumps({"ok": False, "error": {"code": code, "message": message}, **extra}, ensure_ascii=False)
+    return json.dumps(
+        {"ok": False, "error": {"code": code, "message": message}, **extra},
+        ensure_ascii=False,
+    )
 
 
 def _jsonable(value: Any) -> Any:

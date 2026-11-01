@@ -44,13 +44,23 @@ def test_worker_result_must_match_project_chapter_and_safe_source_refs() -> None
     validate_story_worker_result(valid, project_id="p1", chapter_id="ch1")
 
     with pytest.raises(ValueError, match="project_id"):
-        validate_story_worker_result({**valid, "project_id": "p2"}, project_id="p1", chapter_id="ch1")
+        validate_story_worker_result(
+            {**valid, "project_id": "p2"}, project_id="p1", chapter_id="ch1"
+        )
     with pytest.raises(ValueError, match="chapter_id"):
-        validate_story_worker_result({**valid, "chapter_id": "ch2"}, project_id="p1", chapter_id="ch1")
+        validate_story_worker_result(
+            {**valid, "chapter_id": "ch2"}, project_id="p1", chapter_id="ch1"
+        )
     with pytest.raises(ValueError, match="source_refs"):
-        validate_story_worker_result({**valid, "source_refs": ["../outside.md"]}, project_id="p1", chapter_id="ch1")
+        validate_story_worker_result(
+            {**valid, "source_refs": ["../outside.md"]},
+            project_id="p1",
+            chapter_id="ch1",
+        )
 
 
 def test_worker_result_requires_scope_fields() -> None:
     with pytest.raises(ValueError, match="project_id"):
-        validate_story_worker_result({"summary": "missing"}, project_id="p1", chapter_id=None)
+        validate_story_worker_result(
+            {"summary": "missing"}, project_id="p1", chapter_id=None
+        )

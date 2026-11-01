@@ -33,11 +33,14 @@ def test_binding_survives_registry_recreation(tmp_path: Path) -> None:
 
     restored = StorySessionRegistry(path, locked_profile="writer")
 
-    assert restored.get(
-        stored_session_id="stored-1",
-        profile="writer",
-        connection_id="local",
-    ).project_id == "novel"
+    assert (
+        restored.get(
+            stored_session_id="stored-1",
+            profile="writer",
+            connection_id="local",
+        ).project_id
+        == "novel"
+    )
     assert [
         row.stored_session_id
         for row in restored.list_for_project(
@@ -54,27 +57,36 @@ def test_bindings_are_isolated_a_b_a(tmp_path: Path) -> None:
     _bind(registry, profile="writer-a", connection="local")
     _bind(registry, profile="writer-b", connection="remote")
 
-    assert len(
-        registry.list_for_project(
-            project_id="novel",
-            profile="writer-a",
-            connection_id="local",
+    assert (
+        len(
+            registry.list_for_project(
+                project_id="novel",
+                profile="writer-a",
+                connection_id="local",
+            )
         )
-    ) == 1
-    assert len(
-        registry.list_for_project(
-            project_id="novel",
-            profile="writer-b",
-            connection_id="remote",
+        == 1
+    )
+    assert (
+        len(
+            registry.list_for_project(
+                project_id="novel",
+                profile="writer-b",
+                connection_id="remote",
+            )
         )
-    ) == 1
-    assert len(
-        registry.list_for_project(
-            project_id="novel",
-            profile="writer-a",
-            connection_id="local",
+        == 1
+    )
+    assert (
+        len(
+            registry.list_for_project(
+                project_id="novel",
+                profile="writer-a",
+                connection_id="local",
+            )
         )
-    ) == 1
+        == 1
+    )
     assert (
         registry.list_for_project(
             project_id="novel",
@@ -245,9 +257,7 @@ def test_threaded_binds_of_different_ids_keep_both(tmp_path: Path) -> None:
 
     assert not errors, errors
     final = StorySessionRegistry(path, locked_profile="writer")
-    assert {row.stored_session_id for row in final.all()} == {
-        f"s{i}" for i in range(8)
-    }
+    assert {row.stored_session_id for row in final.all()} == {f"s{i}" for i in range(8)}
 
 
 def test_threaded_same_alias_for_different_projects_keeps_one_winner(

@@ -7,7 +7,14 @@ from unittest.mock import Mock
 
 import pytest
 
-from story_construction_plugin.domain import Character, Chapter, Note, Project, Volume, WorldInfo
+from story_construction_plugin.domain import (
+    Character,
+    Chapter,
+    Note,
+    Project,
+    Volume,
+    WorldInfo,
+)
 from story_construction_plugin.permissions import SessionScope, StoryPermissionGate
 from story_construction_plugin.repository import ProjectTree
 from story_construction_plugin.runtime import permission_snapshot, prepare_story_runtime
@@ -61,12 +68,22 @@ class FakeRepository:
 
 def _service() -> StoryToolService:
     permissions = StoryPermissionGate({"p1": ("default", "local")})
-    permissions.bind_session(SessionScope("s", "desktop", "default", "local", "p1"), "p1")
+    permissions.bind_session(
+        SessionScope("s", "desktop", "default", "local", "p1"), "p1"
+    )
     return StoryToolService(FakeRepository(), permissions)
 
 
 def _call(service: StoryToolService, name: str, args: dict) -> dict:
-    raw = service.handle(name, args, session_id="s", source="desktop", profile="default", connection_id="local", project_id="p1")
+    raw = service.handle(
+        name,
+        args,
+        session_id="s",
+        source="desktop",
+        profile="default",
+        connection_id="local",
+        project_id="p1",
+    )
     return json.loads(raw)
 
 
@@ -100,7 +117,9 @@ def test_story_tools_return_structured_project_scoped_data() -> None:
     service = _service()
 
     project = _call(service, "story.get_project", {"project_id": "p1"})
-    character = _call(service, "story.get_character", {"project_id": "p1", "character_id": "c1"})
+    character = _call(
+        service, "story.get_character", {"project_id": "p1", "character_id": "c1"}
+    )
     chapters = _call(service, "story.list_chapters", {"project_id": "p1"})
 
     assert project["ok"] is True
@@ -113,9 +132,18 @@ def test_story_tools_return_structured_project_scoped_data() -> None:
 def test_missing_project_and_cross_project_reads_are_explicit_errors() -> None:
     service = _service()
 
-    missing = json.loads(service.handle("story.get_project", {}, session_id="s", source="desktop"))
+    missing = json.loads(
+        service.handle("story.get_project", {}, session_id="s", source="desktop")
+    )
     cross_project = json.loads(
-        service.handle("story.get_project", {"project_id": "p2"}, session_id="s", source="desktop", profile="default", connection_id="local")
+        service.handle(
+            "story.get_project",
+            {"project_id": "p2"},
+            session_id="s",
+            source="desktop",
+            profile="default",
+            connection_id="local",
+        )
     )
 
     assert missing["ok"] is False
@@ -129,7 +157,9 @@ def test_story_tool_rejects_profile_outside_runtime_lock() -> None:
         {"p1": ("writer", "local")},
         locked_profile="writer",
     )
-    permissions.bind_session(SessionScope("s", "desktop", "writer", "local", "p1"), "p1")
+    permissions.bind_session(
+        SessionScope("s", "desktop", "writer", "local", "p1"), "p1"
+    )
     service = StoryToolService(FakeRepository(), permissions)
 
     response = json.loads(
@@ -147,6 +177,7 @@ def test_story_tool_rejects_profile_outside_runtime_lock() -> None:
     assert response["error"]["code"] == "profile_lock_mismatch"
     assert "locked profile" in response["error"]["message"]
 
+
 def test_registration_exposes_the_story_toolset() -> None:
     calls = []
 
@@ -154,7 +185,9 @@ def test_registration_exposes_the_story_toolset() -> None:
         def register_tool(self, **kwargs):
             calls.append(kwargs)
 
-    register_story_tools(Context(), FakeRepository(), StoryPermissionGate({"p1": ("default", "local")}))
+    register_story_tools(
+        Context(), FakeRepository(), StoryPermissionGate({"p1": ("default", "local")})
+    )
 
     names = {call["name"] for call in calls}
     assert names == {
@@ -186,7 +219,9 @@ def test_registration_uses_hermes_function_schemas_and_preserves_parameters() ->
         def register_tool(self, **kwargs):
             calls.append(kwargs)
 
-    register_story_tools(Context(), FakeRepository(), StoryPermissionGate({"p1": ("default", "local")}))
+    register_story_tools(
+        Context(), FakeRepository(), StoryPermissionGate({"p1": ("default", "local")})
+    )
 
     registered = {call["name"]: call for call in calls}
     assert set(registered) == set(TOOL_SCHEMAS)
@@ -208,10 +243,13 @@ def test_registration_uses_hermes_function_schemas_and_preserves_parameters() ->
     assert len(descriptions) == len(TOOL_SCHEMAS)
 
 
-def test_gateway_sees_bind_and_unbind_without_reregister(tmp_path, ready_state, fake_repository):
+def test_gateway_sees_bind_and_unbind_without_reregister(
+    tmp_path, ready_state, fake_repository
+):
     state = ready_state
     service = StoryToolService(
-        fake_repository, state.permissions,
+        fake_repository,
+        state.permissions,
         permissions_provider=lambda: permission_snapshot(state),
     )
     writer = StorySessionRegistry(state.sessions.path, locked_profile="writer")
@@ -224,15 +262,20 @@ def test_gateway_sees_bind_and_unbind_without_reregister(tmp_path, ready_state, 
         project_id="p1",
     )
     kwargs = dict(session_id="runtime-1")
-    assert json.loads(service.handle("story.get_project", {"project_id": "p1"}, **kwargs))["ok"]
+    assert json.loads(
+        service.handle("story.get_project", {"project_id": "p1"}, **kwargs)
+    )["ok"]
     writer.unbind(stored_session_id="stored-1", profile="writer", connection_id="local")
-    assert not json.loads(service.handle("story.get_project", {"project_id": "p1"}, **kwargs))["ok"]
+    assert not json.loads(
+        service.handle("story.get_project", {"project_id": "p1"}, **kwargs)
+    )["ok"]
 
 
 def test_deleted_binding_file_denies_next_call(ready_state, fake_repository):
     state = ready_state
     service = StoryToolService(
-        fake_repository, state.permissions,
+        fake_repository,
+        state.permissions,
         permissions_provider=lambda: permission_snapshot(state),
     )
     writer = StorySessionRegistry(state.sessions.path, locked_profile="writer")
@@ -245,21 +288,31 @@ def test_deleted_binding_file_denies_next_call(ready_state, fake_repository):
         project_id="p1",
     )
     kwargs = dict(
-        session_id="runtime-1", source="desktop", profile="writer", connection_id="local"
+        session_id="runtime-1",
+        source="desktop",
+        profile="writer",
+        connection_id="local",
     )
-    assert json.loads(service.handle("story.get_project", {"project_id": "p1"}, **kwargs))["ok"]
+    assert json.loads(
+        service.handle("story.get_project", {"project_id": "p1"}, **kwargs)
+    )["ok"]
 
     state.sessions.path.unlink()
 
-    denied = json.loads(service.handle("story.get_project", {"project_id": "p1"}, **kwargs))
+    denied = json.loads(
+        service.handle("story.get_project", {"project_id": "p1"}, **kwargs)
+    )
     assert denied["ok"] is False
     assert denied["error"]["code"] != "internal_error"
 
 
-def test_malformed_binding_file_reports_binding_state_invalid(ready_state, fake_repository):
+def test_malformed_binding_file_reports_binding_state_invalid(
+    ready_state, fake_repository
+):
     state = ready_state
     service = StoryToolService(
-        fake_repository, state.permissions,
+        fake_repository,
+        state.permissions,
         permissions_provider=lambda: permission_snapshot(state),
     )
     writer = StorySessionRegistry(state.sessions.path, locked_profile="writer")
@@ -291,7 +344,8 @@ def test_malformed_binding_file_reports_binding_state_invalid(ready_state, fake_
 def test_wrong_connection_profile_or_project_is_denied(ready_state, fake_repository):
     state = ready_state
     service = StoryToolService(
-        fake_repository, state.permissions,
+        fake_repository,
+        state.permissions,
         permissions_provider=lambda: permission_snapshot(state),
     )
     StorySessionRegistry(state.sessions.path, locked_profile="writer").bind(
@@ -492,10 +546,20 @@ def test_search_results_are_capped_and_report_truncation() -> None:
         chapters=(),
     )
 
-    default = _call(service, "story.search_notes", {"project_id": "p1", "query": "rain"})
-    small = _call(service, "story.search_notes", {"project_id": "p1", "query": "rain", "limit": 3})
-    huge = _call(service, "story.search_notes", {"project_id": "p1", "query": "rain", "limit": 999})
-    bad = _call(service, "story.search_notes", {"project_id": "p1", "query": "rain", "limit": 0})
+    default = _call(
+        service, "story.search_notes", {"project_id": "p1", "query": "rain"}
+    )
+    small = _call(
+        service, "story.search_notes", {"project_id": "p1", "query": "rain", "limit": 3}
+    )
+    huge = _call(
+        service,
+        "story.search_notes",
+        {"project_id": "p1", "query": "rain", "limit": 999},
+    )
+    bad = _call(
+        service, "story.search_notes", {"project_id": "p1", "query": "rain", "limit": 0}
+    )
 
     assert default["data"]["total"] == 60
     assert default["data"]["returned"] == len(default["data"]["results"]) == 20
@@ -506,7 +570,11 @@ def test_search_results_are_capped_and_report_truncation() -> None:
 
 
 def test_search_schemas_require_non_empty_query_and_bound_limit() -> None:
-    for name in ("story.search_world_info", "story.search_notes", "story.search_reference_notes"):
+    for name in (
+        "story.search_world_info",
+        "story.search_notes",
+        "story.search_reference_notes",
+    ):
         properties = TOOL_SCHEMAS[name]["parameters"]["properties"]
         assert properties["query"]["minLength"] == 1
         assert properties["limit"]["maximum"] == 50

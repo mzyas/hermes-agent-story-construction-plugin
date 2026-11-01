@@ -20,12 +20,19 @@ TOOL = "story.get_session_project"
 def _service(*, bound: bool = True) -> StoryToolService:
     permissions = StoryPermissionGate({"p1": ("default", "local")})
     if bound:
-        permissions.bind_session(SessionScope("s", "desktop", "default", "local", "p1"), "p1")
+        permissions.bind_session(
+            SessionScope("s", "desktop", "default", "local", "p1"), "p1"
+        )
     return StoryToolService(FakeRepository(), permissions)
 
 
 def _call(service: StoryToolService, args: dict | None = None, **overrides) -> dict:
-    scope = {"session_id": "s", "source": "desktop", "profile": "default", "connection_id": "local"}
+    scope = {
+        "session_id": "s",
+        "source": "desktop",
+        "profile": "default",
+        "connection_id": "local",
+    }
     scope.update(overrides)
     return json.loads(service.handle(TOOL, args, **scope))
 
@@ -84,9 +91,13 @@ def test_prompt_tells_the_agent_to_judge_intent_and_use_the_tool() -> None:
 def test_prompt_and_tool_keep_the_story_project_apart_from_code_projects() -> None:
     rendered = render_story_agent_system_prompt()
 
-    assert "not things inside the story" in rendered  # a story about code is still story work
+    assert (
+        "not things inside the story" in rendered
+    )  # a story about code is still story work
     assert "latest message is about code or software" in rendered
-    assert "never story work" not in rendered  # no absolute rule over the ask-when-unclear fallback
+    assert (
+        "never story work" not in rendered
+    )  # no absolute rule over the ask-when-unclear fallback
     assert "story (fiction) project" in TOOL_SCHEMAS[TOOL]["description"]
     assert "never a code or software project" in TOOL_SCHEMAS[TOOL]["description"]
 
@@ -99,7 +110,9 @@ def test_prompt_makes_the_agent_propose_wait_for_approval_and_keep_text_clean() 
     assert "never say it was saved" in rendered
     assert "Never write files or save chapters yourself" in rendered
     # The format rules moved to a Skill, so the prompt only points to it.
-    assert "no greeting" not in rendered and "story-construction:record-format" in rendered
+    assert (
+        "no greeting" not in rendered and "story-construction:record-format" in rendered
+    )
 
 
 def test_prompt_covers_every_kind_of_record_and_checks_before_creating() -> None:
@@ -141,10 +154,14 @@ def test_prompt_output_rule_applies_only_to_planning_and_drafting() -> None:
     assert "When asked to plan or draft a chapter" in rendered
     assert "continuity warnings" in rendered
     assert "still citing sources" in rendered  # plain answers keep the citation rule
-    assert "for the current request" not in rendered  # no blanket contract on every reply
+    assert (
+        "for the current request" not in rendered
+    )  # no blanket contract on every reply
 
 
-def test_unbound_error_and_description_keep_an_ordinary_chat_away_from_story_tools() -> None:
+def test_unbound_error_and_description_keep_an_ordinary_chat_away_from_story_tools() -> (
+    None
+):
     # An unbound chat has no Story section, so the tool itself draws the line.
     message = _call(_service(bound=False))["error"]["message"]
 
@@ -164,4 +181,6 @@ def test_subagent_prompt_is_read_only_and_short() -> None:
 
 
 def test_prompt_version_names_the_current_protocol() -> None:
-    assert render_story_agent_system_prompt().startswith("# StoryConstructionAgentPrompt v11")
+    assert render_story_agent_system_prompt().startswith(
+        "# StoryConstructionAgentPrompt v11"
+    )

@@ -77,7 +77,10 @@ def resolve_story_target(api_plugin_root: Path, default_home: Path) -> StoryTarg
 
 
 def select_story_target(
-    api_plugin_root: Path, default_home: Path, profile: str, vault_root: str | None = None
+    api_plugin_root: Path,
+    default_home: Path,
+    profile: str,
+    vault_root: str | None = None,
 ) -> StoryTarget:
     """Validate one writing target fully, then persist its locks and selection.
 
@@ -116,7 +119,9 @@ def select_story_target(
         if shared_text and _vault_path(shared_text) != vault:
             raise StorySetupError("vault_mismatch")
     _require_writable_vault(vault)
-    previous_selected = _setting_text(_settings_from_raw(default_raw), "selected_profile")
+    previous_selected = _setting_text(
+        _settings_from_raw(default_raw), "selected_profile"
+    )
 
     # Target bindings first: a failure here cannot leave a stale selection behind.
     _write_story_settings(
@@ -139,7 +144,9 @@ def select_story_target(
         _clear_bindings(home)
         if previous_selected and previous_selected != canon:
             with suppress(StorySetupError):
-                _clear_bindings(_profile_home(_canonical_profile(previous_selected), default_path))
+                _clear_bindings(
+                    _profile_home(_canonical_profile(previous_selected), default_path)
+                )
     return StoryTarget(
         profile=canon,
         home=home,
@@ -262,9 +269,14 @@ def _validate_package(api_root: Path, home: Path, canon: str) -> None:
     else:
         target_manifest_path = home / "plugins" / PLUGIN_ID / "plugin.yaml"
     target_manifest = _read_manifest(target_manifest_path)
-    if api_manifest.get("name") != PLUGIN_ID or target_manifest.get("name") != PLUGIN_ID:
+    if (
+        api_manifest.get("name") != PLUGIN_ID
+        or target_manifest.get("name") != PLUGIN_ID
+    ):
         raise StorySetupError("agent_name_mismatch")
-    if str(api_manifest.get("version") or "") != str(target_manifest.get("version") or ""):
+    if str(api_manifest.get("version") or "") != str(
+        target_manifest.get("version") or ""
+    ):
         raise StorySetupError("version_mismatch")
     if canon == "default":
         return
@@ -338,8 +350,12 @@ def _package_digest(plugin_root: Path) -> str:
 
 def _validate_enabled(raw: Mapping[str, object]) -> None:
     plugins = raw.get("plugins") if isinstance(raw.get("plugins"), Mapping) else {}
-    enabled = plugins.get("enabled") if isinstance(plugins.get("enabled"), list) else None
-    disabled = plugins.get("disabled") if isinstance(plugins.get("disabled"), list) else []
+    enabled = (
+        plugins.get("enabled") if isinstance(plugins.get("enabled"), list) else None
+    )
+    disabled = (
+        plugins.get("disabled") if isinstance(plugins.get("disabled"), list) else []
+    )
     if not enabled or PLUGIN_ID not in enabled or PLUGIN_ID in disabled:
         raise StorySetupError("agent_not_enabled")
 
@@ -427,7 +443,9 @@ def _write_story_settings(home: Path, changes: Mapping[str, object]) -> None:
                 ("plugins", "entries", PLUGIN_ID, "settings", key) for key in changes
             }
             try:
-                config_mod.save_config(partial, preserve_keys=preserve, merge_existing=True)
+                config_mod.save_config(
+                    partial, preserve_keys=preserve, merge_existing=True
+                )
             except StorySetupError:
                 raise
             except RuntimeError as exc:

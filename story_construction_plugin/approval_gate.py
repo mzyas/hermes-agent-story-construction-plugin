@@ -37,8 +37,18 @@ _MAX_LINE_CHARS = 140
 _MAX_NEW_TEXT_CHARS = 300
 _CJK = re.compile(r"[㐀-鿿]")
 
-_KIND_ZH = {"chapter": "章节", "character": "角色", "world_entry": "世界设定条目", "note": "笔记"}
-_KIND_EN = {"chapter": "chapter", "character": "character", "world_entry": "world entry", "note": "note"}
+_KIND_ZH = {
+    "chapter": "章节",
+    "character": "角色",
+    "world_entry": "世界设定条目",
+    "note": "笔记",
+}
+_KIND_EN = {
+    "chapter": "chapter",
+    "character": "character",
+    "world_entry": "world entry",
+    "note": "note",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,7 +90,9 @@ def assess_risk(proposal: Mapping[str, Any], base_text: str) -> Risk:
     if not str(proposal.get("result_text") or "").strip():
         reasons.append("clears_record")
     if removed >= LARGE_REMOVAL_CHARS or (
-        removed >= LARGE_REMOVAL_FLOOR and total and removed / total >= LARGE_REMOVAL_SHARE
+        removed >= LARGE_REMOVAL_FLOOR
+        and total
+        and removed / total >= LARGE_REMOVAL_SHARE
     ):
         reasons.append("large_removal")
     return Risk("high" if reasons else "normal", tuple(reasons), removed, total)
@@ -97,7 +109,9 @@ class SessionGrants:
     def grant(self, proposal_id: str) -> None:
         with self._lock:
             now = self._clock()
-            self._expires = {key: end for key, end in self._expires.items() if end > now}
+            self._expires = {
+                key: end for key, end in self._expires.items() if end > now
+            }
             self._expires[proposal_id] = now + GRANT_SECONDS
 
     def revoke(self, proposal_id: str) -> None:
@@ -119,7 +133,12 @@ def rule_key(proposal_id: str, risk: Risk) -> str:
 def approval_message(proposal: Mapping[str, Any], risk: Risk) -> str:
     """What the person is asked to approve: the record, the risk, and the change."""
 
-    title = str(proposal.get("target_title") or proposal.get("chapter_title") or proposal.get("title") or "")
+    title = str(
+        proposal.get("target_title")
+        or proposal.get("chapter_title")
+        or proposal.get("title")
+        or ""
+    )
     result = str(proposal.get("result_text") or "")
     new_title = str(proposal.get("new_title") or "")
     # The prompt follows the language of the text being written. Titles alone do
@@ -131,10 +150,17 @@ def approval_message(proposal: Mapping[str, Any], risk: Risk) -> str:
     action = str(proposal.get("kind") or "")
     is_new = action.startswith("new_")
     if action == "rename":
-        head = f"重命名{_KIND_ZH.get(kind, kind)}「{title}」→「{new_title}」" if zh else (
-            f"Rename {_KIND_EN.get(kind, kind)}: {title} -> {new_title}")
+        head = (
+            f"重命名{_KIND_ZH.get(kind, kind)}「{title}」→「{new_title}」"
+            if zh
+            else (f"Rename {_KIND_EN.get(kind, kind)}: {title} -> {new_title}")
+        )
     elif action == "delete":
-        head = f"删除{_KIND_ZH.get(kind, kind)}「{title}」" if zh else f"Delete {_KIND_EN.get(kind, kind)}: {title}"
+        head = (
+            f"删除{_KIND_ZH.get(kind, kind)}「{title}」"
+            if zh
+            else f"Delete {_KIND_EN.get(kind, kind)}: {title}"
+        )
     elif zh:
         head = f"{'新建' if is_new else '修改'}{_KIND_ZH.get(kind, kind)}「{title}」"
     else:
@@ -143,7 +169,11 @@ def approval_message(proposal: Mapping[str, Any], risk: Risk) -> str:
     if risk.high:
         lines.append(_risk_line(risk, zh))
     lines.extend(_change_lines(proposal, result, is_new, zh))
-    lines.append("完整差异可在 Story 面板查看。" if zh else "The full diff is in the Story panel.")
+    lines.append(
+        "完整差异可在 Story 面板查看。"
+        if zh
+        else "The full diff is in the Story panel."
+    )
     return "\n".join(lines)
 
 
@@ -152,7 +182,8 @@ def _risk_line(risk: Risk, zh: bool) -> str:
     for reason in risk.reasons:
         if reason == "deletes_record":
             parts.append(
-                f"会删除这条记录（约 {risk.total} 字，移入回收站，可撤销）" if zh
+                f"会删除这条记录（约 {risk.total} 字，移入回收站，可撤销）"
+                if zh
                 else f"deletes the record (about {risk.total} characters; moved to the trash, can be undone)"
             )
         elif reason == "clears_record":
@@ -160,21 +191,31 @@ def _risk_line(risk: Risk, zh: bool) -> str:
         elif reason == "large_removal":
             share = round(100 * risk.removed / risk.total) if risk.total else 100
             parts.append(
-                f"会删掉约 {risk.removed} 字（约 {share}%）" if zh else f"removes about {risk.removed} characters ({share}%)"
+                f"会删掉约 {risk.removed} 字（约 {share}%）"
+                if zh
+                else f"removes about {risk.removed} characters ({share}%)"
             )
     prefix = "高风险：" if zh else "High risk: "
-    suffix = "。每次都需要你确认，不能被“总是允许”跳过。" if zh else ". Needs your review every time; \"always allow\" does not cover it."
+    suffix = (
+        "。每次都需要你确认，不能被“总是允许”跳过。"
+        if zh
+        else '. Needs your review every time; "always allow" does not cover it.'
+    )
     return prefix + ("；" if zh else "; ").join(parts) + suffix
 
 
-def _change_lines(proposal: Mapping[str, Any], result: str, is_new: bool, zh: bool) -> list[str]:
+def _change_lines(
+    proposal: Mapping[str, Any], result: str, is_new: bool, zh: bool
+) -> list[str]:
     if proposal.get("kind") in ("rename", "delete"):
         return []
     if is_new:
         shown = _clip(result, _MAX_NEW_TEXT_CHARS)
         return [f"+ {shown}"] if shown else []
     regions = [
-        region for preview in proposal.get("previews") or () for region in preview.get("regions") or ()
+        region
+        for preview in proposal.get("previews") or ()
+        for region in preview.get("regions") or ()
     ]
     lines: list[str] = []
     shown = 0
@@ -209,7 +250,13 @@ def make_apply_hook(
     directive) and leaves no grant, so the tool then refuses to write.
     """
 
-    def hook(*, tool_name: str = "", args: Mapping[str, Any] | None = None, session_id: str = "", **_ignored: Any):
+    def hook(
+        *,
+        tool_name: str = "",
+        args: Mapping[str, Any] | None = None,
+        session_id: str = "",
+        **_ignored: Any,
+    ):
         if tool_name != APPLY_TOOL:
             return None
         try:
@@ -231,8 +278,14 @@ def make_outcome_hook(
     """
 
     def hook(
-        *, tool_name: str = "", args: Mapping[str, Any] | None = None, result: Any = None,
-        status: str = "", session_id: str = "", error_message: Any = None, **_ignored: Any,
+        *,
+        tool_name: str = "",
+        args: Mapping[str, Any] | None = None,
+        result: Any = None,
+        status: str = "",
+        session_id: str = "",
+        error_message: Any = None,
+        **_ignored: Any,
     ) -> None:
         if tool_name != APPLY_TOOL or status != "blocked":
             return

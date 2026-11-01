@@ -62,7 +62,7 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "does not match, or matches more than once, the whole proposal is "
             "rejected, so include enough surrounding text. Notes marked as "
             "references are read-only. Every new_text and content must be only "
-            "the text that belongs in the record: no greeting, no \"here is\", no "
+            'the text that belongs in the record: no greeting, no "here is", no '
             "explanation, no closing remark, no code fence, no frontmatter, no "
             "heading that repeats the record's name. Put all conversation in "
             "your chat reply instead. The project comes from this session's "
@@ -104,8 +104,12 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                             "op": {
                                 "type": "string",
                                 "enum": [
-                                    "replace", "insert_after", "insert_before",
-                                    "append", "prepend", "rewrite",
+                                    "replace",
+                                    "insert_after",
+                                    "insert_before",
+                                    "append",
+                                    "prepend",
+                                    "rewrite",
                                 ],
                                 "description": (
                                     "replace: swap old_text for new_text (new_text may be empty to "
@@ -114,10 +118,22 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                                     "at the end / start. rewrite: replace the whole record text with content."
                                 ),
                             },
-                            "old_text": {"type": "string", "description": "replace only: text to swap out, appearing exactly once."},
-                            "anchor_text": {"type": "string", "description": "insert_after / insert_before only: text to insert next to, appearing exactly once."},
-                            "new_text": {"type": "string", "description": "The text to write, nothing else."},
-                            "content": {"type": "string", "description": "rewrite only: the whole new text, nothing else."},
+                            "old_text": {
+                                "type": "string",
+                                "description": "replace only: text to swap out, appearing exactly once.",
+                            },
+                            "anchor_text": {
+                                "type": "string",
+                                "description": "insert_after / insert_before only: text to insert next to, appearing exactly once.",
+                            },
+                            "new_text": {
+                                "type": "string",
+                                "description": "The text to write, nothing else.",
+                            },
+                            "content": {
+                                "type": "string",
+                                "description": "rewrite only: the whole new text, nothing else.",
+                            },
                         },
                         "required": ["op"],
                         "additionalProperties": False,
@@ -150,13 +166,25 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                     "enum": ["chapter", "character", "world_entry", "note"],
                     "description": "What kind of record to create. Defaults to chapter.",
                 },
-                "volume_id": {"type": "string", "description": "Chapter only: ID of the volume that will hold it."},
-                "category_id": {"type": "string", "description": "Note only, optional: ID of an existing note category."},
+                "volume_id": {
+                    "type": "string",
+                    "description": "Chapter only: ID of the volume that will hold it.",
+                },
+                "category_id": {
+                    "type": "string",
+                    "description": "Note only, optional: ID of an existing note category.",
+                },
                 "title": {
-                    "type": "string", "minLength": 1, "maxLength": 120,
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120,
                     "description": "Chapter or note title, character name, or world entry title.",
                 },
-                "content": {"type": "string", "minLength": 1, "description": "The record's text, nothing else."},
+                "content": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "The record's text, nothing else.",
+                },
             },
             ["title", "content"],
         ),
@@ -186,7 +214,9 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                     "description": "ID of the record, or its exact current title/name when that is unique.",
                 },
                 "new_title": {
-                    "type": "string", "minLength": 1, "maxLength": 120,
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120,
                     "description": "The new title or name, nothing else.",
                 },
             },
@@ -233,7 +263,13 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "differs from the proposed one if that name was already taken."
         ),
         "parameters": _parameters(
-            {"proposal_id": {"type": "string", "minLength": 1, "description": "The proposal_id returned by the proposal tool you just called."}},
+            {
+                "proposal_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "The proposal_id returned by the proposal tool you just called.",
+                }
+            },
             ["proposal_id"],
         ),
     },
@@ -272,7 +308,11 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                     "enum": ["character", "world_entry", "note"],
                     "description": "Which kind of record to read.",
                 },
-                "target_id": {"type": "string", "minLength": 1, "description": "The record's ID, or its exact title/name."},
+                "target_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "The record's ID, or its exact title/name.",
+                },
             },
             ["target_type", "target_id"],
         ),

@@ -74,7 +74,9 @@ def test_a_long_novel_session_compressed_many_times_still_resolves() -> None:
 
 def test_a_subagent_announced_by_the_hook_resolves_as_delegated() -> None:
     lineage = SessionLineage()
-    lineage.note_subagent(parent_session_id="root", child_session_id="sub", child_role="leaf")
+    lineage.note_subagent(
+        parent_session_id="root", child_session_id="sub", child_role="leaf"
+    )
 
     resolved = lineage.resolve("sub", _bound("root"))
 
@@ -110,7 +112,9 @@ def test_a_failing_lookup_or_a_loop_resolves_to_nothing() -> None:
 
 def test_a_found_parent_is_looked_up_once() -> None:
     calls: list[str] = []
-    lineage = SessionLineage(_lookup({"c2": ("c1", False), "c1": ("root", False)}, calls))
+    lineage = SessionLineage(
+        _lookup({"c2": ("c1", False), "c1": ("root", False)}, calls)
+    )
 
     lineage.resolve("c2", _bound("root"))
     lineage.resolve("c2", _bound("root"))
@@ -131,56 +135,83 @@ class FakeSessionDb:
 
 
 def test_a_compression_child_links_to_its_parent() -> None:
-    db = FakeSessionDb({
-        "root": {"end_reason": "compression"},
-        "c1": {"parent_session_id": "root", "model_config": "{}"},
-    })
+    db = FakeSessionDb(
+        {
+            "root": {"end_reason": "compression"},
+            "c1": {"parent_session_id": "root", "model_config": "{}"},
+        }
+    )
 
     assert parent_link(db, "c1") == ("root", False)
 
 
 def test_a_delegated_child_links_to_its_parent_as_a_subagent() -> None:
-    db = FakeSessionDb({
-        "root": {},
-        "sub": {"parent_session_id": "root", "model_config": json.dumps({"_delegate_from": "root"})},
-    })
+    db = FakeSessionDb(
+        {
+            "root": {},
+            "sub": {
+                "parent_session_id": "root",
+                "model_config": json.dumps({"_delegate_from": "root"}),
+            },
+        }
+    )
 
     assert parent_link(db, "sub") == ("root", True)
 
 
-def test_a_compressed_subagent_keeps_its_main_session_marker_but_links_to_the_subagent() -> None:
+def test_a_compressed_subagent_keeps_its_main_session_marker_but_links_to_the_subagent() -> (
+    None
+):
     # Hermes copies the subagent's model_config onto its compression child.
-    db = FakeSessionDb({
-        "root": {},
-        "sub": {"parent_session_id": "root", "end_reason": "compression",
-                "model_config": {"_delegate_from": "root"}},
-        "sub2": {"parent_session_id": "sub", "model_config": {"_delegate_from": "root"}},
-    })
+    db = FakeSessionDb(
+        {
+            "root": {},
+            "sub": {
+                "parent_session_id": "root",
+                "end_reason": "compression",
+                "model_config": {"_delegate_from": "root"},
+            },
+            "sub2": {
+                "parent_session_id": "sub",
+                "model_config": {"_delegate_from": "root"},
+            },
+        }
+    )
 
     assert ancestry(db, "sub2") == {"sub2": ("sub", False), "sub": ("root", True)}
 
 
 def test_branches_resets_tool_children_and_unrelated_rows_have_no_link() -> None:
-    db = FakeSessionDb({
-        "root": {"end_reason": "compression"},
-        "branch": {"parent_session_id": "root", "model_config": {"_branched_from": "root"}},
-        "reset": {"parent_session_id": "root", "model_config": {"_reset_from": "root"}},
-        "tool": {"parent_session_id": "root", "source": "tool"},
-        "open": {"end_reason": None},
-        "after_open": {"parent_session_id": "open"},
-        "orphan": {},
-    })
+    db = FakeSessionDb(
+        {
+            "root": {"end_reason": "compression"},
+            "branch": {
+                "parent_session_id": "root",
+                "model_config": {"_branched_from": "root"},
+            },
+            "reset": {
+                "parent_session_id": "root",
+                "model_config": {"_reset_from": "root"},
+            },
+            "tool": {"parent_session_id": "root", "source": "tool"},
+            "open": {"end_reason": None},
+            "after_open": {"parent_session_id": "open"},
+            "orphan": {},
+        }
+    )
 
     for session_id in ("branch", "reset", "tool", "after_open", "orphan", "missing"):
         assert parent_link(db, session_id) is None
 
 
 def test_a_walk_reads_each_row_once() -> None:
-    db = FakeSessionDb({
-        "root": {"end_reason": "compression"},
-        "c1": {"parent_session_id": "root", "end_reason": "compression"},
-        "c2": {"parent_session_id": "c1"},
-    })
+    db = FakeSessionDb(
+        {
+            "root": {"end_reason": "compression"},
+            "c1": {"parent_session_id": "root", "end_reason": "compression"},
+            "c2": {"parent_session_id": "c1"},
+        }
+    )
 
     assert ancestry(db, "c2") == {"c2": ("c1", False), "c1": ("root", False)}
     assert db.reads == ["c2", "c1", "root"]
@@ -202,10 +233,25 @@ def test_links_match_a_real_hermes_session_database(tmp_path, monkeypatch) -> No
         db.create_session("c1", "desktop", parent_session_id="root")
         db.end_session("c1", "compression")
         db.create_session("c2", "desktop", parent_session_id="c1")
-        db.create_session("sub", "subagent", parent_session_id="c2", model_config={"_delegate_from": "c2"})
+        db.create_session(
+            "sub",
+            "subagent",
+            parent_session_id="c2",
+            model_config={"_delegate_from": "c2"},
+        )
         db.end_session("sub", "compression")
-        db.create_session("sub2", "subagent", parent_session_id="sub", model_config={"_delegate_from": "c2"})
-        db.create_session("branch", "desktop", parent_session_id="c2", model_config={"_branched_from": "c2"})
+        db.create_session(
+            "sub2",
+            "subagent",
+            parent_session_id="sub",
+            model_config={"_delegate_from": "c2"},
+        )
+        db.create_session(
+            "branch",
+            "desktop",
+            parent_session_id="c2",
+            model_config={"_branched_from": "c2"},
+        )
         db.create_session("tool", "tool", parent_session_id="c2")
         expected_lineage = db.get_compression_lineage("c2")
     finally:
@@ -214,7 +260,10 @@ def test_links_match_a_real_hermes_session_database(tmp_path, monkeypatch) -> No
     links = state_db_ancestry(tmp_path, "sub2")
 
     assert links == {
-        "sub2": ("sub", False), "sub": ("c2", True), "c2": ("c1", False), "c1": ("root", False),
+        "sub2": ("sub", False),
+        "sub": ("c2", True),
+        "c2": ("c1", False),
+        "c1": ("root", False),
     }
     assert expected_lineage == ["root", "c1", "c2"]
     assert state_db_ancestry(tmp_path, "branch") == {}
@@ -222,14 +271,20 @@ def test_links_match_a_real_hermes_session_database(tmp_path, monkeypatch) -> No
 
 
 @pytest.mark.hermes_integration
-def test_a_real_session_row_shows_its_messages_and_stored_prompt(tmp_path, monkeypatch) -> None:
+def test_a_real_session_row_shows_its_messages_and_stored_prompt(
+    tmp_path, monkeypatch
+) -> None:
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     from hermes_state import SessionDB
 
     db = SessionDB(tmp_path / "state.db")
     try:
         db.create_session("fresh", "desktop")
-        db.create_session("busy", "desktop", system_prompt="Hermes base\n\n# StoryConstructionAgentPrompt v11")
+        db.create_session(
+            "busy",
+            "desktop",
+            system_prompt="Hermes base\n\n# StoryConstructionAgentPrompt v11",
+        )
         db.append_message("busy", role="user", content="hello")
     finally:
         db.close()
@@ -247,17 +302,23 @@ def test_a_real_session_row_shows_its_messages_and_stored_prompt(tmp_path, monke
 # ------------------------------------------------------------------ the tools
 def _service(lineage: SessionLineage) -> StoryToolService:
     permissions = StoryPermissionGate({"p1": ("default", "local")})
-    permissions.bind_session(SessionScope("root", "desktop", "default", "local", "p1"), "p1")
+    permissions.bind_session(
+        SessionScope("root", "desktop", "default", "local", "p1"), "p1"
+    )
     return StoryToolService(FakeRepository(), permissions, lineage=lineage)
 
 
-def _call(service: StoryToolService, tool: str, session_id: str, args: dict | None = None) -> dict:
+def _call(
+    service: StoryToolService, tool: str, session_id: str, args: dict | None = None
+) -> dict:
     # Hermes passes only the session id; the binding supplies the rest of the scope.
     return json.loads(service.handle(tool, args, session_id=session_id, task_id="t"))
 
 
 def test_a_compressed_session_keeps_its_story_tools() -> None:
-    service = _service(SessionLineage(_lookup({"c2": ("c1", False), "c1": ("root", False)})))
+    service = _service(
+        SessionLineage(_lookup({"c2": ("c1", False), "c1": ("root", False)}))
+    )
 
     response = _call(service, "story.get_session_project", "c2")
 
@@ -318,27 +379,51 @@ def test_the_approval_prompt_follows_compression_but_never_reaches_a_subagent(
     ObsidianProjectRepository(vault).create_project("Novel", slug="novel")
     monkeypatch.setattr(runtime, "get_hermes_home", lambda: home)
     monkeypatch.setattr(
-        story_construction_plugin, "state_db_ancestry",
+        story_construction_plugin,
+        "state_db_ancestry",
         lambda _home, session_id: {"c1": ("root", False)} if session_id == "c1" else {},
     )
     ctx = RegistrationContext(
-        {"locked_profile": "writer", "vault_root": str(vault), "locked_hermes_home": str(home)}
+        {
+            "locked_profile": "writer",
+            "vault_root": str(vault),
+            "locked_hermes_home": str(home),
+        }
     )
     register(ctx)
-    StorySessionRegistry(runtime._session_state_path(home), locked_profile="writer").bind(
-        stored_session_id="root", profile="writer", connection_id="local", project_id="novel"
+    StorySessionRegistry(
+        runtime._session_state_path(home), locked_profile="writer"
+    ).bind(
+        stored_session_id="root",
+        profile="writer",
+        connection_id="local",
+        project_id="novel",
     )
-    proposed = json.loads(ctx.tools["story.propose_new"](
-        {"target_type": "character", "title": "苏晴", "content": "冷静的医生。"}, session_id="c1"
-    ))
+    proposed = json.loads(
+        ctx.tools["story.propose_new"](
+            {"target_type": "character", "title": "苏晴", "content": "冷静的医生。"},
+            session_id="c1",
+        )
+    )
     assert proposed["ok"] is True, proposed
     proposal_id = proposed["data"]["proposal_id"]
     ask = ctx.hooks["pre_tool_call"]
 
-    directive = ask(tool_name="story.apply_edit", args={"proposal_id": proposal_id}, session_id="c1")
+    directive = ask(
+        tool_name="story.apply_edit", args={"proposal_id": proposal_id}, session_id="c1"
+    )
 
     assert directive is not None and directive["action"] == "approve"
     ctx.hooks["subagent_start"](parent_session_id="root", child_session_id="sub")
-    assert ask(tool_name="story.apply_edit", args={"proposal_id": proposal_id}, session_id="sub") is None
-    refused = json.loads(ctx.tools["story.apply_edit"]({"proposal_id": proposal_id}, session_id="sub"))
+    assert (
+        ask(
+            tool_name="story.apply_edit",
+            args={"proposal_id": proposal_id},
+            session_id="sub",
+        )
+        is None
+    )
+    refused = json.loads(
+        ctx.tools["story.apply_edit"]({"proposal_id": proposal_id}, session_id="sub")
+    )
     assert refused["error"]["code"] == "subagent_read_only"

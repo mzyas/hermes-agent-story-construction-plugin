@@ -140,16 +140,16 @@ class StorySessionRegistry:
 
     def all(self) -> tuple[StorySessionBinding, ...]:
         with self._lock:
-            return tuple(
-                binding for _, binding in sorted(self._load().items())
-            )
+            return tuple(binding for _, binding in sorted(self._load().items()))
 
     def unbind_project(self, project_id: str) -> int:
         """Drop every binding to a project, in all profiles and connections."""
 
         normalized = _required(project_id, "project_id")
         with self._lock, self._rewrite() as bindings:
-            doomed = [key for key, row in bindings.items() if row.project_id == normalized]
+            doomed = [
+                key for key, row in bindings.items() if row.project_id == normalized
+            ]
             for key in doomed:
                 del bindings[key]
             return len(doomed)
@@ -189,11 +189,15 @@ class StorySessionRegistry:
             _required(connection_id, "connection_id"),
             _required(stored_session_id, "stored_session_id"),
         )
-        if binding is not None and (
-            binding.profile,
-            binding.connection_id,
-            binding.stored_session_id,
-        ) != key:
+        if (
+            binding is not None
+            and (
+                binding.profile,
+                binding.connection_id,
+                binding.stored_session_id,
+            )
+            != key
+        ):
             raise ValueError("restored Story session binding key does not match")
         with self._lock, self._rewrite() as bindings:
             if binding is None:
@@ -234,10 +238,14 @@ class StorySessionRegistry:
             }
             if lineage is None:
                 resolved = (
-                    ResolvedSession(session_id, False) if session_id in bound_ids else None
+                    ResolvedSession(session_id, False)
+                    if session_id in bound_ids
+                    else None
                 )
             else:
-                resolved = lineage.resolve(session_id, bound_ids.__contains__, strict=True)
+                resolved = lineage.resolve(
+                    session_id, bound_ids.__contains__, strict=True
+                )
         except Exception:
             return render_story_agent_system_prompt()
         if resolved is None:
@@ -312,8 +320,7 @@ class StorySessionRegistry:
             payload = {
                 "version": _SCHEMA_VERSION,
                 "bindings": [
-                    asdict(binding)
-                    for _, binding in sorted(self._bindings.items())
+                    asdict(binding) for _, binding in sorted(self._bindings.items())
                 ],
             }
             with NamedTemporaryFile(
@@ -449,9 +456,7 @@ def _decode_binding(row: object) -> StorySessionBinding:
     }
     if set(row) != required_fields:
         raise ValueError("binding record fields are invalid")
-    runtime_session_id = _optional_text(
-        row["runtime_session_id"], "runtime_session_id"
-    )
+    runtime_session_id = _optional_text(row["runtime_session_id"], "runtime_session_id")
     project_name = _optional_text(row["project_name"], "project_name")
     return StorySessionBinding(
         stored_session_id=_required_value(

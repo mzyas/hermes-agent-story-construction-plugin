@@ -20,7 +20,9 @@ jobs:
           path: hermes-agent
       - uses: astral-sh/setup-uv@v5
       - name: Run ruff
-        run: uvx ruff check .
+        run: |
+          uvx ruff check .
+          uvx ruff format --check .
       - name: Run pytest
         env:
           HERMES_SOURCE: ${{ github.workspace }}/hermes-agent

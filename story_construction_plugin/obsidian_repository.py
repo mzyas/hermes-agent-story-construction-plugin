@@ -69,17 +69,25 @@ class ObsidianProjectRepository:
         self.vault_root = root
         self._cache_lock = threading.Lock()
         self._create_lock = threading.Lock()
-        self._records_cache: tuple[tuple[Any, ...], dict[str, tuple[Any, ...]]] | None = None
+        self._records_cache: (
+            tuple[tuple[Any, ...], dict[str, tuple[Any, ...]]] | None
+        ) = None
 
     def create_project(
-        self, name: str, *, slug: str | None = None, locale: str | None = None,
+        self,
+        name: str,
+        *,
+        slug: str | None = None,
+        locale: str | None = None,
     ) -> ProjectTree:
         project_slug = normalize_project_slug(name, slug)
         final_root = (self.vault_root / project_slug).resolve()
         if self.vault_root not in final_root.parents or final_root.exists():
             raise ProjectAlreadyExistsError(f"project {project_slug!r} already exists")
 
-        titles = _DEFAULT_TITLES["zh" if str(locale or "").lower().startswith("zh") else "en"]
+        titles = _DEFAULT_TITLES[
+            "zh" if str(locale or "").lower().startswith("zh") else "en"
+        ]
         project_id = project_slug
         world_id = f"{project_id}:world"
         volume_id = f"{project_id}:volume-1"
@@ -97,35 +105,60 @@ class ObsidianProjectRepository:
         ):
             raise ProjectAlreadyExistsError(f"project {project_slug!r} already exists")
 
-        staging_parent = Path(tempfile.mkdtemp(prefix=".story-create-", dir=self.vault_root))
+        staging_parent = Path(
+            tempfile.mkdtemp(prefix=".story-create-", dir=self.vault_root)
+        )
         staging_root = staging_parent / project_slug
         try:
             for relative in ("world", "characters", "notes", "volumes"):
                 (staging_root / relative).mkdir(parents=True, exist_ok=True)
-            _write_story_document(staging_root / "project.md", {
-                "project_id": project_id, "type": "project", "id": project_id,
-                "name": name.strip(),
-            })
-            _write_story_document(staging_root / "world" / "world.md", {
-                "project_id": project_id, "type": "world_info", "id": world_id,
-                "name": titles["world"],
-            })
+            _write_story_document(
+                staging_root / "project.md",
+                {
+                    "project_id": project_id,
+                    "type": "project",
+                    "id": project_id,
+                    "name": name.strip(),
+                },
+            )
+            _write_story_document(
+                staging_root / "world" / "world.md",
+                {
+                    "project_id": project_id,
+                    "type": "world_info",
+                    "id": world_id,
+                    "name": titles["world"],
+                },
+            )
             volume_folder = staging_root / "volumes" / "volume-001"
             volume_folder.mkdir()
-            _write_story_document(volume_folder / "volume-001.md", {
-                "project_id": project_id, "type": "volume", "id": volume_id,
-                "title": titles["volume"],
-            })
-            _write_story_document(volume_folder / "chapter-001.md", {
-                "project_id": project_id, "type": "chapter", "id": chapter_id,
-                "volume_id": volume_id, "title": titles["chapter"],
-            })
+            _write_story_document(
+                volume_folder / "volume-001.md",
+                {
+                    "project_id": project_id,
+                    "type": "volume",
+                    "id": volume_id,
+                    "title": titles["volume"],
+                },
+            )
+            _write_story_document(
+                volume_folder / "chapter-001.md",
+                {
+                    "project_id": project_id,
+                    "type": "chapter",
+                    "id": chapter_id,
+                    "volume_id": volume_id,
+                    "title": titles["chapter"],
+                },
+            )
             tree = ObsidianProjectRepository(staging_parent).get_project(project_id)
             try:
                 os.replace(staging_root, final_root)
             except OSError as exc:
                 if final_root.exists():
-                    raise ProjectAlreadyExistsError(f"project {project_slug!r} already exists") from exc
+                    raise ProjectAlreadyExistsError(
+                        f"project {project_slug!r} already exists"
+                    ) from exc
                 raise
         finally:
             shutil.rmtree(staging_parent, ignore_errors=True)
@@ -144,8 +177,10 @@ class ObsidianProjectRepository:
             _write_new_story_document(
                 root / "volumes" / f"volume-{number:03d}" / f"volume-{number:03d}.md",
                 {
-                    "project_id": tree.project.id, "type": "volume",
-                    "id": volume_id, "title": clean_title,
+                    "project_id": tree.project.id,
+                    "type": "volume",
+                    "id": volume_id,
+                    "title": clean_title,
                 },
             )
             self._invalidate_records()
@@ -167,8 +202,10 @@ class ObsidianProjectRepository:
             _write_new_story_document(
                 folder / f"chapter-{number:03d}.md",
                 {
-                    "project_id": tree.project.id, "type": "chapter",
-                    "id": chapter_id, "volume_id": volume_id,
+                    "project_id": tree.project.id,
+                    "type": "chapter",
+                    "id": chapter_id,
+                    "volume_id": volume_id,
                     "title": clean_title,
                 },
                 content,
@@ -190,8 +227,11 @@ class ObsidianProjectRepository:
             if root.parts[len(self.vault_root.parts)] == TRASH_DIRECTORY:
                 raise NotFoundError(f"project {project_id!r} was not found")
             nested = [
-                path for path in self._markdown_files()
-                if root in path.parents and path.name == "project.md" and path.parent != root
+                path
+                for path in self._markdown_files()
+                if root in path.parents
+                and path.name == "project.md"
+                and path.parent != root
             ]
             if nested:
                 raise RepositoryError("project folder contains another project")
@@ -212,7 +252,9 @@ class ObsidianProjectRepository:
 
         # ``project.md`` is where this repository writes the record, so look at
         # those first and only fall back to reading every other file.
-        for path in sorted(self._markdown_files(), key=lambda candidate: candidate.name != "project.md"):
+        for path in sorted(
+            self._markdown_files(), key=lambda candidate: candidate.name != "project.md"
+        ):
             document = _read_document(path)
             if (
                 str(document.metadata.get("type", "")).strip() == "project"
@@ -234,7 +276,11 @@ class ObsidianProjectRepository:
                 str(metadata.get("type", "")).strip() == "volume"
                 and str(metadata.get("id", "")).strip() == volume_id
             ):
-                return path.parent if path.parent.name == path.stem else path.with_suffix("")
+                return (
+                    path.parent
+                    if path.parent.name == path.stem
+                    else path.with_suffix("")
+                )
         raise NotFoundError(f"volume {volume_id!r} was not found")
 
     def get_project(self, project_id: str) -> ProjectTree:
@@ -242,17 +288,28 @@ class ObsidianProjectRepository:
         project = self._one(records["project"], project_id, "project")
         worlds = [row for row in records["world_info"] if row.project_id == project.id]
         if len(worlds) > 1:
-            raise RepositoryError(f"project {project.id!r} has more than one world info")
+            raise RepositoryError(
+                f"project {project.id!r} has more than one world info"
+            )
         world_info = worlds[0] if worlds else None
         entries = tuple(
-            row for row in records["world_info_entry"]
+            row
+            for row in records["world_info_entry"]
             if world_info is not None and row.project_id == project.id
         )
-        characters = tuple(row for row in records["character"] if row.project_id == project.id)
-        categories = tuple(row for row in records["note_category"] if row.project_id == project.id)
+        characters = tuple(
+            row for row in records["character"] if row.project_id == project.id
+        )
+        categories = tuple(
+            row for row in records["note_category"] if row.project_id == project.id
+        )
         notes = tuple(row for row in records["note"] if row.project_id == project.id)
-        volumes = tuple(row for row in records["volume"] if row.project_id == project.id)
-        chapters = tuple(row for row in records["chapter"] if row.project_id == project.id)
+        volumes = tuple(
+            row for row in records["volume"] if row.project_id == project.id
+        )
+        chapters = tuple(
+            row for row in records["chapter"] if row.project_id == project.id
+        )
 
         validate_category_hierarchy(categories)
         validate_project_has_volume(project.id, volumes)
@@ -260,7 +317,9 @@ class ObsidianProjectRepository:
         for chapter in chapters:
             volume = volumes_by_id.get(chapter.volume_id)
             if volume is None:
-                raise DomainValidationError(f"chapter {chapter.id!r} refers to a missing volume")
+                raise DomainValidationError(
+                    f"chapter {chapter.id!r} refers to a missing volume"
+                )
             validate_chapter_relationship(chapter, volume)
 
         return ProjectTree(
@@ -280,22 +339,33 @@ class ObsidianProjectRepository:
     def get_world_info(self, project_id: str) -> WorldInfo | None:
         return self.get_project(project_id).world_info
 
-    def search_world_info(self, project_id: str, query: str) -> tuple[WorldInfoEntry, ...]:
+    def search_world_info(
+        self, project_id: str, query: str
+    ) -> tuple[WorldInfoEntry, ...]:
         needle = query.casefold().strip()
         return tuple(
-            row for row in self.get_project(project_id).world_info_entries
+            row
+            for row in self.get_project(project_id).world_info_entries
             if not needle or needle in f"{row.title}\n{row.content}".casefold()
         )
 
     def get_character(self, project_id: str, character_id: str) -> Character:
-        return self._one(self.get_project(project_id).characters, character_id, "character")
+        return self._one(
+            self.get_project(project_id).characters, character_id, "character"
+        )
 
     def list_volumes(self, project_id: str) -> tuple[Volume, ...]:
         return self.get_project(project_id).volumes
 
-    def list_chapters(self, project_id: str, volume_id: str | None = None) -> tuple[Chapter, ...]:
+    def list_chapters(
+        self, project_id: str, volume_id: str | None = None
+    ) -> tuple[Chapter, ...]:
         chapters = self.get_project(project_id).chapters
-        return tuple(chapter for chapter in chapters if volume_id is None or chapter.volume_id == volume_id)
+        return tuple(
+            chapter
+            for chapter in chapters
+            if volume_id is None or chapter.volume_id == volume_id
+        )
 
     def get_chapter(self, project_id: str, chapter_id: str) -> Chapter:
         return self._one(self.get_project(project_id).chapters, chapter_id, "chapter")
@@ -303,12 +373,15 @@ class ObsidianProjectRepository:
     def search_notes(self, project_id: str, query: str) -> tuple[Note, ...]:
         needle = query.casefold().strip()
         return tuple(
-            row for row in self.get_project(project_id).notes
+            row
+            for row in self.get_project(project_id).notes
             if not needle or needle in f"{row.title}\n{row.content}".casefold()
         )
 
     def search_reference_notes(self, project_id: str, query: str) -> tuple[Note, ...]:
-        return tuple(row for row in self.search_notes(project_id, query) if row.reference)
+        return tuple(
+            row for row in self.search_notes(project_id, query) if row.reference
+        )
 
     def resolve_source_path(self, source_ref: str) -> Path:
         if not source_ref or "\x00" in source_ref:
@@ -317,7 +390,9 @@ class ObsidianProjectRepository:
         if candidate == self.vault_root or self.vault_root not in candidate.parents:
             raise RepositoryError("source reference escapes the configured Vault root")
         if not candidate.is_file():
-            raise RepositoryError(f"source reference is not a file in the Vault: {source_ref}")
+            raise RepositoryError(
+                f"source reference is not a file in the Vault: {source_ref}"
+            )
         return candidate
 
     def save_chapter(
@@ -329,20 +404,28 @@ class ObsidianProjectRepository:
         expected_version: str,
     ) -> Chapter:
         chapter = self.get_chapter(project_id, chapter_id)
-        self._save_body(chapter.source_ref, "chapter", chapter_id, content, expected_version)
+        self._save_body(
+            chapter.source_ref, "chapter", chapter_id, content, expected_version
+        )
         return self.get_chapter(project_id, chapter_id)
 
     def get_note(self, project_id: str, note_id: str) -> Note:
         return self._one(self.get_project(project_id).notes, note_id, "note")
 
     def get_world_entry(self, project_id: str, entry_id: str) -> WorldInfoEntry:
-        return self._one(self.get_project(project_id).world_info_entries, entry_id, "world info entry")
+        return self._one(
+            self.get_project(project_id).world_info_entries,
+            entry_id,
+            "world info entry",
+        )
 
     def save_character(
         self, project_id: str, character_id: str, content: str, *, expected_version: str
     ) -> Character:
         character = self.get_character(project_id, character_id)
-        self._save_body(character.source_ref, "character", character_id, content, expected_version)
+        self._save_body(
+            character.source_ref, "character", character_id, content, expected_version
+        )
         return self.get_character(project_id, character_id)
 
     def save_note(
@@ -356,10 +439,14 @@ class ObsidianProjectRepository:
         self, project_id: str, entry_id: str, content: str, *, expected_version: str
     ) -> WorldInfoEntry:
         entry = self.get_world_entry(project_id, entry_id)
-        self._save_body(entry.source_ref, "world info entry", entry_id, content, expected_version)
+        self._save_body(
+            entry.source_ref, "world info entry", entry_id, content, expected_version
+        )
         return self.get_world_entry(project_id, entry_id)
 
-    def create_character(self, project_id: str, name: str, content: str = "") -> Character:
+    def create_character(
+        self, project_id: str, name: str, content: str = ""
+    ) -> Character:
         """Add a character; a name already in use gets a number after it."""
 
         clean = _clean_title(name, "character")
@@ -372,41 +459,61 @@ class ObsidianProjectRepository:
             _write_new_story_document(
                 root / "characters" / f"character-{number:03d}.md",
                 {
-                    "project_id": tree.project.id, "type": "character",
+                    "project_id": tree.project.id,
+                    "type": "character",
                     "id": character_id,
                     "name": _unique_title(clean, (row.name for row in tree.characters)),
                 },
                 content,
             )
             self._invalidate_records()
-        return self._one(self.get_project(project_id).characters, character_id, "character")
+        return self._one(
+            self.get_project(project_id).characters, character_id, "character"
+        )
 
-    def create_world_entry(self, project_id: str, title: str, content: str = "") -> WorldInfoEntry:
+    def create_world_entry(
+        self, project_id: str, title: str, content: str = ""
+    ) -> WorldInfoEntry:
         """Add a world info entry; a title already in use gets a number after it."""
 
         clean = _clean_title(title, "world info entry")
         with self._create_lock:
             tree = self.get_project(project_id)
             if tree.world_info is None:
-                raise DomainValidationError("the project has no world info to add an entry to")
+                raise DomainValidationError(
+                    "the project has no world info to add an entry to"
+                )
             root = self._project_root(tree.project.id)
             number, entry_id = _next_numbered_id(
-                tree.project.id, "world-entry", (row.id for row in tree.world_info_entries)
+                tree.project.id,
+                "world-entry",
+                (row.id for row in tree.world_info_entries),
             )
             _write_new_story_document(
                 root / "world" / f"entry-{number:03d}.md",
                 {
-                    "project_id": tree.project.id, "type": "world_info_entry",
+                    "project_id": tree.project.id,
+                    "type": "world_info_entry",
                     "id": entry_id,
-                    "title": _unique_title(clean, (row.title for row in tree.world_info_entries)),
+                    "title": _unique_title(
+                        clean, (row.title for row in tree.world_info_entries)
+                    ),
                 },
                 content,
             )
             self._invalidate_records()
-        return self._one(self.get_project(project_id).world_info_entries, entry_id, "world info entry")
+        return self._one(
+            self.get_project(project_id).world_info_entries,
+            entry_id,
+            "world info entry",
+        )
 
     def create_note(
-        self, project_id: str, title: str, content: str = "", category_id: str | None = None
+        self,
+        project_id: str,
+        title: str,
+        content: str = "",
+        category_id: str | None = None,
     ) -> Note:
         """Add a note, optionally in a category; a title already in use there gets a number."""
 
@@ -420,19 +527,30 @@ class ObsidianProjectRepository:
                 tree.project.id, "note", (row.id for row in tree.notes)
             )
             metadata: dict[str, Any] = {
-                "project_id": tree.project.id, "type": "note", "id": note_id,
+                "project_id": tree.project.id,
+                "type": "note",
+                "id": note_id,
                 "title": _unique_title(
-                    clean, (row.title for row in tree.notes if row.category_id == category_id)
+                    clean,
+                    (row.title for row in tree.notes if row.category_id == category_id),
                 ),
             }
             if category_id is not None:
                 metadata["category_id"] = category_id
-            _write_new_story_document(root / "notes" / f"note-{number:03d}.md", metadata, content)
+            _write_new_story_document(
+                root / "notes" / f"note-{number:03d}.md", metadata, content
+            )
             self._invalidate_records()
         return self._one(self.get_project(project_id).notes, note_id, "note")
 
     def rename_record(
-        self, project_id: str, target_type: str, record_id: str, new_title: str, *, expected_version: str
+        self,
+        project_id: str,
+        target_type: str,
+        record_id: str,
+        new_title: str,
+        *,
+        expected_version: str,
     ) -> Any:
         """Change a record's title or name; its text, id and file stay as they are.
 
@@ -444,17 +562,28 @@ class ObsidianProjectRepository:
             tree = self.get_project(project_id)
             row, key, label, siblings = _titled_scope(tree, target_type, record_id)
             clean = _clean_title(new_title, label)
-            title = clean if target_type == "chapter" else _unique_title(clean, siblings)
+            title = (
+                clean if target_type == "chapter" else _unique_title(clean, siblings)
+            )
             path = self.resolve_source_path(row.source_ref)
             raw = path.read_bytes()
             if _version(raw) != expected_version:
-                raise VersionConflictError(f"{label} {record_id!r} changed since version {expected_version!r}")
-            _atomic_write(path, _with_frontmatter_value(raw.decode("utf-8"), key, title))
+                raise VersionConflictError(
+                    f"{label} {record_id!r} changed since version {expected_version!r}"
+                )
+            _atomic_write(
+                path, _with_frontmatter_value(raw.decode("utf-8"), key, title)
+            )
             self._invalidate_records()
         return _titled_scope(self.get_project(project_id), target_type, record_id)[0]
 
     def trash_record(
-        self, project_id: str, target_type: str, record_id: str, *, expected_version: str
+        self,
+        project_id: str,
+        target_type: str,
+        record_id: str,
+        *,
+        expected_version: str,
     ) -> tuple[str, str]:
         """Move a character, world entry or note into ``.story-trash``.
 
@@ -469,7 +598,9 @@ class ObsidianProjectRepository:
             row, _key, label, _siblings = _titled_scope(tree, target_type, record_id)
             path = self.resolve_source_path(row.source_ref)
             if _version(path.read_bytes()) != expected_version:
-                raise VersionConflictError(f"{label} {record_id!r} changed since version {expected_version!r}")
+                raise VersionConflictError(
+                    f"{label} {record_id!r} changed since version {expected_version!r}"
+                )
             project_folder = Path(row.source_ref).parts[0]
             folder = self.vault_root / TRASH_DIRECTORY / "records" / project_folder
             folder.mkdir(parents=True, exist_ok=True)
@@ -490,12 +621,17 @@ class ObsidianProjectRepository:
             source = self._inside_vault(source_ref)
             trashed = self._inside_vault(trash_ref)
             trash_root = (self.vault_root / TRASH_DIRECTORY / "records").resolve()
-            if trash_root not in trashed.parents or TRASH_DIRECTORY in source.relative_to(self.vault_root).parts:
+            if (
+                trash_root not in trashed.parents
+                or TRASH_DIRECTORY in source.relative_to(self.vault_root).parts
+            ):
                 raise RepositoryError("not a record that was moved to the trash")
             if not trashed.is_file():
                 raise NotFoundError(f"the trashed copy {trash_ref!r} is gone")
             if source.exists():
-                raise RepositoryError("something already exists where the record used to be")
+                raise RepositoryError(
+                    "something already exists where the record used to be"
+                )
             source.parent.mkdir(parents=True, exist_ok=True)
             os.replace(trashed, source)
             self._invalidate_records()
@@ -507,7 +643,12 @@ class ObsidianProjectRepository:
         return path
 
     def _save_body(
-        self, source_ref: str, label: str, record_id: str, content: str, expected_version: str
+        self,
+        source_ref: str,
+        label: str,
+        record_id: str,
+        content: str,
+        expected_version: str,
     ) -> None:
         """Replace a record's text and keep its frontmatter; refuse a stale version."""
 
@@ -525,8 +666,13 @@ class ObsidianProjectRepository:
         temporary_name: str | None = None
         try:
             with tempfile.NamedTemporaryFile(
-                mode="w", encoding="utf-8", newline="", dir=path.parent,
-                prefix=f".{path.name}.", suffix=".tmp", delete=False,
+                mode="w",
+                encoding="utf-8",
+                newline="",
+                dir=path.parent,
+                prefix=f".{path.name}.",
+                suffix=".tmp",
+                delete=False,
             ) as handle:
                 temporary_name = handle.name
                 handle.write(rendered)
@@ -610,13 +756,20 @@ class ObsidianProjectRepository:
         raise NotFoundError(f"{kind} {object_id!r} was not found")
 
 
-def _titled_scope(tree: Any, target_type: str, record_id: str) -> tuple[Any, str, str, list[str]]:
+def _titled_scope(
+    tree: Any, target_type: str, record_id: str
+) -> tuple[Any, str, str, list[str]]:
     """The record, its title key in the frontmatter, its label, and the other titles it must differ from."""
 
     if target_type == "character":
         rows, key, label, name = tree.characters, "name", "character", "name"
     elif target_type == "world_entry":
-        rows, key, label, name = tree.world_info_entries, "title", "world info entry", "title"
+        rows, key, label, name = (
+            tree.world_info_entries,
+            "title",
+            "world info entry",
+            "title",
+        )
     elif target_type == "note":
         rows, key, label, name = tree.notes, "title", "note", "title"
     elif target_type == "chapter":
@@ -627,8 +780,10 @@ def _titled_scope(tree: Any, target_type: str, record_id: str) -> tuple[Any, str
     if row is None:
         raise NotFoundError(f"{label} {record_id!r} was not found")
     siblings = [
-        getattr(other, name) for other in rows
-        if other.id != record_id and (target_type != "note" or other.category_id == row.category_id)
+        getattr(other, name)
+        for other in rows
+        if other.id != record_id
+        and (target_type != "note" or other.category_id == row.category_id)
     ]
     return row, key, label, siblings
 
@@ -639,33 +794,44 @@ def _with_frontmatter_value(text: str, key: str, value: str) -> str:
     lines = text.splitlines(keepends=True)
     if not lines or lines[0].strip() != "---":
         raise RepositoryError("the record has no frontmatter")
-    end = next((index for index in range(1, len(lines)) if lines[index].strip() == "---"), None)
+    end = next(
+        (index for index in range(1, len(lines)) if lines[index].strip() == "---"), None
+    )
     if end is None:
         raise RepositoryError("Markdown frontmatter is not closed")
-    entry = yaml.safe_dump({key: value}, allow_unicode=True, sort_keys=False, width=10**6).rstrip("\n")
+    entry = yaml.safe_dump(
+        {key: value}, allow_unicode=True, sort_keys=False, width=10**6
+    ).rstrip("\n")
     for index in range(1, end):
         if not re.match(rf"{re.escape(key)}\s*:", lines[index]):
             continue
         if index + 1 < end and lines[index + 1][:1] in (" ", "\t"):
             break  # a multi-line value: rewrite the whole block below
         eol = "\r\n" if lines[index].endswith("\r\n") else "\n"
-        replaced = lines[:index] + [entry + eol] + lines[index + 1:]
+        replaced = lines[:index] + [entry + eol] + lines[index + 1 :]
         result = "".join(replaced)
         if _split_document(result)[0].get(key) == value:
             return result
         break
     metadata, _body = _split_document(text)
     metadata[key] = value
-    frontmatter = yaml.safe_dump(metadata, allow_unicode=True, sort_keys=False, width=10**6).rstrip("\n")
-    return f"---\n{frontmatter}\n---\n" + "".join(lines[end + 1:])
+    frontmatter = yaml.safe_dump(
+        metadata, allow_unicode=True, sort_keys=False, width=10**6
+    ).rstrip("\n")
+    return f"---\n{frontmatter}\n---\n" + "".join(lines[end + 1 :])
 
 
 def _atomic_write(path: Path, text: str) -> None:
     temporary_name: str | None = None
     try:
         with tempfile.NamedTemporaryFile(
-            mode="w", encoding="utf-8", newline="", dir=path.parent,
-            prefix=f".{path.name}.", suffix=".tmp", delete=False,
+            mode="w",
+            encoding="utf-8",
+            newline="",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
         ) as handle:
             temporary_name = handle.name
             handle.write(text)
@@ -685,7 +851,9 @@ def _clean_title(title: str, kind: str) -> str:
     if not text:
         raise DomainValidationError(f"{kind} title is required")
     if len(text) > _MAX_TITLE_LENGTH:
-        raise DomainValidationError(f"{kind} title is longer than {_MAX_TITLE_LENGTH} characters")
+        raise DomainValidationError(
+            f"{kind} title is longer than {_MAX_TITLE_LENGTH} characters"
+        )
     if any(unicodedata.category(char).startswith("C") for char in text):
         raise DomainValidationError(f"{kind} title contains control characters")
     return text
@@ -719,7 +887,9 @@ def _next_numbered_id(project_id: str, kind: str, existing_ids: Any) -> tuple[in
     return number, f"{project_id}:{kind}-{number}"
 
 
-def _write_new_story_document(path: Path, metadata: dict[str, Any], content: str = "") -> None:
+def _write_new_story_document(
+    path: Path, metadata: dict[str, Any], content: str = ""
+) -> None:
     """Create a Markdown record without ever replacing an existing file."""
 
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -728,11 +898,18 @@ def _write_new_story_document(path: Path, metadata: dict[str, Any], content: str
     temporary_name: str | None = None
     try:
         with tempfile.NamedTemporaryFile(
-            mode="w", encoding="utf-8", newline="", dir=path.parent,
-            prefix=f".{path.name}.", suffix=".tmp", delete=False,
+            mode="w",
+            encoding="utf-8",
+            newline="",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
         ) as handle:
             temporary_name = handle.name
-            frontmatter = yaml.safe_dump(metadata, allow_unicode=True, sort_keys=False).rstrip("\n")
+            frontmatter = yaml.safe_dump(
+                metadata, allow_unicode=True, sort_keys=False
+            ).rstrip("\n")
             body = content.rstrip("\n")
             handle.write(f"---\n{frontmatter}\n---\n" + (f"\n{body}\n" if body else ""))
             handle.flush()
@@ -749,11 +926,20 @@ def _file_signature(path: Path, vault_root: Path) -> tuple[str, int, int, int]:
     except OSError:
         # Vanished between listing and stat: a distinct signature forces a rescan.
         return (path.relative_to(vault_root).as_posix(), -1, -1, -1)
-    return (path.relative_to(vault_root).as_posix(), stat.st_mtime_ns, stat.st_size, stat.st_ino)
+    return (
+        path.relative_to(vault_root).as_posix(),
+        stat.st_mtime_ns,
+        stat.st_size,
+        stat.st_ino,
+    )
 
 
-def _write_story_document(path: Path, metadata: dict[str, Any], content: str = "") -> None:
-    frontmatter = yaml.safe_dump(metadata, allow_unicode=True, sort_keys=False).rstrip("\n")
+def _write_story_document(
+    path: Path, metadata: dict[str, Any], content: str = ""
+) -> None:
+    frontmatter = yaml.safe_dump(metadata, allow_unicode=True, sort_keys=False).rstrip(
+        "\n"
+    )
     rendered = f"---\n{frontmatter}\n---\n\n{content.rstrip(chr(10))}"
     path.write_text(f"{rendered}\n", encoding="utf-8", newline="")
 
@@ -765,21 +951,28 @@ def _read_document(path: Path) -> _Document:
     except UnicodeDecodeError as exc:
         raise RepositoryError(f"Markdown is not UTF-8: {path}") from exc
     metadata, content = _split_document(text)
-    return _Document(path=path, metadata=metadata, content=content.rstrip("\r\n"), version=_version(raw))
+    return _Document(
+        path=path,
+        metadata=metadata,
+        content=content.rstrip("\r\n"),
+        version=_version(raw),
+    )
 
 
 def _split_document(text: str) -> tuple[dict[str, Any], str]:
     lines = text.splitlines(keepends=True)
     if not lines or lines[0].strip() != "---":
         return {}, text
-    end = next((index for index in range(1, len(lines)) if lines[index].strip() == "---"), None)
+    end = next(
+        (index for index in range(1, len(lines)) if lines[index].strip() == "---"), None
+    )
     if end is None:
         raise RepositoryError("Markdown frontmatter is not closed")
     raw_frontmatter = "".join(lines[1:end])
     metadata = yaml.safe_load(raw_frontmatter) or {}
     if not isinstance(metadata, dict):
         raise RepositoryError("Markdown frontmatter must be a mapping")
-    return dict(metadata), "".join(lines[end + 1:]).lstrip("\r\n")
+    return dict(metadata), "".join(lines[end + 1 :]).lstrip("\r\n")
 
 
 def _to_record(kind: str, document: _Document, vault_root: Path) -> Any:
@@ -790,19 +983,59 @@ def _to_record(kind: str, document: _Document, vault_root: Path) -> Any:
     if kind == "project":
         return Project(id=object_id, name=_text(metadata, "name", document.path.stem))
     if kind == "world_info":
-        return WorldInfo(id=object_id, name=_text(metadata, "name", document.path.stem), project_id=_optional(metadata, "project_id"))
+        return WorldInfo(
+            id=object_id,
+            name=_text(metadata, "name", document.path.stem),
+            project_id=_optional(metadata, "project_id"),
+        )
     if kind == "world_info_entry":
-        return WorldInfoEntry(id=object_id, project_id=_required(metadata, "project_id", kind), title=_text(metadata, "title", document.path.stem), content=document.content, **common)
+        return WorldInfoEntry(
+            id=object_id,
+            project_id=_required(metadata, "project_id", kind),
+            title=_text(metadata, "title", document.path.stem),
+            content=document.content,
+            **common,
+        )
     if kind == "character":
-        return Character(id=object_id, project_id=_required(metadata, "project_id", kind), name=_text(metadata, "name", document.path.stem), content=document.content, **common)
+        return Character(
+            id=object_id,
+            project_id=_required(metadata, "project_id", kind),
+            name=_text(metadata, "name", document.path.stem),
+            content=document.content,
+            **common,
+        )
     if kind == "note_category":
-        return NoteCategory(id=object_id, project_id=_required(metadata, "project_id", kind), name=_text(metadata, "name", document.path.stem), parent_id=_optional(metadata, "parent_id"))
+        return NoteCategory(
+            id=object_id,
+            project_id=_required(metadata, "project_id", kind),
+            name=_text(metadata, "name", document.path.stem),
+            parent_id=_optional(metadata, "parent_id"),
+        )
     if kind == "note":
-        return Note(id=object_id, project_id=_required(metadata, "project_id", kind), title=_text(metadata, "title", document.path.stem), content=document.content, category_id=_optional(metadata, "category_id"), reference=bool(metadata.get("reference", False)), **common)
+        return Note(
+            id=object_id,
+            project_id=_required(metadata, "project_id", kind),
+            title=_text(metadata, "title", document.path.stem),
+            content=document.content,
+            category_id=_optional(metadata, "category_id"),
+            reference=bool(metadata.get("reference", False)),
+            **common,
+        )
     if kind == "volume":
-        return Volume(id=object_id, project_id=_required(metadata, "project_id", kind), title=_text(metadata, "title", document.path.stem))
+        return Volume(
+            id=object_id,
+            project_id=_required(metadata, "project_id", kind),
+            title=_text(metadata, "title", document.path.stem),
+        )
     if kind == "chapter":
-        return Chapter(id=object_id, project_id=_required(metadata, "project_id", kind), volume_id=_required(metadata, "volume_id", kind), title=_text(metadata, "title", document.path.stem), content=document.content, **common)
+        return Chapter(
+            id=object_id,
+            project_id=_required(metadata, "project_id", kind),
+            volume_id=_required(metadata, "volume_id", kind),
+            title=_text(metadata, "title", document.path.stem),
+            content=document.content,
+            **common,
+        )
     raise RepositoryError(f"unsupported Markdown type: {kind}")
 
 
@@ -831,8 +1064,10 @@ def _frontmatter_prefix(text: str) -> str:
     lines = text.splitlines(keepends=True)
     if not lines or lines[0].strip() != "---":
         return ""
-    end = next((index for index in range(1, len(lines)) if lines[index].strip() == "---"), None)
+    end = next(
+        (index for index in range(1, len(lines)) if lines[index].strip() == "---"), None
+    )
     if end is None:
         raise RepositoryError("Markdown frontmatter is not closed")
-    prefix = "".join(lines[:end + 1])
+    prefix = "".join(lines[: end + 1])
     return prefix if prefix.endswith(("\n", "\r")) else f"{prefix}\n"
